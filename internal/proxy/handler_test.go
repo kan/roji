@@ -1,0 +1,193 @@
+package proxy
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/kan/roji/internal/docker"
+)
+
+func TestHandler_ServeHTTP_NotFound(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost")
+
+	req := httptest.NewRequest("GET", "https://unknown.localhost/", nil)
+	req.Host = "unknown.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "No Route Found") {
+		t.Errorf("body should contain 'No Route Found', got %q", body)
+	}
+}
+
+func TestHandler_ServeHTTP_Dashboard(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost")
+
+	req := httptest.NewRequest("GET", "https://roji.localhost/", nil)
+	req.Host = "roji.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "roji") {
+		t.Errorf("dashboard should contain 'roji', got %q", body)
+	}
+	if !strings.Contains(body, "reverse proxy") {
+		t.Errorf("dashboard should contain 'reverse proxy'")
+	}
+}
+
+func TestHandler_ServeHTTP_DashboardWithRoutes(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost")
+
+	// Add a route
+	backend := &docker.Backend{
+		ContainerID:   "abc123",
+		ContainerName: "web",
+		ServiceName:   "web",
+		Host:          "172.17.0.2",
+		Port:          80,
+		Hostname:      "web.localhost",
+	}
+	router.AddBackend(backend)
+
+	req := httptest.NewRequest("GET", "https://roji.localhost/", nil)
+	req.Host = "roji.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "web.localhost") {
+		t.Errorf("dashboard should show registered route 'web.localhost'")
+	}
+	if !strings.Contains(body, "1") {
+		t.Errorf("dashboard should show route count")
+	}
+}
+
+func TestHandler_ServeHTTP_RouteExists(t *testing.T) {
+	router := NewRouter()
+	_ = NewHandler(router, "roji.localhost")
+
+	// Add a route
+	backend := &docker.Backend{
+		ContainerID:   "abc123",
+		ContainerName: "web",
+		ServiceName:   "web",
+		Host:          "172.17.0.2",
+		Port:          80,
+		Hostname:      "web.localhost",
+	}
+	router.AddBackend(backend)
+
+	// Verify the route exists (actual proxy test requires real network)
+	route := router.Lookup("web.localhost", "/")
+	if route == nil {
+		t.Fatal("route should exist")
+	}
+	if route.Backend.Host != "172.17.0.2" {
+		t.Errorf("backend host = %q, want %q", route.Backend.Host, "172.17.0.2")
+	}
+}
+
+func TestHandler_CaseInsensitiveHostname(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "ROJI.LOCALHOST")
+
+	// Dashboard should work with uppercase
+	req := httptest.NewRequest("GET", "https://ROJI.LOCALHOST/", nil)
+	req.Host = "ROJI.LOCALHOST"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d for uppercase hostname", w.Code, http.StatusOK)
+	}
+}
+
+func TestHandler_HostnameWithPort(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost")
+
+	// Should strip port from hostname
+	req := httptest.NewRequest("GET", "https://roji.localhost:443/", nil)
+	req.Host = "roji.localhost:443"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d when hostname includes port", w.Code, http.StatusOK)
+	}
+}
+
+func TestRedirectHandler(t *testing.T) {
+	tests := []struct {
+		name        string
+		httpsPort   int
+		host        string
+		path        string
+		expectedURL string
+	}{
+		{
+			name:        "standard port",
+			httpsPort:   443,
+			host:        "api.localhost",
+			path:        "/users",
+			expectedURL: "https://api.localhost/users",
+		},
+		{
+			name:        "custom port",
+			httpsPort:   8443,
+			host:        "api.localhost",
+			path:        "/users",
+			expectedURL: "https://api.localhost:8443/users",
+		},
+		{
+			name:        "host with port",
+			httpsPort:   443,
+			host:        "api.localhost:80",
+			path:        "/",
+			expectedURL: "https://api.localhost/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &RedirectHandler{HTTPSPort: tt.httpsPort}
+
+			req := httptest.NewRequest("GET", "http://"+tt.host+tt.path, nil)
+			req.Host = tt.host
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			if w.Code != http.StatusMovedPermanently {
+				t.Errorf("status = %d, want %d", w.Code, http.StatusMovedPermanently)
+			}
+
+			location := w.Header().Get("Location")
+			if location != tt.expectedURL {
+				t.Errorf("Location = %q, want %q", location, tt.expectedURL)
+			}
+		})
+	}
+}
