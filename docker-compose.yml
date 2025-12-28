@@ -1,0 +1,46 @@
+# Development docker-compose.yml
+#
+# Usage:
+#   1. Generate certificates with mkcert:
+#      mkcert -install
+#      mkcert -cert-file certs/cert.pem -key-file certs/key.pem "*.localhost" localhost 127.0.0.1
+#
+#   2. Copy env file and customize if needed:
+#      cp .env.example .env
+#
+#   3. Start development server with hot reload:
+#      docker compose up
+#
+# For production/user setup, see examples/docker-compose.yml
+
+services:
+  roji:
+    build:
+      context: .
+      target: development
+    container_name: roji-dev
+    network_mode: host
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      # Docker socket for container discovery (read-only)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # TLS certificates
+      - ./certs:/certs
+      # Persist Go build cache for faster rebuilds
+      - go-build-cache:/root/.cache/go-build
+    environment:
+      # Defaults; override via .env file
+      ROJI_NETWORK: ${ROJI_NETWORK:-roji}
+      ROJI_DOMAIN: ${ROJI_DOMAIN:-localhost}
+      ROJI_CERTS_DIR: /certs
+      ROJI_DASHBOARD: ${ROJI_DASHBOARD:-roji.localhost}
+      ROJI_LOG_LEVEL: ${ROJI_LOG_LEVEL:-debug}
+    labels:
+      - "roji.self=true"
+    # Useful for debugging
+    tty: true
+    stdin_open: true
+
+volumes:
+  go-build-cache:

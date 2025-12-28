@@ -1,0 +1,38 @@
+# Build artifacts
+roji
+tmp/
+
+# Certificates (generated locally)
+certs/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# Coverage
+*.coverprofile
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment (local overrides)
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+test/

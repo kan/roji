@@ -1,0 +1,25 @@
+# Build artifacts
+roji
+
+# Certificates (mounted as volume)
+certs/
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+LICENSE
+
+# IDE
+.idea/
+.vscode/
+
+# Test
+test/
+
+# Docker (avoid recursion)
+Dockerfile
+docker-compose.yml
+.dockerignore
