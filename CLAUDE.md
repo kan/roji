@@ -245,10 +245,13 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
 - [x] ルートの動的追加/削除
 - [x] graceful shutdown
 
-### Phase 3: TLS 🔄
+### Phase 3: TLS ✅
 
 - [x] 証明書の読み込み（外部生成 / mkcert）
-- [ ] 証明書の自動生成（mkcert不要、CA含む）
+- [x] 証明書の自動生成（mkcert不要、CA含む）
+  - [x] CA証明書生成（ECDSA P-256、10年有効）
+  - [x] サーバー証明書生成（ワイルドカード対応、1年有効）
+  - [x] Windows用DER形式（.crt）出力
 - [x] HTTP → HTTPS リダイレクト
 
 ### Phase 4: 品質 🔄

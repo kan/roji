@@ -7,7 +7,7 @@ A simple reverse proxy for local development environments. Automatically discove
 ## Features
 
 - **Auto-discovery**: Automatically detects and routes containers on the shared network
-- **TLS Support**: Auto-generates certificates (or integrates with mkcert)
+- **TLS Support**: Auto-generates certificates (no mkcert required) or use your own
 - **Label-based Configuration**: Customize hostnames and ports via container labels
 - **Dynamic Updates**: Automatically tracks container start/stop events
 - **Dashboard**: View current routes in your browser
@@ -21,23 +21,7 @@ A simple reverse proxy for local development environments. Automatically discove
 docker network create roji
 ```
 
-### 2. Generate certificates (mkcert)
-
-```bash
-# Install mkcert if not already installed
-# macOS: brew install mkcert
-# Linux: https://github.com/FiloSottile/mkcert#installation
-
-# Install the root CA
-mkcert -install
-
-# Generate certificates
-mkdir -p certs
-mkcert -cert-file certs/cert.pem -key-file certs/key.pem \
-  "*.localhost" localhost 127.0.0.1
-```
-
-### 3. Start roji
+### 2. Start roji
 
 ```bash
 # Copy the example compose file
@@ -47,7 +31,9 @@ cp examples/docker-compose.yml docker-compose.yml
 docker compose up -d
 ```
 
-### 4. Start your application
+Certificates are **automatically generated** on first startup. See [TLS Certificates](#tls-certificates) for how to trust them.
+
+### 3. Start your application
 
 ```yaml
 # your-app/docker-compose.yml
@@ -65,6 +51,78 @@ networks:
 ```
 
 Your app is now accessible at `https://myapp.localhost`!
+
+## TLS Certificates
+
+### Auto-generated Certificates (Default)
+
+roji automatically generates TLS certificates on first startup:
+
+```
+certs/
+├── ca.crt      # CA certificate (Windows)
+├── ca.pem      # CA certificate (macOS/Linux)
+├── ca-key.pem  # CA private key
+├── cert.pem    # Server certificate
+└── key.pem     # Server private key
+```
+
+To trust HTTPS connections, install the CA certificate in your OS/browser:
+
+#### Windows
+
+1. Double-click `certs/ca.crt`
+2. Click **"Install Certificate"**
+3. Select **"Local Machine"** (requires admin) or "Current User"
+4. Select **"Place all certificates in the following store"**
+5. Click **"Browse"** → Select **"Trusted Root Certification Authorities"**
+6. Click "Next" → "Finish"
+7. **Restart your browser**
+
+#### macOS
+
+```bash
+# Add to system keychain (requires password)
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain certs/ca.pem
+
+# Or open in Keychain Access and set "Always Trust"
+open certs/ca.pem
+```
+
+#### Linux (Chrome/Chromium)
+
+```bash
+# Install certutil if needed
+# Debian/Ubuntu: sudo apt install libnss3-tools
+# Fedora: sudo dnf install nss-tools
+
+# Add to Chrome/Chromium certificate store
+certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "roji CA" -i certs/ca.pem
+```
+
+#### Firefox (All platforms)
+
+Firefox uses its own certificate store:
+
+1. Open Firefox → Settings → Privacy & Security
+2. Scroll to "Certificates" → Click "View Certificates"
+3. Go to "Authorities" tab → Click "Import"
+4. Select `certs/ca.pem` (or `ca.crt` on Windows)
+5. Check "Trust this CA to identify websites"
+6. Click OK
+
+### Using mkcert (Alternative)
+
+If you prefer [mkcert](https://github.com/FiloSottile/mkcert), generate certificates before starting roji:
+
+```bash
+mkcert -install
+mkdir -p certs
+mkcert -cert-file certs/cert.pem -key-file certs/key.pem \
+  "*.localhost" "*.yourproject.localhost" localhost 127.0.0.1
+```
+
+roji will use existing certificates and skip auto-generation.
 
 ## Configuration
 
@@ -125,6 +183,7 @@ services:
 | `ROJI_CERTS_DIR` | Certificate directory | `/certs` |
 | `ROJI_DASHBOARD` | Dashboard hostname | `roji.{domain}` |
 | `ROJI_LOG_LEVEL` | Log level | `info` |
+| `ROJI_AUTO_CERT` | Auto-generate certificates | `true` |
 
 ### Custom Domain Example
 
@@ -164,9 +223,13 @@ Or use `*.lvh.me` (a public domain that always resolves to 127.0.0.1)
    docker inspect <container> | jq '.[0].Config.ExposedPorts'
    ```
 
-### Certificate errors
+### Certificate errors (ERR_CERT_AUTHORITY_INVALID)
 
-Ensure the CA certificate is installed in your browser/OS.
+The CA certificate is not trusted. See [TLS Certificates](#tls-certificates) for installation instructions.
+
+**Important**: On Windows, make sure to install the certificate in the **"Trusted Root Certification Authorities"** store, not the default store.
+
+After installing, **restart your browser completely** (close all windows).
 
 ## Name Origin
 

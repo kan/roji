@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kan/roji/internal/certs"
 	"github.com/kan/roji/internal/docker"
 	"github.com/kan/roji/internal/proxy"
 )
@@ -118,13 +119,14 @@ func setupLogging(level string) {
 func run(ctx context.Context, cfg Config) error {
 	printBanner(cfg)
 
-	// TODO: Auto-generate certificates if not present
-	// if cfg.AutoCert {
-	//     certGen := certs.NewGenerator(cfg.CertsDir, cfg.BaseDomain)
-	//     if err := certGen.EnsureCerts(); err != nil {
-	//         return fmt.Errorf("failed to ensure certificates: %w", err)
-	//     }
-	// }
+	// Auto-generate certificates if enabled
+	if cfg.AutoCert {
+		certGen := certs.NewGenerator(cfg.CertsDir, cfg.BaseDomain)
+		if err := certGen.EnsureCerts(); err != nil {
+			return fmt.Errorf("failed to ensure certificates: %w", err)
+		}
+		slog.Info("certificates ready", "dir", cfg.CertsDir)
+	}
 
 	// Initialize Docker client
 	dockerClient, err := docker.NewClient(cfg.NetworkName, cfg.BaseDomain)
@@ -303,6 +305,13 @@ func printBanner(cfg Config) {
 	fmt.Printf("  Domain:    *.%s\n", cfg.BaseDomain)
 	fmt.Printf("  Dashboard: https://%s\n", cfg.DashboardHost)
 	fmt.Println()
+
+	// Show CA certificate install hint if auto-cert is enabled
+	if cfg.AutoCert {
+		fmt.Printf("  CA Cert:   %s/ca.crt (Windows) or ca.pem (macOS/Linux)\n", cfg.CertsDir)
+		fmt.Println("  Install the CA certificate in your browser/OS to trust HTTPS.")
+		fmt.Println()
+	}
 }
 
 func printRoutes(router *proxy.Router) {

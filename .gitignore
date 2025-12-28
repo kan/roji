@@ -2,8 +2,8 @@
 roji
 tmp/
 
-# Certificates (generated locally)
-certs/
+# Certificates (generated locally, root directory only)
+/certs/
 
 # Go
 *.exe
