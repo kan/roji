@@ -231,13 +231,13 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
 
 ## 機能実装チェックリスト
 
-### Phase 1: コア機能 ✅ → 🔄
+### Phase 1: コア機能 ✅
 
 - [x] Docker API でコンテナ一覧取得
 - [x] ラベルからルート情報抽出
 - [x] httputil.ReverseProxy でプロキシ
 - [x] ホスト名ベースのルーティング
-- [ ] ベースドメイン設定の可変化（`ROJI_DOMAIN`）
+- [x] ベースドメイン設定の可変化（`ROJI_DOMAIN`）
 
 ### Phase 2: 動的更新 ✅
 
@@ -245,23 +245,30 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
 - [x] ルートの動的追加/削除
 - [x] graceful shutdown
 
-### Phase 3: TLS ✅ → 🔄
+### Phase 3: TLS 🔄
 
-- [x] 証明書の読み込み（外部生成）
-- [ ] 証明書の自動生成（CA含む）
+- [x] 証明書の読み込み（外部生成 / mkcert）
+- [ ] 証明書の自動生成（mkcert不要、CA含む）
 - [x] HTTP → HTTPS リダイレクト
 
-### Phase 4: 配布
+### Phase 4: 品質 🔄
 
-- [ ] GitHub Actions（ghcr.io 自動登録）
-- [ ] install.sh（クイックセットアップ）
-- [ ] README 整備
+- [ ] ユニットテスト実装
+- [ ] インテグレーションテスト
 
-### Phase 5: 便利機能
+### Phase 5: 配布 🔄
 
-- [ ] ダッシュボード（ルート一覧表示）
+- [ ] GitHub Actions CI/CD
+  - [ ] テスト実行
+  - [ ] Docker イメージビルド
+  - [ ] ghcr.io への自動プッシュ
+- [ ] install.sh（curl | bash でインストール）
+
+### Phase 6: 便利機能
+
+- [x] ダッシュボード（ルート一覧表示）
 - [ ] CLI ルート一覧表示（`roji routes`）
-- [ ] ヘルスチェック
+- [ ] ヘルスチェックエンドポイント
 
 ## 出力ファイル仕様
 
