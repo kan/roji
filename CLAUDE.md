@@ -259,7 +259,7 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - [x] Windows用DER形式（.crt）出力
 - [x] HTTP → HTTPS リダイレクト
 
-### Phase 4: 品質 🔄
+### Phase 4: 品質 ✅
 
 - [x] ユニットテスト実装
   - [x] config/labels: 100% カバレッジ
@@ -269,14 +269,13 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - [x] docker/client: 69.7% カバレッジ（DockerAPIインターフェース導入）
   - [x] docker/watcher: テスト追加
   - **プロジェクト全体: 48.2% カバレッジ** (30.3% → 48.2%)
-- [ ] インテグレーションテスト
 - [x] リファクタリング
   - [x] プロジェクト構造の整理（`cmd/roji/` 導入、`internal/` 削除）
   - [x] パッケージ名の改善（`internal/certs` → `certgen`）
   - [x] DockerAPIインターフェース導入（テスタビリティ向上）
   - [x] docker/client の複雑度削減（`buildProjectServiceCounts` ヘルパー導入）
   - [x] HTMLテンプレート分離（embed.FS 使用、proxy/handler.go 306行→176行に削減）
-  - [ ] main.go の関数分割
+  - [x] main.go の関数分割（サーバー管理・イベント処理を分離、モジュール性向上）
 
 ### Phase 5: 配布 🔄
 
@@ -292,6 +291,10 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
 - [x] ダッシュボード（ルート一覧表示）
 - [ ] CLI ルート一覧表示（`roji routes`）
 - [ ] ヘルスチェックエンドポイント
+
+### 将来の課題
+
+- [ ] インテグレーションテスト（Docker統合、E2Eテスト）
 
 ## 出力ファイル仕様
 

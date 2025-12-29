@@ -157,7 +157,27 @@ func run(ctx context.Context, cfg Config) error {
 
 	go handleEvents(ctx, dockerClient, router, eventCh)
 
-	// Start HTTP server (redirect to HTTPS)
+	// Start HTTP and HTTPS servers
+	httpServer := startHTTPServer(cfg)
+	httpsServer, err := startHTTPSServer(cfg, handler)
+	if err != nil {
+		return err
+	}
+
+	// Print registered routes
+	printRoutes(router)
+
+	// Wait for shutdown
+	<-ctx.Done()
+
+	// Graceful shutdown
+	shutdownServers(context.Background(), httpServer, httpsServer)
+
+	slog.Info("shutdown complete")
+	return nil
+}
+
+func startHTTPServer(cfg Config) *http.Server {
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
 		Handler: &proxy.RedirectHandler{HTTPSPort: cfg.HTTPSPort},
@@ -170,10 +190,13 @@ func run(ctx context.Context, cfg Config) error {
 		}
 	}()
 
-	// Start HTTPS server
+	return httpServer
+}
+
+func startHTTPSServer(cfg Config, handler http.Handler) (*http.Server, error) {
 	tlsConfig, err := loadTLSConfig(cfg.CertsDir)
 	if err != nil {
-		return fmt.Errorf("failed to load TLS config: %w", err)
+		return nil, fmt.Errorf("failed to load TLS config: %w", err)
 	}
 
 	httpsServer := &http.Server{
@@ -189,21 +212,15 @@ func run(ctx context.Context, cfg Config) error {
 		}
 	}()
 
-	// Print registered routes
-	printRoutes(router)
+	return httpsServer, nil
+}
 
-	// Wait for shutdown
-	<-ctx.Done()
-
-	// Graceful shutdown
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+func shutdownServers(ctx context.Context, httpServer, httpsServer *http.Server) {
+	shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer shutdownCancel()
 
 	httpServer.Shutdown(shutdownCtx)
 	httpsServer.Shutdown(shutdownCtx)
-
-	slog.Info("shutdown complete")
-	return nil
 }
 
 func loadTLSConfig(certsDir string) (*tls.Config, error) {
@@ -248,53 +265,60 @@ func handleEvents(ctx context.Context, client *docker.Client, router *proxy.Rout
 
 			switch event.Type {
 			case docker.EventStart:
-				backend, err := client.GetBackend(ctx, event.ContainerID)
-				if err != nil {
-					slog.Error("failed to get backend", "error", err)
-					continue
-				}
-				if backend == nil {
-					continue
-				}
-
-				// If this is a compose project, update all backends for the project
-				// (hostnames may change based on service count)
-				if backend.ProjectName != "" {
-					router.RemoveProject(backend.ProjectName)
-					backends, err := client.GetProjectBackends(ctx, backend.ProjectName)
-					if err != nil {
-						slog.Error("failed to get project backends", "error", err)
-						continue
-					}
-					for _, b := range backends {
-						router.AddBackend(b)
-					}
-				} else {
-					router.AddBackend(backend)
-				}
-				printRoutes(router)
-
+				handleStartEvent(ctx, client, router, event.ContainerID)
 			case docker.EventStop:
-				// Get the backend info before removing to check project
-				backend, _ := client.GetBackend(ctx, event.ContainerID)
-				router.RemoveBackend(event.ContainerID)
-
-				// If this was part of a project, update remaining siblings' hostnames
-				if backend != nil && backend.ProjectName != "" {
-					router.RemoveProject(backend.ProjectName)
-					backends, err := client.GetProjectBackends(ctx, backend.ProjectName)
-					if err != nil {
-						slog.Error("failed to get project backends", "error", err)
-					} else {
-						for _, b := range backends {
-							router.AddBackend(b)
-						}
-					}
-				}
-				printRoutes(router)
+				handleStopEvent(ctx, client, router, event.ContainerID)
 			}
 		}
 	}
+}
+
+func handleStartEvent(ctx context.Context, client *docker.Client, router *proxy.Router, containerID string) {
+	backend, err := client.GetBackend(ctx, containerID)
+	if err != nil {
+		slog.Error("failed to get backend", "error", err)
+		return
+	}
+	if backend == nil {
+		return
+	}
+
+	// If this is a compose project, update all backends for the project
+	// (hostnames may change based on service count)
+	if backend.ProjectName != "" {
+		router.RemoveProject(backend.ProjectName)
+		backends, err := client.GetProjectBackends(ctx, backend.ProjectName)
+		if err != nil {
+			slog.Error("failed to get project backends", "error", err)
+			return
+		}
+		for _, b := range backends {
+			router.AddBackend(b)
+		}
+	} else {
+		router.AddBackend(backend)
+	}
+	printRoutes(router)
+}
+
+func handleStopEvent(ctx context.Context, client *docker.Client, router *proxy.Router, containerID string) {
+	// Get the backend info before removing to check project
+	backend, _ := client.GetBackend(ctx, containerID)
+	router.RemoveBackend(containerID)
+
+	// If this was part of a project, update remaining siblings' hostnames
+	if backend != nil && backend.ProjectName != "" {
+		router.RemoveProject(backend.ProjectName)
+		backends, err := client.GetProjectBackends(ctx, backend.ProjectName)
+		if err != nil {
+			slog.Error("failed to get project backends", "error", err)
+		} else {
+			for _, b := range backends {
+				router.AddBackend(b)
+			}
+		}
+	}
+	printRoutes(router)
 }
 
 func printBanner(cfg Config) {
