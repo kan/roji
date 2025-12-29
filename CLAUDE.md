@@ -282,14 +282,21 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - [x] HTMLテンプレート分離（embed.FS 使用、proxy/handler.go 306行→176行に削減）
   - [x] main.go の関数分割（サーバー管理・イベント処理を分離、モジュール性向上）
 
-### Phase 5: 配布 🔄
+### Phase 5: 配布 ✅
 
 - [x] GitHub Actions CI/CD
   - [x] テスト実行
   - [x] ビルド確認
   - [x] Docker イメージビルド確認
-  - [ ] ghcr.io への自動プッシュ（タグ時）
-- [ ] install.sh（curl | bash でインストール）
+  - [x] ghcr.io への自動プッシュ（タグ時）
+    - `v*` タグで自動ビルド＆プッシュ
+    - semver タグ生成（v1.2.3 → 1.2.3, 1.2, 1）
+    - latest タグ自動更新
+- [x] install.sh（curl | bash でインストール）
+  - Docker/Docker Compose の前提条件チェック
+  - デフォルト設定でのインストール（`~/.roji`）
+  - 自動証明書生成とCA登録案内（OS別、英語）
+  - ワンライナーインストール対応
 
 ### Phase 6: 便利機能 ✅
 

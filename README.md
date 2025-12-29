@@ -13,15 +13,41 @@ A simple reverse proxy for local development environments. Automatically discove
 - **Dashboard**: View current routes in your browser
 - **Simple**: Minimal implementation focused on local development
 
-## Quick Start
+## Installation
 
-### 1. Create the shared network
+### One-liner Install (Recommended)
+
+Install and start roji with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
+```
+
+This will:
+- Check Docker and Docker Compose prerequisites
+- Create the `roji` network
+- Install roji to `~/.roji` (customize with `ROJI_INSTALL_DIR`)
+- Start roji with default settings
+- Generate TLS certificates automatically
+- Display CA certificate installation instructions
+
+**Custom installation directory:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
+```
+
+### Manual Installation
+
+If you prefer manual setup:
+
+#### 1. Create the shared network
 
 ```bash
 docker network create roji
 ```
 
-### 2. Start roji
+#### 2. Start roji
 
 ```bash
 # Copy the example compose file
@@ -33,7 +59,7 @@ docker compose up -d
 
 Certificates are **automatically generated** on first startup. See [TLS Certificates](#tls-certificates) for how to trust them.
 
-### 3. Start your application
+#### 3. Start your application
 
 ```yaml
 # your-app/docker-compose.yml
