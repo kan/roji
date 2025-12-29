@@ -153,13 +153,21 @@ Configure via `.env` file (gitignored) or directly in shell:
 roji/
 ├── cmd/
 │   └── roji/
-│       └── main.go         # Entry point
+│       ├── main.go         # Entry point
+│       └── cmd/            # Cobra commands
+│           ├── root.go     # Root command (server)
+│           ├── routes.go   # Routes list command
+│           ├── version.go  # Version command
+│           └── server.go   # Server implementation
 ├── docker/
 │   ├── client.go           # Docker API wrapper
 │   └── watcher.go          # Events watcher
 ├── proxy/
 │   ├── handler.go          # ReverseProxy implementation
-│   └── router.go           # Routing
+│   ├── router.go           # Routing
+│   └── templates/          # HTML templates
+│       ├── dashboard.html
+│       └── notfound.html
 ├── certgen/
 │   └── generator.go        # TLS certificate generator
 ├── config/

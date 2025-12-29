@@ -10,7 +10,7 @@ cmd = "go build -o ./tmp/roji ./cmd/roji"
 # Binary to run
 bin = "./tmp/roji"
 # Arguments to pass to the binary
-args_bin = ["-certs-dir", "/certs", "-network", "roji", "-domain", "localhost"]
+args_bin = ["--certs-dir", "/certs", "--network", "roji", "--domain", "localhost"]
 # Watch these extensions
 include_ext = ["go", "toml"]
 # Exclude these directories

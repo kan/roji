@@ -57,7 +57,12 @@
 roji/
 ├── cmd/
 │   └── roji/
-│       └── main.go           # エントリーポイント
+│       ├── main.go           # エントリーポイント
+│       └── cmd/              # Cobraコマンド
+│           ├── root.go       # ルートコマンド（サーバー起動）
+│           ├── routes.go     # ルート一覧コマンド
+│           ├── version.go    # バージョン表示コマンド
+│           └── server.go     # サーバー実装
 ├── docker/
 │   ├── client.go             # Docker API ラッパー
 │   └── watcher.go            # Events 監視
@@ -289,7 +294,10 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
 ### Phase 6: 便利機能
 
 - [x] ダッシュボード（ルート一覧表示）
-- [ ] CLI ルート一覧表示（`roji routes`）
+- [x] CLI ルート一覧表示（`roji routes`）
+  - `/_api/routes` エンドポイント追加
+  - Cobra導入によるCLI構造化
+  - サブコマンド: routes, version, help, completion
 - [ ] ヘルスチェックエンドポイント
 
 ### 将来の課題
