@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>roji - Dashboard</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .subtitle {
+            color: #666;
+            font-weight: normal;
+            font-size: 0.9rem;
+            margin-left: 8px;
+        }
+        .routes {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .route {
+            padding: 16px 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .route:last-child { border-bottom: none; }
+        .route:hover { background: #fafafa; }
+        .route-url {
+            font-family: monospace;
+            font-size: 0.95rem;
+        }
+        .route-url a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+        .route-url a:hover { text-decoration: underline; }
+        .route-target {
+            color: #666;
+            font-size: 0.85rem;
+        }
+        .service-name {
+            background: #e8f4e8;
+            color: #2d5a2d;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+        .empty {
+            padding: 40px;
+            text-align: center;
+            color: #666;
+        }
+        .count {
+            background: #333;
+            color: white;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>
+        🛤️ roji
+        <span class="subtitle">reverse proxy for local development</span>
+    </h1>
+    {{if .Routes}}
+    <p><span class="count">{{len .Routes}}</span> routes registered</p>
+    <div class="routes">
+        {{range .Routes}}
+        <div class="route">
+            <div>
+                <div class="route-url"><a href="https://{{.Hostname}}{{.PathPrefix}}" target="_blank">{{.Hostname}}{{.PathPrefix}}</a></div>
+                <div class="route-target">→ {{.Target}}</div>
+            </div>
+            <span class="service-name">{{.ServiceName}}</span>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="routes">
+        <div class="empty">
+            <p>🔍 No routes registered yet</p>
+            <p>Start some containers on the roji network!</p>
+        </div>
+    </div>
+    {{end}}
+</body>
+</html>

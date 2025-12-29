@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"embed"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -9,6 +11,11 @@ import (
 	"strings"
 	"time"
 )
+
+//go:embed templates/*.html
+var templateFS embed.FS
+
+var templates = template.Must(template.ParseFS(templateFS, "templates/*.html"))
 
 // Handler is the main HTTP handler for the reverse proxy
 type Handler struct {
@@ -109,123 +116,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) serveDashboard(w http.ResponseWriter, r *http.Request) {
 	routes := h.router.ListRoutes()
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-
-	fmt.Fprintf(w, `<!DOCTYPE html>
-<html>
-<head>
-    <title>roji - Dashboard</title>
-    <style>
-        * { box-sizing: border-box; }
-        body { 
-            font-family: system-ui, -apple-system, sans-serif; 
-            max-width: 800px; 
-            margin: 0 auto; 
-            padding: 40px 20px;
-            background: #f5f5f5;
-        }
-        h1 { 
-            color: #333;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .subtitle {
-            color: #666;
-            font-weight: normal;
-            font-size: 0.9rem;
-            margin-left: 8px;
-        }
-        .routes {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        .route {
-            padding: 16px 20px;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .route:last-child { border-bottom: none; }
-        .route:hover { background: #fafafa; }
-        .route-url {
-            font-family: monospace;
-            font-size: 0.95rem;
-        }
-        .route-url a {
-            color: #0066cc;
-            text-decoration: none;
-        }
-        .route-url a:hover { text-decoration: underline; }
-        .route-target {
-            color: #666;
-            font-size: 0.85rem;
-        }
-        .service-name {
-            background: #e8f4e8;
-            color: #2d5a2d;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.8rem;
-        }
-        .empty {
-            padding: 40px;
-            text-align: center;
-            color: #666;
-        }
-        .count {
-            background: #333;
-            color: white;
-            padding: 2px 10px;
-            border-radius: 12px;
-            font-size: 0.85rem;
-        }
-    </style>
-</head>
-<body>
-    <h1>
-        🛤️ roji
-        <span class="subtitle">reverse proxy for local development</span>
-    </h1>
-`)
-
-	if len(routes) > 0 {
-		fmt.Fprintf(w, `    <p><span class="count">%d</span> routes registered</p>
-    <div class="routes">
-`, len(routes))
-		for _, route := range routes {
-			path := route.PathPrefix
-			if path == "" {
-				path = ""
-			}
-			fullURL := fmt.Sprintf("https://%s%s", route.Hostname, path)
-			fmt.Fprintf(w, `        <div class="route">
-            <div>
-                <div class="route-url"><a href="%s" target="_blank">%s%s</a></div>
-                <div class="route-target">→ %s</div>
-            </div>
-            <span class="service-name">%s</span>
-        </div>
-`, fullURL, route.Hostname, path, route.Target, route.ServiceName)
-		}
-		fmt.Fprintf(w, `    </div>
-`)
-	} else {
-		fmt.Fprintf(w, `    <div class="routes">
-        <div class="empty">
-            <p>🔍 No routes registered yet</p>
-            <p>Start some containers on the roji network!</p>
-        </div>
-    </div>
-`)
+	data := struct {
+		Routes []RouteInfo
+	}{
+		Routes: routes,
 	}
 
-	fmt.Fprintf(w, `</body>
-</html>`)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.ExecuteTemplate(w, "dashboard.html", data); err != nil {
+		slog.Error("failed to render dashboard template", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request, hostname string) {
@@ -233,55 +134,24 @@ func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request, hostnam
 		"hostname", hostname,
 		"path", r.URL.Path)
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusNotFound)
-
 	routes := h.router.ListRoutes()
 
-	fmt.Fprintf(w, `<!DOCTYPE html>
-<html>
-<head>
-    <title>No Route Found - roji</title>
-    <style>
-        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
-        h1 { color: #e74c3c; }
-        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
-        .routes { background: #f9f9f9; padding: 15px; border-radius: 5px; margin-top: 20px; }
-        .route { margin: 5px 0; font-family: monospace; }
-        .route a { color: #0066cc; }
-    </style>
-</head>
-<body>
-    <h1>🚫 No Route Found</h1>
-    <p>No backend is configured for <code>%s</code></p>
-`, hostname)
-
-	if len(routes) > 0 {
-		fmt.Fprintf(w, `    <div class="routes">
-        <h3>Available Routes:</h3>
-`)
-		for _, route := range routes {
-			path := route.PathPrefix
-			if path == "" {
-				path = "/"
-			}
-			fmt.Fprintf(w, `        <div class="route">• <a href="https://%s%s">%s%s</a> → %s</div>
-`, route.Hostname, path, route.Hostname, path, route.ServiceName)
-		}
-		fmt.Fprintf(w, `    </div>
-`)
-	} else {
-		fmt.Fprintf(w, `    <p>No routes are currently registered. Start some containers on the roji network!</p>
-`)
+	data := struct {
+		Hostname      string
+		Routes        []RouteInfo
+		DashboardHost string
+	}{
+		Hostname:      hostname,
+		Routes:        routes,
+		DashboardHost: h.dashboardHost,
 	}
 
-	if h.dashboardHost != "" {
-		fmt.Fprintf(w, `    <p><a href="https://%s">View Dashboard</a></p>
-`, h.dashboardHost)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	if err := templates.ExecuteTemplate(w, "notfound.html", data); err != nil {
+		slog.Error("failed to render notfound template", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
-
-	fmt.Fprintf(w, `</body>
-</html>`)
 }
 
 // RedirectHandler redirects HTTP to HTTPS

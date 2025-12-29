@@ -63,7 +63,10 @@ roji/
 │   └── watcher.go            # Events 監視
 ├── proxy/
 │   ├── handler.go            # ReverseProxy 実装
-│   └── router.go             # ホスト名/パスルーティング
+│   ├── router.go             # ホスト名/パスルーティング
+│   └── templates/            # HTMLテンプレート
+│       ├── dashboard.html
+│       └── notfound.html
 ├── certgen/
 │   └── generator.go          # TLS証明書生成
 ├── config/
@@ -272,7 +275,7 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - [x] パッケージ名の改善（`internal/certs` → `certgen`）
   - [x] DockerAPIインターフェース導入（テスタビリティ向上）
   - [x] docker/client の複雑度削減（`buildProjectServiceCounts` ヘルパー導入）
-  - [ ] HTMLテンプレート分離（embed.FS 使用）
+  - [x] HTMLテンプレート分離（embed.FS 使用、proxy/handler.go 306行→176行に削減）
   - [ ] main.go の関数分割
 
 ### Phase 5: 配布 🔄

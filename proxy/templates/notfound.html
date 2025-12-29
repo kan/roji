@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>No Route Found - roji</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        h1 { color: #e74c3c; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+        .routes { background: #f9f9f9; padding: 15px; border-radius: 5px; margin-top: 20px; }
+        .route { margin: 5px 0; font-family: monospace; }
+        .route a { color: #0066cc; }
+    </style>
+</head>
+<body>
+    <h1>🚫 No Route Found</h1>
+    <p>No backend is configured for <code>{{.Hostname}}</code></p>
+    {{if .Routes}}
+    <div class="routes">
+        <h3>Available Routes:</h3>
+        {{range .Routes}}
+        <div class="route">• <a href="https://{{.Hostname}}{{if .PathPrefix}}{{.PathPrefix}}{{else}}/{{end}}">{{.Hostname}}{{if .PathPrefix}}{{.PathPrefix}}{{else}}/{{end}}</a> → {{.ServiceName}}</div>
+        {{end}}
+    </div>
+    {{else}}
+    <p>No routes are currently registered. Start some containers on the roji network!</p>
+    {{end}}
+    {{if .DashboardHost}}
+    <p><a href="https://{{.DashboardHost}}">View Dashboard</a></p>
+    {{end}}
+</body>
+</html>
