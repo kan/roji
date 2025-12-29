@@ -271,7 +271,7 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - [x] プロジェクト構造の整理（`cmd/roji/` 導入、`internal/` 削除）
   - [x] パッケージ名の改善（`internal/certs` → `certgen`）
   - [x] DockerAPIインターフェース導入（テスタビリティ向上）
-  - [ ] docker/client の複雑度削減（projectServiceCount 重複削除）
+  - [x] docker/client の複雑度削減（`buildProjectServiceCounts` ヘルパー導入）
   - [ ] HTMLテンプレート分離（embed.FS 使用）
   - [ ] main.go の関数分割
 

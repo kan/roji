@@ -88,6 +88,21 @@ func (c *Client) BaseDomain() string {
 	return c.baseDomain
 }
 
+// buildProjectServiceCounts counts services per project from a list of containers
+func buildProjectServiceCounts(containers []types.Container) map[string]int {
+	counts := make(map[string]int)
+	for _, ctr := range containers {
+		// Skip roji itself
+		if ctr.Labels["roji.self"] == "true" {
+			continue
+		}
+		if project := ctr.Labels["com.docker.compose.project"]; project != "" {
+			counts[project]++
+		}
+	}
+	return counts
+}
+
 // DiscoverBackends finds all containers connected to the shared network
 func (c *Client) DiscoverBackends(ctx context.Context) ([]*Backend, error) {
 	// Filter containers by network
@@ -101,19 +116,10 @@ func (c *Client) DiscoverBackends(ctx context.Context) ([]*Backend, error) {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	// First pass: count services per project
-	projectServiceCount := make(map[string]int)
-	for _, ctr := range containers {
-		// Skip roji itself
-		if ctr.Labels["roji.self"] == "true" {
-			continue
-		}
-		if project := ctr.Labels["com.docker.compose.project"]; project != "" {
-			projectServiceCount[project]++
-		}
-	}
+	// Count services per project for hostname generation
+	projectServiceCount := buildProjectServiceCounts(containers)
 
-	// Second pass: create backends with correct hostnames
+	// Create backends with correct hostnames
 	var backends []*Backend
 	for _, ctr := range containers {
 		backend, err := c.containerToBackend(ctx, ctr, projectServiceCount)
@@ -301,13 +307,8 @@ func (c *Client) GetProjectBackends(ctx context.Context, projectName string) ([]
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	// Count services in this project
-	projectServiceCount := map[string]int{projectName: 0}
-	for _, ctr := range containers {
-		if ctr.Labels["roji.self"] != "true" {
-			projectServiceCount[projectName]++
-		}
-	}
+	// Count services in this project for hostname generation
+	projectServiceCount := buildProjectServiceCounts(containers)
 
 	var backends []*Backend
 	for _, ctr := range containers {
