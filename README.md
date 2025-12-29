@@ -1,5 +1,10 @@
 # roji
 
+[![CI](https://github.com/kan/roji/actions/workflows/ci.yml/badge.svg)](https://github.com/kan/roji/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/kan/roji)](https://github.com/kan/roji/blob/main/go.mod)
+[![License](https://img.shields.io/github/license/kan/roji)](https://github.com/kan/roji/blob/main/LICENSE)
+[![Docker](https://ghcr-badge.egpl.dev/kan/roji/latest_tag?trim=major&label=docker)](https://github.com/kan/roji/pkgs/container/roji)
+
 A simple reverse proxy for local development environments. Automatically discovers Docker Compose services and provides HTTPS access via `*.localhost`.
 
 > "Use the highway (Traefik) for production, take the back alley (roji) for development"
