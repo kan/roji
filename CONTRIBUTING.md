@@ -6,7 +6,7 @@ Guide for setting up a local development environment for roji.
 
 - Docker & Docker Compose
 - Go 1.25+ (for local builds without Docker)
-- [mkcert](https://github.com/FiloSottile/mkcert) (for certificate generation)
+- [mkcert](https://github.com/FiloSottile/mkcert) (optional - for custom certificates)
 
 ## Quick Start
 
@@ -16,9 +16,16 @@ Guide for setting up a local development environment for roji.
 docker network create roji
 ```
 
-### 2. Generate TLS certificates
+### 2. TLS certificates
+
+Certificates are **automatically generated** on first startup. You can also use mkcert for custom certificates:
 
 ```bash
+# Option 1: Auto-generation (default)
+# Just start roji - certificates will be created automatically
+# Set ROJI_AUTO_CERT=true in .env (default)
+
+# Option 2: Using mkcert (optional)
 # Install mkcert (first time only)
 # macOS: brew install mkcert
 # Linux: sudo apt install mkcert
@@ -30,6 +37,9 @@ mkcert -install
 mkdir -p certs
 mkcert -cert-file certs/cert.pem -key-file certs/key.pem \
   "*.localhost" localhost 127.0.0.1
+
+# Disable auto-generation in .env
+# ROJI_AUTO_CERT=false
 ```
 
 ### 3. Configure environment (optional)
@@ -92,6 +102,28 @@ curl -k https://api.myapp.localhost
 
 # View dashboard
 open https://roji.localhost
+
+# Check status
+curl -k https://roji.localhost/_api/status | jq
+
+# Check health
+curl -k https://roji.localhost/_api/health | jq
+
+# List routes via API
+curl -k https://roji.localhost/_api/routes | jq
+```
+
+### 7. Test CLI commands
+
+```bash
+# List routes (requires roji to be running)
+docker compose exec roji-dev roji routes
+
+# Show version
+docker compose exec roji-dev roji version
+
+# Get help
+docker compose exec roji-dev roji --help
 ```
 
 ## Development Workflow
@@ -111,12 +143,32 @@ docker compose up --build
 ### Running tests
 
 ```bash
-# Run tests locally
+# Run all tests
 go test ./...
+
+# Run tests with coverage
+go test -v -race -coverprofile=coverage.out ./...
+
+# View coverage report
+go tool cover -html=coverage.out
 
 # Run tests in container
 docker compose exec roji-dev go test ./...
+
+# Run specific package tests
+go test ./proxy/...
+go test ./docker/...
 ```
+
+### Testing checklist
+
+Before submitting a PR, ensure:
+
+- [ ] All tests pass: `go test ./...`
+- [ ] Code is formatted: `go fmt ./...`
+- [ ] No linting errors: `go vet ./...`
+- [ ] New features have tests
+- [ ] Documentation is updated
 
 ### Building production image
 
