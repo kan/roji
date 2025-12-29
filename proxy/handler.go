@@ -45,6 +45,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Check if this is the dashboard
 	if h.dashboardHost != "" && hostname == h.dashboardHost {
+		// Health check endpoints
+		if r.URL.Path == "/_api/health" || r.URL.Path == "/healthz" {
+			h.serveHealth(w, r)
+			return
+		}
 		// API endpoint for route listing
 		if r.URL.Path == "/_api/routes" {
 			h.serveRoutesAPI(w, r)
@@ -142,6 +147,25 @@ func (h *Handler) serveRoutesAPI(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(routes); err != nil {
 		slog.Error("failed to encode routes as JSON", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) serveHealth(w http.ResponseWriter, r *http.Request) {
+	routes := h.router.ListRoutes()
+
+	health := struct {
+		Status string `json:"status"`
+		Routes int    `json:"routes"`
+	}{
+		Status: "healthy",
+		Routes: len(routes),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		slog.Error("failed to encode health response", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
 	}
 }
 

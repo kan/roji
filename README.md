@@ -197,6 +197,24 @@ environment:
 
 Access `https://roji.localhost` (or your custom configured host) to view a list of currently registered routes.
 
+## Health Check
+
+roji provides health check endpoints for monitoring and container orchestration:
+
+- `/_api/health` - JSON health status (consistent with API pattern)
+- `/healthz` - Kubernetes/Docker standard health check
+
+Both endpoints return the same response:
+
+```json
+{
+  "status": "healthy",
+  "routes": 3
+}
+```
+
+**Docker health check**: Automatically configured in the production image (checks every 30 seconds).
+
 ## Troubleshooting
 
 ### `.localhost` domain doesn't resolve

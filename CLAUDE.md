@@ -291,14 +291,17 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - [ ] ghcr.io への自動プッシュ（タグ時）
 - [ ] install.sh（curl | bash でインストール）
 
-### Phase 6: 便利機能
+### Phase 6: 便利機能 ✅
 
 - [x] ダッシュボード（ルート一覧表示）
 - [x] CLI ルート一覧表示（`roji routes`）
   - `/_api/routes` エンドポイント追加
   - Cobra導入によるCLI構造化
   - サブコマンド: routes, version, help, completion
-- [ ] ヘルスチェックエンドポイント
+- [x] ヘルスチェックエンドポイント
+  - `/_api/health` (API規約準拠)
+  - `/healthz` (Kubernetes/Docker標準)
+  - Dockerfile HEALTHCHECK 設定
 
 ### 将来の課題
 

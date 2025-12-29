@@ -32,12 +32,15 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION}
 # Production stage
 FROM alpine:3.19 AS production
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates curl
 
 COPY --from=builder /roji /usr/local/bin/roji
 
 VOLUME /certs
 
 EXPOSE 80 443
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f -k https://localhost/_api/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/roji"]
