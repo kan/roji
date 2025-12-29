@@ -80,10 +80,10 @@ func TestParseLabels(t *testing.T) {
 		{
 			name: "mixed with other labels",
 			labels: map[string]string{
-				"roji.host":                    "api.localhost",
-				"com.docker.compose.service":   "api",
-				"com.docker.compose.project":   "myproject",
-				"some.other.label":             "value",
+				"roji.host":                  "api.localhost",
+				"com.docker.compose.service": "api",
+				"com.docker.compose.project": "myproject",
+				"some.other.label":           "value",
 			},
 			expected: RouteConfig{
 				Host: "api.localhost",

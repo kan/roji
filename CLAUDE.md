@@ -55,18 +55,20 @@
 
 ```
 roji/
-├── main.go                   # エントリーポイント
-├── internal/
-│   ├── docker/
-│   │   ├── client.go         # Docker API ラッパー
-│   │   └── watcher.go        # Events 監視
-│   ├── proxy/
-│   │   ├── handler.go        # ReverseProxy 実装
-│   │   └── router.go         # ホスト名/パスルーティング
-│   ├── certs/
-│   │   └── generator.go      # 証明書生成（未実装）
-│   └── config/
-│       └── labels.go         # ラベルパーサー
+├── cmd/
+│   └── roji/
+│       └── main.go           # エントリーポイント
+├── docker/
+│   ├── client.go             # Docker API ラッパー
+│   └── watcher.go            # Events 監視
+├── proxy/
+│   ├── handler.go            # ReverseProxy 実装
+│   └── router.go             # ホスト名/パスルーティング
+├── certgen/
+│   └── generator.go          # TLS証明書生成
+├── config/
+│   └── labels.go             # ラベルパーサー
+├── certs/                    # 生成された証明書（gitignore）
 ├── examples/
 │   └── docker-compose.yml    # ユーザー向けサンプル
 ├── Dockerfile                # マルチステージ（development + production）
@@ -258,11 +260,17 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
 
 - [x] ユニットテスト実装
   - [x] config/labels: 100% カバレッジ
-  - [x] certs/generator: 60% カバレッジ
+  - [x] certgen/generator: 60% カバレッジ
   - [x] proxy/router: テスト済み
   - [x] proxy/handler: テスト済み
   - [ ] docker/client: 要モック実装
 - [ ] インテグレーションテスト
+- [x] リファクタリング
+  - [x] プロジェクト構造の整理（`cmd/roji/` 導入、`internal/` 削除）
+  - [x] パッケージ名の改善（`internal/certs` → `certgen`）
+  - [ ] docker/client の複雑度削減（projectServiceCount 重複削除）
+  - [ ] HTMLテンプレート分離（embed.FS 使用）
+  - [ ] main.go の関数分割
 
 ### Phase 5: 配布 🔄
 

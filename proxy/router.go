@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kan/roji/internal/docker"
+	"github.com/kan/roji/docker"
 )
 
 // Route represents a single route configuration

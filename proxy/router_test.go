@@ -3,7 +3,7 @@ package proxy
 import (
 	"testing"
 
-	"github.com/kan/roji/internal/docker"
+	"github.com/kan/roji/docker"
 )
 
 func TestRouter_AddAndLookup(t *testing.T) {

@@ -151,17 +151,20 @@ Configure via `.env` file (gitignored) or directly in shell:
 
 ```
 roji/
-├── main.go                 # Entry point
-├── internal/
-│   ├── docker/
-│   │   ├── client.go       # Docker API wrapper
-│   │   └── watcher.go      # Events watcher
-│   ├── proxy/
-│   │   ├── handler.go      # ReverseProxy implementation
-│   │   └── router.go       # Routing
-│   └── config/
-│       └── labels.go       # Label parser
-├── certs/                  # Certificates (gitignored)
+├── cmd/
+│   └── roji/
+│       └── main.go         # Entry point
+├── docker/
+│   ├── client.go           # Docker API wrapper
+│   └── watcher.go          # Events watcher
+├── proxy/
+│   ├── handler.go          # ReverseProxy implementation
+│   └── router.go           # Routing
+├── certgen/
+│   └── generator.go        # TLS certificate generator
+├── config/
+│   └── labels.go           # Label parser
+├── certs/                  # Generated certificates (gitignored)
 ├── examples/
 │   └── docker-compose.yml  # Example for users
 ├── test/                   # Test services (gitignored)

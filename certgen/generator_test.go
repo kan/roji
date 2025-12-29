@@ -1,4 +1,4 @@
-package certs
+package certgen
 
 import (
 	"crypto/x509"

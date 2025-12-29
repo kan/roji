@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kan/roji/internal/docker"
+	"github.com/kan/roji/docker"
 )
 
 func TestHandler_ServeHTTP_NotFound(t *testing.T) {

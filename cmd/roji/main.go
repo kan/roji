@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kan/roji/internal/certs"
-	"github.com/kan/roji/internal/docker"
-	"github.com/kan/roji/internal/proxy"
+	"github.com/kan/roji/certgen"
+	"github.com/kan/roji/docker"
+	"github.com/kan/roji/proxy"
 )
 
 var version = "dev"
@@ -121,7 +121,7 @@ func run(ctx context.Context, cfg Config) error {
 
 	// Auto-generate certificates if enabled
 	if cfg.AutoCert {
-		certGen := certs.NewGenerator(cfg.CertsDir, cfg.BaseDomain)
+		certGen := certgen.NewGenerator(cfg.CertsDir, cfg.BaseDomain)
 		if err := certGen.EnsureCerts(); err != nil {
 			return fmt.Errorf("failed to ensure certificates: %w", err)
 		}

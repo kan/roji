@@ -13,7 +13,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 
-	"github.com/kan/roji/internal/config"
+	"github.com/kan/roji/config"
 )
 
 // Backend represents a proxied service
