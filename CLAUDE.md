@@ -302,6 +302,12 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - `/_api/health` (API規約準拠)
   - `/healthz` (Kubernetes/Docker標準)
   - Dockerfile HEALTHCHECK 設定
+- [x] ステータスエンドポイント（`/_api/status`）
+  - 証明書有効期限チェック（CA・サーバー証明書）
+  - Docker接続状態
+  - プロキシ設定情報（ルート数、ドメイン、ポート）
+  - アップタイム
+  - 総合ヘルスステータス（healthy/degraded/unhealthy）
 
 ### 将来の課題
 

@@ -215,6 +215,54 @@ Both endpoints return the same response:
 
 **Docker health check**: Automatically configured in the production image (checks every 30 seconds).
 
+## Status API
+
+roji provides a comprehensive status endpoint at `/_api/status` that shows the current state of the proxy:
+
+```json
+{
+  "version": "0.1.0",
+  "uptime_seconds": 3600,
+  "certificates": {
+    "auto_generated": true,
+    "directory": "/certs",
+    "ca": {
+      "exists": true,
+      "valid_until": "2035-01-15T12:00:00Z",
+      "days_remaining": 3650,
+      "subject": "CN=roji CA,O=roji Dev CA"
+    },
+    "server": {
+      "exists": true,
+      "valid_until": "2026-01-15T12:00:00Z",
+      "days_remaining": 365,
+      "subject": "CN=*.localhost",
+      "dns_names": ["*.localhost", "localhost"]
+    }
+  },
+  "docker": {
+    "connected": true,
+    "network": "roji"
+  },
+  "proxy": {
+    "routes_count": 3,
+    "dashboard_host": "roji.localhost",
+    "base_domain": "localhost",
+    "http_port": 80,
+    "https_port": 443
+  },
+  "health": "healthy"
+}
+```
+
+### Health Status
+
+The `health` field indicates the overall system health:
+
+- `healthy` - All systems operational
+- `degraded` - Certificates expiring within 30 days or missing
+- `unhealthy` - Docker connection lost
+
 ## Troubleshooting
 
 ### `.localhost` domain doesn't resolve
