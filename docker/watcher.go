@@ -81,7 +81,7 @@ func (w *Watcher) processEvent(msg events.Message) *ContainerEvent {
 	switch msg.Action {
 	case "start":
 		slog.Debug("container started",
-			"container", msg.ID[:12],
+			"container", shortID(msg.ID),
 			"name", msg.Actor.Attributes["name"])
 		return &ContainerEvent{
 			Type:        EventStart,
@@ -90,7 +90,7 @@ func (w *Watcher) processEvent(msg events.Message) *ContainerEvent {
 
 	case "stop", "die":
 		slog.Debug("container stopped",
-			"container", msg.ID[:12],
+			"container", shortID(msg.ID),
 			"name", msg.Actor.Attributes["name"])
 		return &ContainerEvent{
 			Type:        EventStop,

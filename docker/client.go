@@ -9,12 +9,30 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 
 	"github.com/kan/roji/config"
 )
+
+// shortID returns a shortened container ID for logging (first 12 chars or full ID if shorter)
+func shortID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
+}
+
+// DockerAPI defines the interface for Docker API operations
+// This interface allows for mocking in tests
+type DockerAPI interface {
+	ContainerList(ctx context.Context, options container.ListOptions) ([]types.Container, error)
+	ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error)
+	Events(ctx context.Context, options events.ListOptions) (<-chan events.Message, <-chan error)
+	Close() error
+}
 
 // Backend represents a proxied service
 type Backend struct {
@@ -30,7 +48,7 @@ type Backend struct {
 
 // Client wraps the Docker client for container discovery
 type Client struct {
-	docker      *client.Client
+	docker      DockerAPI
 	networkName string // The shared network to watch (e.g., "roji")
 	baseDomain  string // Base domain for auto-generated hostnames (e.g., "kan.localhost")
 }
@@ -42,11 +60,17 @@ func NewClient(networkName, baseDomain string) (*Client, error) {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
 	}
 
+	return NewClientWithAPI(cli, networkName, baseDomain), nil
+}
+
+// NewClientWithAPI creates a new client with a custom DockerAPI implementation
+// This is useful for testing with mock implementations
+func NewClientWithAPI(api DockerAPI, networkName, baseDomain string) *Client {
 	return &Client{
-		docker:      cli,
+		docker:      api,
 		networkName: networkName,
 		baseDomain:  baseDomain,
-	}, nil
+	}
 }
 
 // Close closes the Docker client
@@ -95,7 +119,7 @@ func (c *Client) DiscoverBackends(ctx context.Context) ([]*Backend, error) {
 		backend, err := c.containerToBackend(ctx, ctr, projectServiceCount)
 		if err != nil {
 			slog.Warn("failed to process container",
-				"container", ctr.ID[:12],
+				"container", shortID(ctr.ID),
 				"error", err)
 			continue
 		}
@@ -189,7 +213,7 @@ func (c *Client) inspectToBackend(info types.ContainerJSON, net *network.Endpoin
 	}
 	if port == 0 {
 		slog.Debug("no port found for container",
-			"container", info.ID[:12],
+			"container", shortID(info.ID),
 			"name", info.Name)
 		return nil, nil
 	}
@@ -290,7 +314,7 @@ func (c *Client) GetProjectBackends(ctx context.Context, projectName string) ([]
 		backend, err := c.containerToBackend(ctx, ctr, projectServiceCount)
 		if err != nil {
 			slog.Warn("failed to process container",
-				"container", ctr.ID[:12],
+				"container", shortID(ctr.ID),
 				"error", err)
 			continue
 		}
@@ -302,7 +326,7 @@ func (c *Client) GetProjectBackends(ctx context.Context, projectName string) ([]
 	return backends, nil
 }
 
-// DockerClient returns the underlying Docker client (for event watching)
-func (c *Client) DockerClient() *client.Client {
+// DockerClient returns the underlying Docker API client (for event watching)
+func (c *Client) DockerClient() DockerAPI {
 	return c.docker
 }

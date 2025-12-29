@@ -263,11 +263,14 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - [x] certgen/generator: 60% カバレッジ
   - [x] proxy/router: テスト済み
   - [x] proxy/handler: テスト済み
-  - [ ] docker/client: 要モック実装
+  - [x] docker/client: 69.7% カバレッジ（DockerAPIインターフェース導入）
+  - [x] docker/watcher: テスト追加
+  - **プロジェクト全体: 48.2% カバレッジ** (30.3% → 48.2%)
 - [ ] インテグレーションテスト
 - [x] リファクタリング
   - [x] プロジェクト構造の整理（`cmd/roji/` 導入、`internal/` 削除）
   - [x] パッケージ名の改善（`internal/certs` → `certgen`）
+  - [x] DockerAPIインターフェース導入（テスタビリティ向上）
   - [ ] docker/client の複雑度削減（projectServiceCount 重複削除）
   - [ ] HTMLテンプレート分離（embed.FS 使用）
   - [ ] main.go の関数分割
