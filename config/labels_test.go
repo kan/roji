@@ -108,6 +108,36 @@ func TestParseLabels(t *testing.T) {
 	}
 }
 
+func TestParseLabels_PathTraversal(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{"normal path", "/api", "/api"},
+		{"path with trailing slash", "/api/", "/api"},
+		{"path traversal attempt", "/../etc/passwd", ""},
+		{"path traversal in middle", "/api/../secret", ""},
+		{"double dots only", "..", ""},
+		{"complex traversal", "/api/v1/../../admin", ""},
+		{"clean path", "/api/v1/users", "/api/v1/users"},
+		{"root path", "/", "/"},
+		{"empty path", "", "/"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			labels := map[string]string{
+				"roji.path": tt.path,
+			}
+			cfg := ParseLabels(labels)
+			if cfg.PathPrefix != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, cfg.PathPrefix)
+			}
+		})
+	}
+}
+
 func TestDefaultHostname(t *testing.T) {
 	tests := []struct {
 		serviceName string

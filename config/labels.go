@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -37,7 +38,14 @@ func ParseLabels(labels map[string]string) *RouteConfig {
 	}
 
 	if path, ok := labels[LabelPath]; ok {
-		cfg.PathPrefix = strings.TrimSpace(path)
+		trimmed := strings.TrimSpace(path)
+		// Path traversal prevention: reject if ".." is present in original input
+		if strings.Contains(trimmed, "..") {
+			// Dangerous path, leave PathPrefix empty (default behavior)
+		} else {
+			// Normalize the path
+			cfg.PathPrefix = filepath.Clean("/" + trimmed)
+		}
 	}
 
 	return cfg
