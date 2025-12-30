@@ -121,8 +121,10 @@ func run(ctx context.Context, cfg Config) error {
 
 func startHTTPServer(cfg Config) *http.Server {
 	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler: &proxy.RedirectHandler{HTTPSPort: cfg.HTTPSPort},
+		Addr:        fmt.Sprintf(":%d", cfg.HTTPPort),
+		Handler:     &proxy.RedirectHandler{HTTPSPort: cfg.HTTPSPort},
+		ReadTimeout: 10 * time.Second, // Short timeout for redirect server
+		IdleTimeout: 60 * time.Second,
 	}
 
 	go func() {
@@ -142,9 +144,12 @@ func startHTTPSServer(cfg Config, handler http.Handler) (*http.Server, error) {
 	}
 
 	httpsServer := &http.Server{
-		Addr:      fmt.Sprintf(":%d", cfg.HTTPSPort),
-		Handler:   handler,
-		TLSConfig: tlsConfig,
+		Addr:         fmt.Sprintf(":%d", cfg.HTTPSPort),
+		Handler:      handler,
+		TLSConfig:    tlsConfig,
+		ReadTimeout:  0,                  // No limit (support large uploads)
+		WriteTimeout: 0,                  // No limit (support SSE/Long Polling)
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {
