@@ -13,6 +13,13 @@ import (
 	"time"
 )
 
+// sharedTransport is used for connection pooling across all proxied requests
+var sharedTransport = &http.Transport{
+	MaxIdleConns:        100,
+	MaxIdleConnsPerHost: 10,
+	IdleConnTimeout:     90 * time.Second,
+}
+
 //go:embed templates/*.html
 var templateFS embed.FS
 
@@ -92,6 +99,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+	// Use shared transport for connection pooling
+	proxy.Transport = sharedTransport
 
 	// SSE support: flush responses immediately (disable buffering)
 	proxy.FlushInterval = -1
