@@ -93,6 +93,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
+	// SSE support: flush responses immediately (disable buffering)
+	proxy.FlushInterval = -1
+
 	// Customize the director to handle path prefixes
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
