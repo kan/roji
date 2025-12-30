@@ -334,17 +334,20 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - [x] Docker API タイムアウト追加
   - [x] `roji health` コマンド追加（Distroless 対応）
 
+### Phase 8: リリース自動化 ✅
+
+- [x] GoReleaser 導入
+  - [x] GitHub Release の自動管理
+  - [x] `roji version` コマンドで正しいバージョンを返す（ldflags対応）
+  - [x] マルチプラットフォームビルド（Linux/macOS/Windows、amd64/arm64）
+  - [x] マルチアーキテクチャDockerイメージ
+  - [x] ビルドメタデータ（version, commit, date, built by）の埋め込み
+
 ### 将来の課題
 
-#### v0.3.0 マイルストーン
-- [ ] GoReleaser 導入
-  - GitHub Release の自動管理
-  - `roji version` コマンドで正しいバージョンを返すようにする
-  - 参考: https://zenn.dev/momosuke/articles/how-to-add-version-command-for-go-cli
-  - 現状: Dockerfile の `ARG VERSION=dev` でビルド時に指定しているが、GitHub Release と連動していない
-
-#### その他
 - [ ] インテグレーションテスト（Docker統合、E2Eテスト）
+- [ ] Kubernetes対応（Helm chart）
+- [ ] メトリクス/プロメテウス対応
 
 ## 出力ファイル仕様
 

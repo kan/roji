@@ -104,13 +104,68 @@ Security and performance improvements release.
 - Docker healthcheck now uses `/roji health` instead of `curl`
 - install.sh updated with healthcheck configuration
 
+## [0.3.0] - 2024-12-30
+
+Major release with GoReleaser integration, improved domain structure, and bug fixes.
+
+### Added
+
+#### Release Automation
+- **GoReleaser integration** for automated multi-platform releases
+  - Binary builds for Linux, macOS, Windows (amd64/arm64)
+  - Multi-arch Docker images with manifest lists
+  - Automated changelog generation from git history
+  - GitHub Release creation with artifacts
+- **Enhanced version command** with detailed build metadata:
+  - Version number from git tag
+  - Git commit hash
+  - Build timestamp
+  - Builder identification (goreleaser/github-actions/docker/manual)
+  - Go version and platform information
+
+#### Installation Improvements
+- Simplified installation script with better error handling
+- Direct certificate mounting (removed Docker volume complexity)
+- Root user execution in container for proper permissions
+- Automatic certificate export from container to host
+
+### Changed
+
+#### BREAKING: Domain Structure
+- **Default domain changed from `localhost` to `dev.localhost`**
+  - Dashboard: `dev.localhost` (was `roji.localhost`)
+  - Services: `*.dev.localhost` (was `*.localhost`)
+  - Provides better browser certificate validation
+  - Migration: Update ROJI_DOMAIN environment variable and reinstall CA certificate
+
+#### Certificate Improvements
+- Fixed duplicate DNS names in certificate SAN entries
+- Improved wildcard certificate support for nested subdomains
+- Better compatibility with browser certificate validation
+
+### Fixed
+
+- **Certificate validation errors** (ERR_CERT_COMMON_NAME_INVALID) in browsers
+- **Version ldflags** not being applied due to hardcoded override in main.go
+- **Docker socket permission issues** by running container as root
+- **Installation script** certificate handling and error recovery
+
+### Technical Improvements
+
+- Added build metadata to all build methods (Docker, GoReleaser, manual)
+- Improved CI/CD pipeline with version injection
+- Better test coverage for certificate generation
+- Cleaner code structure with removed version override
+
 ## [Unreleased]
 
 ### Planned
 - Integration tests
+- Additional cloud provider support
 
 ---
 
 [0.1.0]: https://github.com/kan/roji/releases/tag/v0.1.0
 [0.2.0]: https://github.com/kan/roji/releases/tag/v0.2.0
-[Unreleased]: https://github.com/kan/roji/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/kan/roji/releases/tag/v0.3.0
+[Unreleased]: https://github.com/kan/roji/compare/v0.3.0...HEAD
