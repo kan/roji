@@ -82,10 +82,9 @@ changelog:
       order: 999
 
 dockers:
-  - id: roji
+  - id: roji-amd64
     image_templates:
-      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}"
-      - "ghcr.io/kan/{{ .ProjectName }}:latest"
+      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-amd64"
     dockerfile: Dockerfile.goreleaser
     use: buildx
     goos: linux
@@ -118,11 +117,11 @@ dockers:
 docker_manifests:
   - name_template: "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}"
     image_templates:
-      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}"
+      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-amd64"
       - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-arm64"
   - name_template: "ghcr.io/kan/{{ .ProjectName }}:latest"
     image_templates:
-      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}"
+      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-amd64"
       - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-arm64"
 
 release:
