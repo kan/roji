@@ -15,8 +15,8 @@ NC='\033[0m' # No Color
 # Configuration
 INSTALL_DIR="${ROJI_INSTALL_DIR:-$HOME/.roji}"
 NETWORK_NAME="roji"
-DOMAIN="roji.localhost"
-DASHBOARD_HOST="roji.localhost"
+DOMAIN="dev.localhost"
+DASHBOARD_HOST="dev.localhost"
 
 # Print colored message
 print_info() {
@@ -132,10 +132,10 @@ services:
       - ./certs:/certs
     environment:
       - ROJI_NETWORK=roji
-      - ROJI_DOMAIN=roji.localhost
+      - ROJI_DOMAIN=dev.localhost
       - ROJI_CERTS_DIR=/certs
       - ROJI_AUTO_CERT=true
-      - ROJI_DASHBOARD=roji.localhost
+      - ROJI_DASHBOARD=dev.localhost
       - ROJI_LOG_LEVEL=info
     networks:
       - roji
@@ -168,10 +168,10 @@ create_env_file() {
     cat > .env <<'EOF'
 # roji Configuration
 ROJI_NETWORK=roji
-ROJI_DOMAIN=roji.localhost
+ROJI_DOMAIN=dev.localhost
 ROJI_CERTS_DIR=/certs
 ROJI_AUTO_CERT=true
-ROJI_DASHBOARD=roji.localhost
+ROJI_DASHBOARD=dev.localhost
 ROJI_LOG_LEVEL=info
 EOF
 
@@ -316,7 +316,7 @@ show_ca_instructions() {
     echo "       roji:"
     echo "         external: true"
     echo ""
-    echo "  2. Access your app at https://myapp.roji.localhost"
+    echo "  2. Access your app at https://myapp.dev.localhost"
     echo ""
 
     echo -e "${CYAN}Useful commands:${NC}"

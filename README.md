@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/github/license/kan/roji)](https://github.com/kan/roji/blob/main/LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fkan%2Froji-blue?logo=docker)](https://github.com/kan/roji/pkgs/container/roji)
 
-A simple reverse proxy for local development environments. Automatically discovers Docker Compose services and provides HTTPS access via `*.localhost`.
+A simple reverse proxy for local development environments. Automatically discovers Docker Compose services and provides HTTPS access via `*.dev.localhost`.
 
 > "Use the highway (Traefik) for production, take the back alley (roji) for development"
 
@@ -81,7 +81,7 @@ networks:
     external: true
 ```
 
-Your app is now accessible at `https://myapp.localhost`!
+Your app is now accessible at `https://myapp.dev.localhost`!
 
 ## TLS Certificates
 
@@ -150,7 +150,7 @@ If you prefer [mkcert](https://github.com/FiloSottile/mkcert), generate certific
 mkcert -install
 mkdir -p certs
 mkcert -cert-file certs/cert.pem -key-file certs/key.pem \
-  "*.localhost" "*.yourproject.localhost" localhost 127.0.0.1
+  "*.dev.localhost" "*.yourproject.localhost" localhost 127.0.0.1
 ```
 
 roji will use existing certificates and skip auto-generation.
@@ -167,7 +167,7 @@ roji will use existing certificates and skip auto-generation.
 
 | Label | Description | Default |
 |-------|-------------|---------|
-| `roji.host` | Custom hostname | `{service}.localhost` |
+| `roji.host` | Custom hostname | `{service}.dev.localhost` |
 | `roji.port` | Target port | First EXPOSE'd port |
 | `roji.path` | Path prefix | none |
 
@@ -179,7 +179,7 @@ services:
   api:
     image: my-api
     labels:
-      - "roji.host=api.myproject.localhost"
+      - "roji.host=api.dev.localhost"
     networks:
       - roji
 
@@ -195,11 +195,11 @@ services:
       - roji
 
   # Path-based routing
-  # https://myapp.localhost/api/* -> this service
+  # https://myapp.dev.localhost/api/* -> this service
   api-service:
     image: my-api
     labels:
-      - "roji.host=myapp.localhost"
+      - "roji.host=myapp.dev.localhost"
       - "roji.path=/api"
     networks:
       - roji
@@ -210,9 +210,9 @@ services:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ROJI_NETWORK` | Docker network to watch | `roji` |
-| `ROJI_DOMAIN` | Base domain | `localhost` |
+| `ROJI_DOMAIN` | Base domain | `dev.localhost` |
 | `ROJI_CERTS_DIR` | Certificate directory | `/certs` |
-| `ROJI_DASHBOARD` | Dashboard hostname | `roji.{domain}` |
+| `ROJI_DASHBOARD` | Dashboard hostname | `{domain}` |
 | `ROJI_LOG_LEVEL` | Log level | `info` |
 | `ROJI_AUTO_CERT` | Auto-generate certificates | `true` |
 
@@ -221,12 +221,12 @@ services:
 ```yaml
 environment:
   - ROJI_DOMAIN=dev.localhost  # Use *.dev.localhost
-  - ROJI_DASHBOARD=roji.dev.localhost
+  - ROJI_DASHBOARD=dev.localhost
 ```
 
 ## Dashboard
 
-Access `https://roji.localhost` (or your custom configured host) to view a list of currently registered routes.
+Access `https://dev.localhost` (or your custom configured host) to view a list of currently registered routes.
 
 ## Health Check
 
@@ -267,8 +267,8 @@ roji provides a comprehensive status endpoint at `/_api/status` that shows the c
       "exists": true,
       "valid_until": "2026-01-15T12:00:00Z",
       "days_remaining": 365,
-      "subject": "CN=*.localhost",
-      "dns_names": ["*.localhost", "localhost"]
+      "subject": "CN=*.dev.localhost",
+      "dns_names": ["*.dev.localhost", "dev.localhost", "localhost"]
     }
   },
   "docker": {
@@ -277,7 +277,7 @@ roji provides a comprehensive status endpoint at `/_api/status` that shows the c
   },
   "proxy": {
     "routes_count": 3,
-    "dashboard_host": "roji.localhost",
+    "dashboard_host": "dev.localhost",
     "base_domain": "localhost",
     "http_port": 80,
     "https_port": 443
@@ -303,7 +303,7 @@ The `health` field indicates the overall system health:
 **Linux**: Add to `/etc/hosts` or configure dnsmasq:
 
 ```bash
-echo "127.0.0.1 myapp.localhost" | sudo tee -a /etc/hosts
+echo "127.0.0.1 myapp.dev.localhost dev.localhost" | sudo tee -a /etc/hosts
 ```
 
 Or use `*.lvh.me` (a public domain that always resolves to 127.0.0.1)

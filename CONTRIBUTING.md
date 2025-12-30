@@ -36,7 +36,7 @@ mkcert -install
 # Generate certificates
 mkdir -p certs
 mkcert -cert-file certs/cert.pem -key-file certs/key.pem \
-  "*.localhost" localhost 127.0.0.1
+  "*.dev.localhost" dev.localhost localhost 127.0.0.1
 
 # Disable auto-generation in .env
 # ROJI_AUTO_CERT=false
@@ -78,7 +78,7 @@ services:
   api:
     image: nginx:alpine
     labels:
-      - "roji.host=api.myapp.localhost"
+      - "roji.host=api.dev.localhost"
     networks:
       - roji
 
@@ -97,20 +97,20 @@ cd test && docker compose up -d
 docker compose logs roji-dev
 
 # Access via browser or curl
-curl -k https://web.localhost
-curl -k https://api.myapp.localhost
+curl -k https://web.dev.localhost
+curl -k https://api.dev.localhost
 
 # View dashboard
-open https://roji.localhost
+open https://dev.localhost
 
 # Check status
-curl -k https://roji.localhost/_api/status | jq
+curl -k https://dev.localhost/_api/status | jq
 
 # Check health
-curl -k https://roji.localhost/_api/health | jq
+curl -k https://dev.localhost/_api/health | jq
 
 # List routes via API
-curl -k https://roji.localhost/_api/routes | jq
+curl -k https://dev.localhost/_api/routes | jq
 ```
 
 ### 7. Test CLI commands
@@ -192,11 +192,11 @@ Configure via `.env` file (gitignored) or directly in shell:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ROJI_NETWORK` | Docker network to watch | `roji` |
-| `ROJI_DOMAIN` | Base domain | `localhost` |
+| `ROJI_DOMAIN` | Base domain | `dev.localhost` |
 | `ROJI_HTTP_PORT` | HTTP port | `80` |
 | `ROJI_HTTPS_PORT` | HTTPS port | `443` |
 | `ROJI_CERTS_DIR` | Certificate directory | `/certs` |
-| `ROJI_DASHBOARD` | Dashboard hostname | `roji.localhost` |
+| `ROJI_DASHBOARD` | Dashboard hostname | `dev.localhost` |
 | `ROJI_LOG_LEVEL` | Log level (debug/info/warn/error) | `debug` |
 
 ## Project Structure
@@ -248,7 +248,7 @@ roji/
 
 ```bash
 # Linux: add to /etc/hosts
-echo "127.0.0.1 web.localhost api.localhost roji.localhost" | sudo tee -a /etc/hosts
+echo "127.0.0.1 web.dev.localhost api.dev.localhost dev.localhost" | sudo tee -a /etc/hosts
 ```
 
 ### Ports 80/443 already in use
@@ -282,7 +282,7 @@ mkcert -install
 
 # Regenerate certificates
 mkcert -cert-file certs/cert.pem -key-file certs/key.pem \
-  "*.localhost" localhost 127.0.0.1
+  "*.dev.localhost" dev.localhost localhost 127.0.0.1
 
 # Restart browser
 ```

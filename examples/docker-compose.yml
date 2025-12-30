@@ -9,7 +9,7 @@
 #   2. Generate certificates with mkcert:
 #      mkcert -install
 #      mkdir -p certs
-#      mkcert -cert-file certs/cert.pem -key-file certs/key.pem "*.localhost" localhost 127.0.0.1
+#      mkcert -cert-file certs/cert.pem -key-file certs/key.pem "*.dev.localhost" dev.localhost localhost 127.0.0.1
 #
 #   3. Start roji:
 #      docker compose up -d
@@ -35,9 +35,9 @@ services:
       - ./certs:/certs
     environment:
       - ROJI_NETWORK=roji
-      - ROJI_DOMAIN=localhost          # Change to kan.localhost if desired
+      - ROJI_DOMAIN=dev.localhost      # Base domain for services (*.dev.localhost)
       - ROJI_CERTS_DIR=/certs
-      - ROJI_DASHBOARD=roji.localhost  # Dashboard URL
+      - ROJI_DASHBOARD=dev.localhost   # Dashboard URL (defaults to base domain)
       - ROJI_LOG_LEVEL=info
     labels:
       # Mark this as roji itself (to avoid self-routing)

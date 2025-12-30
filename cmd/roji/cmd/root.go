@@ -44,7 +44,7 @@ func init() {
 	// Server flags
 	rootCmd.Flags().StringVarP(&networkName, "network", "n", getEnv("ROJI_NETWORK", "roji"),
 		"Docker network name to watch")
-	rootCmd.Flags().StringVarP(&baseDomain, "domain", "d", getEnv("ROJI_DOMAIN", "roji.localhost"),
+	rootCmd.Flags().StringVarP(&baseDomain, "domain", "d", getEnv("ROJI_DOMAIN", "dev.localhost"),
 		"Base domain for auto-generated hostnames")
 	rootCmd.Flags().IntVar(&httpPort, "http-port", 80,
 		"HTTP port (for redirect)")
@@ -55,7 +55,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&autoCert, "auto-cert", true,
 		"Auto-generate certificates if not present")
 	rootCmd.Flags().StringVar(&dashboardHost, "dashboard", getEnv("ROJI_DASHBOARD", ""),
-		"Dashboard hostname (e.g., roji.localhost)")
+		"Dashboard hostname (e.g., dev.localhost)")
 	rootCmd.Flags().StringVar(&logLevel, "log-level", getEnv("ROJI_LOG_LEVEL", "info"),
 		"Log level (debug, info, warn, error)")
 }
