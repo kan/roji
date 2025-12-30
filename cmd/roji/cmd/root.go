@@ -44,7 +44,7 @@ func init() {
 	// Server flags
 	rootCmd.Flags().StringVarP(&networkName, "network", "n", getEnv("ROJI_NETWORK", "roji"),
 		"Docker network name to watch")
-	rootCmd.Flags().StringVarP(&baseDomain, "domain", "d", getEnv("ROJI_DOMAIN", "localhost"),
+	rootCmd.Flags().StringVarP(&baseDomain, "domain", "d", getEnv("ROJI_DOMAIN", "roji.localhost"),
 		"Base domain for auto-generated hostnames")
 	rootCmd.Flags().IntVar(&httpPort, "http-port", 80,
 		"HTTP port (for redirect)")
@@ -73,7 +73,8 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// Default dashboard hostname
 	if dashboardHost == "" {
-		dashboardHost = "roji." + baseDomain
+		// Use the base domain itself as dashboard
+		dashboardHost = baseDomain
 	}
 
 	cfg := Config{

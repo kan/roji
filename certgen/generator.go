@@ -171,14 +171,17 @@ func (g *Generator) generateServerCert(caCert *x509.Certificate, caKey *ecdsa.Pr
 
 	// Build DNS names for the certificate
 	dnsNames := []string{
-		"*." + g.baseDomain, // *.localhost or *.kan.localhost
-		g.baseDomain,        // localhost or kan.localhost
-		"localhost",         // Always include localhost
+		"*." + g.baseDomain, // *.roji.localhost for services
+		g.baseDomain,        // roji.localhost for dashboard
 	}
-
-	// Add wildcard for nested subdomains if baseDomain is not just "localhost"
+	
+	// Add localhost for compatibility
+	dnsNames = append(dnsNames, "localhost")
+	
+	// Add nested wildcard for complex setups if needed
+	// (e.g., *.*.roji.localhost for multi-level subdomains)
 	if g.baseDomain != "localhost" {
-		dnsNames = append(dnsNames, "*.*."+g.baseDomain) // *.*.kan.localhost
+		dnsNames = append(dnsNames, "*.*."+g.baseDomain)
 	}
 
 	template := &x509.Certificate{
