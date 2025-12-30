@@ -35,8 +35,15 @@ COPY . .
 
 # Build
 ARG VERSION=dev
+ARG COMMIT=unknown
+ARG DATE=unknown
+ARG BUILT_BY=docker
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X github.com/kan/roji/cmd/roji/cmd.Version=${VERSION}" \
+    -ldflags="-s -w \
+        -X github.com/kan/roji/cmd/roji/cmd.Version=${VERSION} \
+        -X github.com/kan/roji/cmd/roji/cmd.Commit=${COMMIT} \
+        -X github.com/kan/roji/cmd/roji/cmd.Date=${DATE} \
+        -X github.com/kan/roji/cmd/roji/cmd.BuiltBy=${BUILT_BY}" \
     -trimpath \
     -o /roji \
     ./cmd/roji

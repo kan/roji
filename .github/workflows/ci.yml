@@ -51,6 +51,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set build metadata
+        id: build_meta
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
+          echo "COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "BUILT_BY=github-actions" >> $GITHUB_OUTPUT
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -69,6 +81,11 @@ jobs:
           target: production
           load: true
           tags: roji:release-scan
+          build-args: |
+            VERSION=${{ steps.build_meta.outputs.VERSION }}
+            COMMIT=${{ steps.build_meta.outputs.COMMIT }}
+            DATE=${{ steps.build_meta.outputs.DATE }}
+            BUILT_BY=${{ steps.build_meta.outputs.BUILT_BY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -90,5 +107,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.build_meta.outputs.VERSION }}
+            COMMIT=${{ steps.build_meta.outputs.COMMIT }}
+            DATE=${{ steps.build_meta.outputs.DATE }}
+            BUILT_BY=${{ steps.build_meta.outputs.BUILT_BY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -11,9 +11,6 @@ import (
 )
 
 var (
-	// Version is set by build flags
-	Version = "dev"
-
 	// Config flags
 	networkName   string
 	baseDomain    string

@@ -1,0 +1,150 @@
+# GoReleaser configuration
+# Documentation: https://goreleaser.com/customization/
+
+project_name: roji
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod verify
+
+builds:
+  - id: roji
+    main: ./cmd/roji
+    binary: roji
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/kan/roji/cmd/roji/cmd.Version={{.Version}}
+      - -X github.com/kan/roji/cmd/roji/cmd.Commit={{.Commit}}
+      - -X github.com/kan/roji/cmd/roji/cmd.Date={{.Date}}
+      - -X github.com/kan/roji/cmd/roji/cmd.BuiltBy=goreleaser
+
+archives:
+  - id: roji
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+      - examples/docker-compose.yml
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: 'Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Refactoring'
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: 'Security'
+      regexp: '^.*?security(\([[:word:]]+\))??!?:.+$'
+      order: 4
+    - title: 'Other'
+      order: 999
+
+dockers:
+  - id: roji
+    image_templates:
+      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}"
+      - "ghcr.io/kan/{{ .ProjectName }}:latest"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source=https://github.com/kan/roji"
+      - "--label=org.opencontainers.image.licenses=MIT"
+  
+  - id: roji-arm64
+    image_templates:
+      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source=https://github.com/kan/roji"
+      - "--label=org.opencontainers.image.licenses=MIT"
+
+docker_manifests:
+  - name_template: "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}"
+      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/kan/{{ .ProjectName }}:latest"
+    image_templates:
+      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}"
+      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-arm64"
+
+release:
+  github:
+    owner: kan
+    name: roji
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+  footer: |
+    ## Docker Image
+    
+    ```bash
+    docker pull ghcr.io/kan/roji:{{.Version}}
+    ```
+    
+    ## Quick Install
+    
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/kan/roji/v{{.Version}}/install.sh | bash
+    ```
+
+# Announce releases to social media (optional)
+announce:
+  skip: true
