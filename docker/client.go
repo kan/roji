@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -105,6 +106,10 @@ func buildProjectServiceCounts(containers []types.Container) map[string]int {
 
 // DiscoverBackends finds all containers connected to the shared network
 func (c *Client) DiscoverBackends(ctx context.Context) ([]*Backend, error) {
+	// Add timeout for Docker API call
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	// Filter containers by network
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("network", c.networkName)
@@ -139,6 +144,10 @@ func (c *Client) DiscoverBackends(ctx context.Context) ([]*Backend, error) {
 
 // GetBackend gets a single backend by container ID
 func (c *Client) GetBackend(ctx context.Context, containerID string) (*Backend, error) {
+	// Add timeout for Docker API call
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	ctr, err := c.docker.ContainerInspect(ctx, containerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect container: %w", err)
@@ -166,6 +175,10 @@ func (c *Client) GetBackend(ctx context.Context, containerID string) (*Backend, 
 
 // countProjectServices counts how many services from the same project are on the network
 func (c *Client) countProjectServices(ctx context.Context, projectName string) (int, error) {
+	// Add timeout for Docker API call
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("network", c.networkName)
 	filterArgs.Add("label", "com.docker.compose.project="+projectName)
@@ -296,6 +309,10 @@ func (c *Client) detectHostname(info types.ContainerJSON, projectServiceCount ma
 
 // GetProjectBackends gets all backends for a specific project
 func (c *Client) GetProjectBackends(ctx context.Context, projectName string) ([]*Backend, error) {
+	// Add timeout for Docker API call
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("network", c.networkName)
 	filterArgs.Add("label", "com.docker.compose.project="+projectName)
