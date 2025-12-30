@@ -1,5 +1,5 @@
 # Build artifacts
-roji
+/roji
 tmp/
 
 # Certificates (generated locally, root directory only)
