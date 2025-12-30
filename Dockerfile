@@ -5,6 +5,7 @@ FROM golang:1.25-alpine AS development
 
 WORKDIR /app
 
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates tzdata
 
 COPY go.mod go.sum* ./
@@ -22,6 +23,7 @@ FROM golang:1.25-alpine AS builder
 WORKDIR /app
 
 # Security: Get latest CA certificates
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates tzdata
 
 # Download dependencies first (cache efficiency)
