@@ -336,6 +336,14 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
 
 ### 将来の課題
 
+#### v0.3.0 マイルストーン
+- [ ] GoReleaser 導入
+  - GitHub Release の自動管理
+  - `roji version` コマンドで正しいバージョンを返すようにする
+  - 参考: https://zenn.dev/momosuke/articles/how-to-add-version-command-for-go-cli
+  - 現状: Dockerfile の `ARG VERSION=dev` でビルド時に指定しているが、GitHub Release と連動していない
+
+#### その他
 - [ ] インテグレーションテスト（Docker統合、E2Eテスト）
 
 ## 出力ファイル仕様
