@@ -186,32 +186,12 @@ start_roji() {
     docker compose up -d
 
     print_success "roji started"
+    
+    # Give roji a moment to generate certificates
+    print_info "Initializing certificates..."
+    sleep 2
 }
 
-# Wait for certificates to be generated
-wait_for_certs() {
-    print_info "Waiting for certificates to be generated..."
-
-    local max_wait=30
-    local waited=0
-
-    # Check if certificates exist (now directly mounted)
-    while [ ! -f "${INSTALL_DIR}/certs/ca.pem" ] && [ $waited -lt $max_wait ]; do
-        sleep 1
-        waited=$((waited + 1))
-    done
-
-    if [ -f "${INSTALL_DIR}/certs/ca.pem" ]; then
-        print_success "Certificates generated"
-        # Create Windows-compatible .crt file
-        if [ -f "${INSTALL_DIR}/certs/ca.pem" ]; then
-            cp "${INSTALL_DIR}/certs/ca.pem" "${INSTALL_DIR}/certs/ca.crt"
-        fi
-    else
-        print_warning "Certificate generation is taking longer than expected"
-        print_warning "You can check the logs with: docker logs roji"
-    fi
-}
 
 # Detect OS for CA installation instructions
 detect_os() {
@@ -364,7 +344,6 @@ main() {
     create_compose_file
     create_env_file
     start_roji
-    wait_for_certs
     show_ca_instructions
 }
 
