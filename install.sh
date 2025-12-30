@@ -120,12 +120,13 @@ services:
     image: ghcr.io/kan/roji:latest
     container_name: roji
     restart: unless-stopped
+    user: root  # Run as root to access Docker socket and write certificates
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./certs:/certs
+      - roji-certs:/certs
     environment:
       - ROJI_NETWORK=roji
       - ROJI_DOMAIN=localhost
@@ -138,7 +139,7 @@ services:
     labels:
       - "roji.self=true"
     healthcheck:
-      test: ["/roji", "health"]
+      test: ["CMD", "/roji", "health"]
       interval: 30s
       timeout: 3s
       start_period: 10s
@@ -147,6 +148,10 @@ services:
 networks:
   roji:
     external: true
+
+volumes:
+  roji-certs:
+    driver: local
 EOF
 
     print_success "docker-compose.yml created"
@@ -178,25 +183,69 @@ EOF
 start_roji() {
     print_info "Starting roji..."
 
+    # Start the containers (root user will handle permissions)
     docker compose up -d
 
     print_success "roji started"
 }
 
-# Wait for certificates to be generated
+# Export certificates from volume to host
+export_certs() {
+    print_info "Exporting certificates from volume to host..."
+    
+    # Get the actual volume name (includes project prefix)
+    local project_name=$(basename "$(pwd)")
+    local volume_name="${project_name}_roji-certs"
+    
+    # Create local certs directory
+    mkdir -p "${INSTALL_DIR}/certs"
+    
+    # Use alpine container to copy certificates from volume to host
+    docker run --rm \
+        -v "${volume_name}:/source:ro" \
+        -v "${INSTALL_DIR}/certs:/target" \
+        alpine:latest sh -c "
+            if [ -f /source/ca.pem ]; then
+                cp /source/ca.pem /target/ca.pem
+                cp /source/ca-key.pem /target/ca-key.pem
+                cp /source/cert.pem /target/cert.pem
+                cp /source/key.pem /target/key.pem
+                cp /source/ca.pem /target/ca.crt  # For Windows
+                echo 'Certificates exported successfully'
+            else
+                echo 'Certificates not found in volume'
+                exit 1
+            fi
+        "
+    
+    if [ $? -eq 0 ]; then
+        print_success "Certificates exported to ${INSTALL_DIR}/certs"
+    else
+        return 1
+    fi
+}
+
+# Wait for certificates to be generated and export them
 wait_for_certs() {
     print_info "Waiting for certificates to be generated..."
 
     local max_wait=30
     local waited=0
+    
+    # Get the actual volume name (includes project prefix)
+    local project_name=$(basename "$(pwd)")
+    local volume_name="${project_name}_roji-certs"
 
-    while [ ! -f "${INSTALL_DIR}/certs/ca.pem" ] && [ $waited -lt $max_wait ]; do
+    # Check if certificates exist in the volume using a temporary container
+    while ! docker run --rm -v "${volume_name}:/certs:ro" alpine:latest test -f /certs/ca.pem 2>/dev/null && [ $waited -lt $max_wait ]; do
         sleep 1
         waited=$((waited + 1))
     done
 
-    if [ -f "${INSTALL_DIR}/certs/ca.pem" ]; then
+    # Check one more time and export if successful
+    if docker run --rm -v "${volume_name}:/certs:ro" alpine:latest test -f /certs/ca.pem 2>/dev/null; then
         print_success "Certificates generated"
+        export_certs
     else
         print_warning "Certificate generation is taking longer than expected"
         print_warning "You can check the logs with: docker logs roji"
