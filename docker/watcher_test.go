@@ -31,8 +31,8 @@ func TestWatcher_processEvent(t *testing.T) {
 			name: "start event",
 			msg: events.Message{
 				Action: "start",
-				ID:     "abc123",
 				Actor: events.Actor{
+					ID: "abc123",
 					Attributes: map[string]string{
 						"name": "test-container",
 					},
@@ -45,8 +45,8 @@ func TestWatcher_processEvent(t *testing.T) {
 			name: "stop event",
 			msg: events.Message{
 				Action: "stop",
-				ID:     "abc123",
 				Actor: events.Actor{
+					ID: "abc123",
 					Attributes: map[string]string{
 						"name": "test-container",
 					},
@@ -59,8 +59,8 @@ func TestWatcher_processEvent(t *testing.T) {
 			name: "die event",
 			msg: events.Message{
 				Action: "die",
-				ID:     "abc123",
 				Actor: events.Actor{
+					ID: "abc123",
 					Attributes: map[string]string{
 						"name": "test-container",
 					},
@@ -73,7 +73,9 @@ func TestWatcher_processEvent(t *testing.T) {
 			name: "unknown event",
 			msg: events.Message{
 				Action: "create",
-				ID:     "abc123",
+				Actor: events.Actor{
+					ID: "abc123",
+				},
 			},
 			wantEvent: false,
 		},
@@ -97,8 +99,8 @@ func TestWatcher_processEvent(t *testing.T) {
 				if event.Type != tt.wantType {
 					t.Errorf("processEvent() Type = %v, want %v", event.Type, tt.wantType)
 				}
-				if event.ContainerID != tt.msg.ID {
-					t.Errorf("processEvent() ContainerID = %v, want %v", event.ContainerID, tt.msg.ID)
+				if event.ContainerID != tt.msg.Actor.ID {
+					t.Errorf("processEvent() ContainerID = %v, want %v", event.ContainerID, tt.msg.Actor.ID)
 				}
 			}
 		})
