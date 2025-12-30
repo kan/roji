@@ -106,7 +106,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Set X-Forwarded-* headers
+		// Security: Remove existing X-Forwarded-* headers to prevent spoofing
+		// Clients could send malicious headers that backends might trust
+		req.Header.Del("X-Forwarded-For")
+		req.Header.Del("X-Forwarded-Host")
+		req.Header.Del("X-Forwarded-Proto")
+		req.Header.Del("X-Real-IP")
+
+		// Set X-Forwarded-* headers with trusted values
 		req.Header.Set("X-Forwarded-Host", r.Host)
 		req.Header.Set("X-Forwarded-Proto", "https")
 		if r.RemoteAddr != "" {
