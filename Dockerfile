@@ -1,46 +1,67 @@
+# ============================================
 # Development stage with hot reload
+# ============================================
 FROM golang:1.25-alpine AS development
 
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates tzdata
 
-# Copy go mod files and install dependencies + tools
 COPY go.mod go.sum* ./
-RUN go mod download && go tool -n air
+RUN go mod download
 
-# Source code will be mounted as volume for hot reload
 EXPOSE 80 443
 
-CMD ["go", "tool", "air", "-c", ".air.toml"]
+CMD ["go", "run", "./cmd/roji"]
 
+# ============================================
 # Build stage
+# ============================================
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates
+# Security: Get latest CA certificates
+RUN apk add --no-cache ca-certificates tzdata
 
+# Download dependencies first (cache efficiency)
 COPY go.mod go.sum* ./
-RUN go mod download
+RUN go mod download && go mod verify
 
+# Copy source code
 COPY . .
 
+# Build
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION}" -o /roji ./cmd/roji
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X github.com/kan/roji/cmd/roji/cmd.Version=${VERSION}" \
+    -trimpath \
+    -o /roji \
+    ./cmd/roji
 
-# Production stage
-FROM alpine:3.19 AS production
+# ============================================
+# Production stage (distroless)
+# ============================================
+FROM gcr.io/distroless/static:nonroot AS production
 
-RUN apk add --no-cache ca-certificates curl
+# Metadata
+LABEL org.opencontainers.image.source="https://github.com/kan/roji"
+LABEL org.opencontainers.image.description="Reverse proxy for local development"
+LABEL org.opencontainers.image.licenses="MIT"
 
-COPY --from=builder /roji /usr/local/bin/roji
+# Copy CA certificates and timezone info
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
+# Copy binary
+COPY --from=builder /roji /roji
+
+# Certificate directory
 VOLUME /certs
 
 EXPOSE 80 443
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f -k https://localhost/_api/health || exit 1
+# Run as nonroot user (UID 65532)
+USER nonroot:nonroot
 
-ENTRYPOINT ["/usr/local/bin/roji"]
+ENTRYPOINT ["/roji"]
