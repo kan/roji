@@ -72,14 +72,45 @@ First stable release of roji - a simple reverse proxy for local development.
 - Troubleshooting section
 - API documentation
 
+## [0.2.0] - 2025-12-30
+
+Security and performance improvements release.
+
+### Security
+
+- **Distroless image migration**: Production image now uses `gcr.io/distroless/static:nonroot` for minimal attack surface
+- **X-Forwarded header protection**: Strip client-provided X-Forwarded-* headers to prevent spoofing
+- **Path traversal prevention**: Reject paths containing `..` in `roji.path` labels
+- **Dependency updates**: Docker client library updated to v28.5.2
+- **Security scanning**: Added govulncheck, Trivy, and hadolint to CI pipeline
+- **Non-root execution**: Container runs as nonroot user (UID 65532)
+
+### Added
+
+- `roji health` command for container healthcheck (replaces curl-based healthcheck)
+- GitHub Actions security scan workflow (weekly + on PR/push)
+- Trivy vulnerability scanning before Docker image release
+
+### Improved
+
+- **SSE support**: Added `FlushInterval = -1` for Server-Sent Events compatibility
+- **Connection pooling**: Shared HTTP transport for better performance
+- **Docker Events reconnection**: Automatic reconnection on Docker daemon restart
+- **Explicit server timeouts**: Configured timeouts for HTTP/HTTPS servers
+- **Docker API timeouts**: Added timeouts to prevent indefinite blocking
+
+### Changed
+
+- Docker healthcheck now uses `/roji health` instead of `curl`
+- install.sh updated with healthcheck configuration
+
 ## [Unreleased]
 
 ### Planned
 - Integration tests
-- Performance optimizations
-- Additional monitoring capabilities
 
 ---
 
 [0.1.0]: https://github.com/kan/roji/releases/tag/v0.1.0
-[Unreleased]: https://github.com/kan/roji/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/kan/roji/releases/tag/v0.2.0
+[Unreleased]: https://github.com/kan/roji/compare/v0.2.0...HEAD

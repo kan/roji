@@ -62,6 +62,7 @@ roji/
 │           ├── root.go       # ルートコマンド（サーバー起動）
 │           ├── routes.go     # ルート一覧コマンド
 │           ├── version.go    # バージョン表示コマンド
+│           ├── health.go     # ヘルスチェックコマンド
 │           └── server.go     # サーバー実装
 ├── docker/
 │   ├── client.go             # Docker API ラッパー
@@ -304,7 +305,7 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
 - [x] CLI ルート一覧表示（`roji routes`）
   - `/_api/routes` エンドポイント追加
   - Cobra導入によるCLI構造化
-  - サブコマンド: routes, version, help, completion
+  - サブコマンド: routes, version, health, help, completion
 - [x] ヘルスチェックエンドポイント
   - `/_api/health` (API規約準拠)
   - `/healthz` (Kubernetes/Docker標準)
@@ -315,6 +316,23 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - プロキシ設定情報（ルート数、ドメイン、ポート）
   - アップタイム
   - 総合ヘルスステータス（healthy/degraded/unhealthy）
+
+### Phase 7: セキュリティ・パフォーマンス改善 ✅
+
+- [x] セキュリティ強化
+  - [x] Distroless イメージへの移行（gcr.io/distroless/static:nonroot）
+  - [x] X-Forwarded ヘッダーのスプーフィング対策
+  - [x] パストラバーサル防止（roji.path ラベル）
+  - [x] Docker client ライブラリ更新（v28.5.2）
+  - [x] GitHub Actions セキュリティスキャン追加（govulncheck, Trivy, hadolint）
+- [x] パフォーマンス改善
+  - [x] SSE 対応（FlushInterval = -1）
+  - [x] 共有 Transport によるコネクションプーリング
+  - [x] Docker Events 自動再接続
+- [x] 堅牢性向上
+  - [x] サーバータイムアウトの明示的設定
+  - [x] Docker API タイムアウト追加
+  - [x] `roji health` コマンド追加（Distroless 対応）
 
 ### 将来の課題
 
