@@ -137,6 +137,12 @@ services:
       - roji
     labels:
       - "roji.self=true"
+    healthcheck:
+      test: ["/roji", "health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
 
 networks:
   roji:
