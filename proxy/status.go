@@ -7,9 +7,17 @@ import (
 	"time"
 )
 
+// BuildInfo contains build metadata
+type BuildInfo struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Date    string `json:"date"`
+	BuiltBy string `json:"built_by"`
+}
+
 // StatusResponse represents the overall status of roji
 type StatusResponse struct {
-	Version       string            `json:"version"`
+	Build         BuildInfo         `json:"build"`
 	UptimeSeconds int64             `json:"uptime_seconds"`
 	Certificates  CertificateStatus `json:"certificates"`
 	Docker        DockerStatus      `json:"docker"`

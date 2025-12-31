@@ -70,12 +70,22 @@
             border-radius: 12px;
             font-size: 0.85rem;
         }
+        .version {
+            background: #e8e8e8;
+            color: #666;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: normal;
+            margin-left: auto;
+        }
     </style>
 </head>
 <body>
     <h1>
         🛤️ roji
         <span class="subtitle">reverse proxy for local development</span>
+        {{if .Version}}<span class="version">v{{.Version}}</span>{{end}}
     </h1>
     {{if .Routes}}
     <p><span class="count">{{len .Routes}}</span> routes registered</p>
