@@ -13,7 +13,7 @@ RUN go mod download
 
 EXPOSE 80 443
 
-CMD ["go", "run", "./cmd/roji"]
+CMD ["go", "tool", "air", "-c", ".air.toml"]
 
 # ============================================
 # Build stage
