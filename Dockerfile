@@ -6,7 +6,7 @@ FROM golang:1.25-alpine AS development
 WORKDIR /app
 
 # hadolint ignore=DL3018
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata git
 
 COPY go.mod go.sum* ./
 RUN go mod download

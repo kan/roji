@@ -5,6 +5,9 @@ tmp/
 # Certificates (generated locally, root directory only)
 /certs/
 
+# Persistent data (project history)
+/data/
+
 # Go
 *.exe
 *.exe~

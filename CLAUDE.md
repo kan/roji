@@ -462,6 +462,13 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
 - ダッシュボードからの起動/停止操作
 - ※ rojiがDockerコンテナ外で動作する場合に実現可能
 
+### v0.4.0 リリース時のタスク
+
+- [ ] install.sh の更新
+  - [ ] `ROJI_DATA_DIR` 環境変数の追加
+  - [ ] データディレクトリ（`/data`）のボリュームマウント追加
+  - [ ] 生成される docker-compose.yml の更新
+
 ### 将来の課題
 
 - [ ] インテグレーションテスト（Docker統合、E2Eテスト）

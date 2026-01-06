@@ -27,6 +27,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # TLS certificates
       - ./certs:/certs
+      # Persistent data (project history)
+      - ./data:/data
       # Persist Go build cache for faster rebuilds
       - go-build-cache:/root/.cache/go-build
     environment:
@@ -34,6 +36,7 @@ services:
       ROJI_NETWORK: ${ROJI_NETWORK:-roji}
       ROJI_DOMAIN: ${ROJI_DOMAIN:-localhost}
       ROJI_CERTS_DIR: /certs
+      ROJI_DATA_DIR: /data
       ROJI_DASHBOARD: ${ROJI_DASHBOARD:-roji.localhost}
       ROJI_LOG_LEVEL: ${ROJI_LOG_LEVEL:-debug}
     labels:

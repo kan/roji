@@ -86,6 +86,42 @@
             border-radius: 4px;
             font-size: 0.75rem;
             font-weight: normal;
+            position: relative;
+            cursor: help;
+        }
+        .version:hover .version-tooltip {
+            display: block;
+        }
+        .version-tooltip {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 8px;
+            background: #333;
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            z-index: 100;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            line-height: 1.6;
+        }
+        .version-tooltip::before {
+            content: '';
+            position: absolute;
+            top: -6px;
+            right: 12px;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 6px solid #333;
+        }
+        .version-tooltip code {
+            background: rgba(255,255,255,0.15);
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-family: monospace;
         }
         /* Connection status indicator */
         .status {
@@ -245,7 +281,14 @@
             <span>&#x1F6E4;&#xFE0F; roji</span>
             <span class="subtitle">reverse proxy for local development</span>
             <span class="header-right">
-                <span v-if="version" class="version">v{{version}}</span>
+                <span v-if="version" class="version">
+                    v{{version}}
+                    <span class="version-tooltip">
+                        <div><strong>Commit:</strong> <code>{{buildInfo.commit || 'unknown'}}</code></div>
+                        <div><strong>Built:</strong> {{formatBuildDate(buildInfo.date)}}</div>
+                        <div><strong>By:</strong> {{buildInfo.built_by || 'unknown'}}</div>
+                    </span>
+                </span>
                 <span :class="['status', connected ? 'connected' : 'disconnected']">
                     <span class="status-dot"></span>
                     {{connected ? 'Live' : 'Disconnected'}}
@@ -331,6 +374,7 @@
         return {
             routes: [[.RoutesJSON]],
             version: '[[.Version]]',
+            buildInfo: {},
             connected: false,
             notificationsEnabled: localStorage.getItem('roji-notifications') === 'true',
             notificationSupported: 'Notification' in window,
@@ -348,6 +392,7 @@
 
                 this.connectSSE();
                 this.fetchProjects();
+                this.fetchBuildInfo();
             },
 
             connectSSE() {
@@ -450,6 +495,26 @@
                     this.inactiveProjects = data.inactive || [];
                 } catch (e) {
                     console.error('Failed to fetch projects:', e);
+                }
+            },
+
+            async fetchBuildInfo() {
+                try {
+                    const resp = await fetch('/_api/status');
+                    const data = await resp.json();
+                    this.buildInfo = data.build || {};
+                } catch (e) {
+                    console.error('Failed to fetch build info:', e);
+                }
+            },
+
+            formatBuildDate(isoString) {
+                if (!isoString) return 'unknown';
+                try {
+                    const date = new Date(isoString);
+                    return date.toLocaleString();
+                } catch (e) {
+                    return isoString;
                 }
             },
 

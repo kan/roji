@@ -33,10 +33,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # TLS certificates
       - ./certs:/certs
+      # Persistent data (project history)
+      - roji-data:/data
     environment:
       - ROJI_NETWORK=roji
       - ROJI_DOMAIN=dev.localhost      # Base domain for services (*.dev.localhost)
       - ROJI_CERTS_DIR=/certs
+      - ROJI_DATA_DIR=/data            # Project history storage
       - ROJI_DASHBOARD=dev.localhost   # Dashboard URL (defaults to base domain)
       - ROJI_LOG_LEVEL=info
     labels:
@@ -48,3 +51,6 @@ services:
 networks:
   roji:
     external: true
+
+volumes:
+  roji-data:
