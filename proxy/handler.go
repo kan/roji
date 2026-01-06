@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/kan/roji/project"
 )
 
 // sharedTransport is used for connection pooling across all proxied requests
@@ -47,14 +49,16 @@ type Handler struct {
 	router        *Router
 	dashboardHost string // hostname for dashboard (e.g., "roji.localhost")
 	statusConfig  *StatusConfig
+	projectStore  *project.Store
 }
 
 // NewHandler creates a new proxy handler
-func NewHandler(router *Router, dashboardHost string, statusConfig *StatusConfig) *Handler {
+func NewHandler(router *Router, dashboardHost string, statusConfig *StatusConfig, projectStore *project.Store) *Handler {
 	return &Handler{
 		router:        router,
 		dashboardHost: strings.ToLower(dashboardHost),
 		statusConfig:  statusConfig,
+		projectStore:  projectStore,
 	}
 }
 
@@ -84,6 +88,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// API endpoint for route listing
 		if r.URL.Path == "/_api/routes" {
 			h.serveRoutesAPI(w, r)
+			return
+		}
+		// API endpoint for project listing
+		if r.URL.Path == "/_api/projects" {
+			h.serveProjectsAPI(w, r)
 			return
 		}
 		// SSE endpoint for real-time route updates
@@ -293,6 +302,38 @@ func (h *Handler) serveRoutesAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(routes); err != nil {
 		slog.Error("failed to encode routes as JSON", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) serveProjectsAPI(w http.ResponseWriter, r *http.Request) {
+	if h.projectStore == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"active":[],"inactive":[]}`))
+		return
+	}
+
+	type ProjectResponse struct {
+		Active   []*project.Project `json:"active"`
+		Inactive []*project.Project `json:"inactive"`
+	}
+
+	resp := ProjectResponse{
+		Active:   h.projectStore.ListActive(),
+		Inactive: h.projectStore.ListInactive(),
+	}
+
+	// Ensure non-nil slices for JSON
+	if resp.Active == nil {
+		resp.Active = []*project.Project{}
+	}
+	if resp.Inactive == nil {
+		resp.Inactive = []*project.Project{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("failed to encode projects as JSON", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }

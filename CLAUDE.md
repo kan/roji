@@ -419,22 +419,25 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
 - フィルタリング・検索機能
 - ダークモード対応
 
-### Phase 9.5: プロジェクト履歴・クイックアクセス
+### Phase 9.5: プロジェクト履歴・クイックアクセス ✅
 
-- [ ] プロジェクト情報の収集
-  - [ ] `com.docker.compose.project` からプロジェクト名取得
-  - [ ] `com.docker.compose.project.working_dir` から作業ディレクトリ取得
-  - [ ] `com.docker.compose.project.config_files` から設定ファイルパス取得
-  - [ ] 最終起動日時の記録
-- [ ] プロジェクト履歴の永続化
-  - [ ] JSON ファイルで保存（`/data/projects.json` など）
-  - [ ] プロジェクト追加・更新のタイミング管理
-- [ ] ダッシュボードUI
-  - [ ] 現在稼働中のプロジェクト一覧
-  - [ ] 過去に接続したプロジェクト一覧（停止中）
-  - [ ] 起動コマンドのコピーボタン
+- [x] プロジェクト情報の収集
+  - [x] `com.docker.compose.project` からプロジェクト名取得
+  - [x] `com.docker.compose.project.working_dir` から作業ディレクトリ取得
+  - [x] `com.docker.compose.project.config_files` から設定ファイルパス取得
+  - [x] 最終起動日時の記録
+- [x] プロジェクト履歴の永続化
+  - [x] JSON ファイルで保存（`/data/projects.json`）
+  - [x] プロジェクト追加・更新のタイミング管理
+- [x] ダッシュボードUI
+  - [x] 現在稼働中のプロジェクト一覧
+  - [x] 過去に接続したプロジェクト一覧（停止中）
+  - [x] 起動コマンドのコピーボタン
     - `cd /path/to/project && docker compose up -d`
-  - [ ] プロジェクトごとのサービス数表示
+  - [x] プロジェクトごとのサービス数表示
+- [x] API エンドポイント
+  - [x] `/_api/projects` - アクティブ/非アクティブプロジェクト一覧
+  - [x] ルート更新時にプロジェクト情報も自動更新
 
 **ダッシュボード表示イメージ:**
 ```

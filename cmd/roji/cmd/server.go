@@ -11,6 +11,7 @@ import (
 
 	"github.com/kan/roji/certgen"
 	"github.com/kan/roji/docker"
+	"github.com/kan/roji/project"
 	"github.com/kan/roji/proxy"
 )
 
@@ -24,6 +25,7 @@ type Config struct {
 	AutoCert      bool
 	DashboardHost string
 	LogLevel      string
+	DataDir       string // Directory for persistent data (project history)
 }
 
 func setupLogging(level string) {
@@ -74,6 +76,13 @@ func run(ctx context.Context, cfg Config) error {
 	// Initialize router and handler
 	router := proxy.NewRouter()
 
+	// Initialize project store for history
+	projectStorePath := ""
+	if cfg.DataDir != "" {
+		projectStorePath = cfg.DataDir + "/projects.json"
+	}
+	projectStore := project.NewStore(projectStorePath)
+
 	// Create status configuration
 	statusConfig := &proxy.StatusConfig{
 		Version:       Version,
@@ -89,10 +98,10 @@ func run(ctx context.Context, cfg Config) error {
 		HTTPSPort:     cfg.HTTPSPort,
 	}
 
-	handler := proxy.NewHandler(router, cfg.DashboardHost, statusConfig)
+	handler := proxy.NewHandler(router, cfg.DashboardHost, statusConfig, projectStore)
 
-	// Discover existing containers
-	if err := discoverExisting(ctx, dockerClient, router); err != nil {
+	// Discover existing containers and projects
+	if err := discoverExisting(ctx, dockerClient, router, projectStore); err != nil {
 		return fmt.Errorf("failed to discover containers: %w", err)
 	}
 
@@ -100,7 +109,7 @@ func run(ctx context.Context, cfg Config) error {
 	watcher := docker.NewWatcher(dockerClient)
 	eventCh := watcher.Watch(ctx)
 
-	go handleEvents(ctx, dockerClient, router, eventCh)
+	go handleEvents(ctx, dockerClient, router, projectStore, eventCh)
 
 	// Start HTTP and HTTPS servers
 	httpServer := startHTTPServer(cfg)
@@ -188,7 +197,7 @@ func loadTLSConfig(certsDir string) (*tls.Config, error) {
 	}, nil
 }
 
-func discoverExisting(ctx context.Context, client *docker.Client, router *proxy.Router) error {
+func discoverExisting(ctx context.Context, client *docker.Client, router *proxy.Router, projectStore *project.Store) error {
 	backends, err := client.DiscoverBackends(ctx)
 	if err != nil {
 		return err
@@ -198,11 +207,33 @@ func discoverExisting(ctx context.Context, client *docker.Client, router *proxy.
 		router.AddBackend(backend)
 	}
 
+	// Discover and update projects
+	projects, err := client.DiscoverProjects(ctx)
+	if err != nil {
+		slog.Warn("failed to discover projects", "error", err)
+	} else {
+		// Mark all existing projects as inactive first
+		projectStore.SetAllInactive()
+
+		// Update with discovered active projects
+		for _, p := range projects {
+			projectStore.Update(&project.Project{
+				Name:        p.Name,
+				WorkingDir:  p.WorkingDir,
+				ConfigFiles: p.ConfigFiles,
+				Services:    p.Services,
+				LastActive:  time.Now(),
+				Active:      true,
+			})
+		}
+		slog.Info("discovered projects", "count", len(projects))
+	}
+
 	slog.Info("discovered existing containers", "count", len(backends))
 	return nil
 }
 
-func handleEvents(ctx context.Context, client *docker.Client, router *proxy.Router, eventCh <-chan docker.ContainerEvent) {
+func handleEvents(ctx context.Context, client *docker.Client, router *proxy.Router, projectStore *project.Store, eventCh <-chan docker.ContainerEvent) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -215,15 +246,15 @@ func handleEvents(ctx context.Context, client *docker.Client, router *proxy.Rout
 
 			switch event.Type {
 			case docker.EventStart:
-				handleStartEvent(ctx, client, router, event.ContainerID)
+				handleStartEvent(ctx, client, router, projectStore, event.ContainerID)
 			case docker.EventStop:
-				handleStopEvent(ctx, client, router, event.ContainerID)
+				handleStopEvent(ctx, client, router, projectStore, event.ContainerID)
 			}
 		}
 	}
 }
 
-func handleStartEvent(ctx context.Context, client *docker.Client, router *proxy.Router, containerID string) {
+func handleStartEvent(ctx context.Context, client *docker.Client, router *proxy.Router, projectStore *project.Store, containerID string) {
 	backend, err := client.GetBackend(ctx, containerID)
 	if err != nil {
 		slog.Error("failed to get backend", "error", err)
@@ -245,13 +276,30 @@ func handleStartEvent(ctx context.Context, client *docker.Client, router *proxy.
 		for _, b := range backends {
 			router.AddBackend(b)
 		}
+
+		// Update project store
+		projectInfo, err := client.GetProjectInfo(ctx, containerID)
+		if err == nil && projectInfo != nil {
+			var services []string
+			for _, b := range backends {
+				services = append(services, b.ServiceName)
+			}
+			projectStore.Update(&project.Project{
+				Name:        projectInfo.Name,
+				WorkingDir:  projectInfo.WorkingDir,
+				ConfigFiles: projectInfo.ConfigFiles,
+				Services:    services,
+				LastActive:  time.Now(),
+				Active:      true,
+			})
+		}
 	} else {
 		router.AddBackend(backend)
 	}
 	printRoutes(router)
 }
 
-func handleStopEvent(ctx context.Context, client *docker.Client, router *proxy.Router, containerID string) {
+func handleStopEvent(ctx context.Context, client *docker.Client, router *proxy.Router, projectStore *project.Store, containerID string) {
 	// Get the backend info before removing to check project
 	backend, _ := client.GetBackend(ctx, containerID)
 	router.RemoveBackend(containerID)
@@ -265,6 +313,22 @@ func handleStopEvent(ctx context.Context, client *docker.Client, router *proxy.R
 		} else {
 			for _, b := range backends {
 				router.AddBackend(b)
+			}
+		}
+
+		// Update project store - mark as inactive if no backends remain
+		if len(backends) == 0 {
+			projectStore.SetActive(backend.ProjectName, false)
+		} else {
+			// Update services list
+			var services []string
+			for _, b := range backends {
+				services = append(services, b.ServiceName)
+			}
+			if p := projectStore.Get(backend.ProjectName); p != nil {
+				p.Services = services
+				p.LastActive = time.Now()
+				projectStore.Update(p)
 			}
 		}
 	}

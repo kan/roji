@@ -20,6 +20,7 @@ var (
 	autoCert      bool
 	dashboardHost string
 	logLevel      string
+	dataDir       string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -55,6 +56,8 @@ func init() {
 		"Dashboard hostname (e.g., dev.localhost)")
 	rootCmd.Flags().StringVar(&logLevel, "log-level", getEnv("ROJI_LOG_LEVEL", "info"),
 		"Log level (debug, info, warn, error)")
+	rootCmd.Flags().StringVar(&dataDir, "data-dir", getEnv("ROJI_DATA_DIR", "/data"),
+		"Directory for persistent data (project history)")
 }
 
 func getEnv(key, defaultValue string) string {
@@ -83,6 +86,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		AutoCert:      autoCert,
 		DashboardHost: dashboardHost,
 		LogLevel:      logLevel,
+		DataDir:       dataDir,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,7 +26,7 @@ func testStatusConfig() *StatusConfig {
 
 func TestHandler_ServeHTTP_NotFound(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://unknown.localhost/", nil)
 	req.Host = "unknown.localhost"
@@ -45,7 +46,7 @@ func TestHandler_ServeHTTP_NotFound(t *testing.T) {
 
 func TestHandler_ServeHTTP_Dashboard(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://roji.localhost/", nil)
 	req.Host = "roji.localhost"
@@ -68,7 +69,7 @@ func TestHandler_ServeHTTP_Dashboard(t *testing.T) {
 
 func TestHandler_ServeHTTP_DashboardWithRoutes(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
 	// Add a route
 	backend := &docker.Backend{
@@ -98,7 +99,7 @@ func TestHandler_ServeHTTP_DashboardWithRoutes(t *testing.T) {
 
 func TestHandler_ServeHTTP_RouteExists(t *testing.T) {
 	router := NewRouter()
-	_ = NewHandler(router, "roji.localhost", testStatusConfig())
+	_ = NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
 	// Add a route
 	backend := &docker.Backend{
@@ -123,7 +124,7 @@ func TestHandler_ServeHTTP_RouteExists(t *testing.T) {
 
 func TestHandler_CaseInsensitiveHostname(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "ROJI.LOCALHOST", testStatusConfig())
+	handler := NewHandler(router, "ROJI.LOCALHOST", testStatusConfig(), nil)
 
 	// Dashboard should work with uppercase
 	req := httptest.NewRequest("GET", "https://ROJI.LOCALHOST/", nil)
@@ -139,7 +140,7 @@ func TestHandler_CaseInsensitiveHostname(t *testing.T) {
 
 func TestHandler_HostnameWithPort(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
 	// Should strip port from hostname
 	req := httptest.NewRequest("GET", "https://roji.localhost:443/", nil)
@@ -208,7 +209,7 @@ func TestRedirectHandler(t *testing.T) {
 
 func TestHandler_Assets(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://roji.localhost/_assets/petite-vue.min.js", nil)
 	req.Host = "roji.localhost"
@@ -229,7 +230,7 @@ func TestHandler_Assets(t *testing.T) {
 
 func TestHandler_Assets_NotFound(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://roji.localhost/_assets/nonexistent.js", nil)
 	req.Host = "roji.localhost"
@@ -244,7 +245,7 @@ func TestHandler_Assets_NotFound(t *testing.T) {
 
 func TestHandler_Assets_PathTraversal(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
 	tests := []string{
 		"/_assets/../handler.go",
@@ -269,9 +270,12 @@ func TestHandler_Assets_PathTraversal(t *testing.T) {
 
 func TestHandler_SSE_Headers(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
+	// Create request with cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest("GET", "https://roji.localhost/_api/events", nil)
+	req = req.WithContext(ctx)
 	req.Host = "roji.localhost"
 	w := httptest.NewRecorder()
 
@@ -282,8 +286,12 @@ func TestHandler_SSE_Headers(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait briefly for headers to be set
+	// Cancel the context to stop the SSE handler
 	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	// Wait for handler to complete before reading headers
+	<-done
 
 	// Verify SSE headers
 	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
@@ -296,7 +304,7 @@ func TestHandler_SSE_Headers(t *testing.T) {
 
 func TestHandler_RoutesAPI(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
 	// Add a route
 	backend := &docker.Backend{
@@ -330,7 +338,7 @@ func TestHandler_RoutesAPI(t *testing.T) {
 
 func TestHandler_StatusAPI(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://roji.localhost/_api/status", nil)
 	req.Host = "roji.localhost"
@@ -345,5 +353,31 @@ func TestHandler_StatusAPI(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "sse_subscribers") {
 		t.Errorf("status response should contain sse_subscribers, got %q", body)
+	}
+}
+
+func TestHandler_ProjectsAPI_NilStore(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost", testStatusConfig(), nil)
+
+	req := httptest.NewRequest("GET", "https://roji.localhost/_api/projects", nil)
+	req.Host = "roji.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `"active":[]`) {
+		t.Errorf("response should contain empty active array, got %q", body)
+	}
+	if !strings.Contains(body, `"inactive":[]`) {
+		t.Errorf("response should contain empty inactive array, got %q", body)
 	}
 }

@@ -47,6 +47,14 @@ type Backend struct {
 	PathPrefix    string // Optional path prefix
 }
 
+// ProjectInfo contains docker-compose project metadata
+type ProjectInfo struct {
+	Name        string   // Project name from com.docker.compose.project
+	WorkingDir  string   // Working directory from com.docker.compose.project.working_dir
+	ConfigFiles string   // Config files from com.docker.compose.project.config_files
+	Services    []string // List of service names in this project
+}
+
 // Client wraps the Docker client for container discovery
 type Client struct {
 	docker      DockerAPI
@@ -347,4 +355,73 @@ func (c *Client) GetProjectBackends(ctx context.Context, projectName string) ([]
 // DockerClient returns the underlying Docker API client (for event watching)
 func (c *Client) DockerClient() DockerAPI {
 	return c.docker
+}
+
+// GetProjectInfo extracts project metadata from a container
+func (c *Client) GetProjectInfo(ctx context.Context, containerID string) (*ProjectInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	info, err := c.docker.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect container: %w", err)
+	}
+
+	projectName := info.Config.Labels["com.docker.compose.project"]
+	if projectName == "" {
+		return nil, nil // Not a docker-compose container
+	}
+
+	return &ProjectInfo{
+		Name:        projectName,
+		WorkingDir:  info.Config.Labels["com.docker.compose.project.working_dir"],
+		ConfigFiles: info.Config.Labels["com.docker.compose.project.config_files"],
+	}, nil
+}
+
+// DiscoverProjects finds all docker-compose projects on the network
+func (c *Client) DiscoverProjects(ctx context.Context) (map[string]*ProjectInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	filterArgs := filters.NewArgs()
+	filterArgs.Add("network", c.networkName)
+
+	containers, err := c.docker.ContainerList(ctx, container.ListOptions{
+		Filters: filterArgs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	projects := make(map[string]*ProjectInfo)
+
+	for _, ctr := range containers {
+		// Skip roji itself
+		if ctr.Labels["roji.self"] == "true" {
+			continue
+		}
+
+		projectName := ctr.Labels["com.docker.compose.project"]
+		if projectName == "" {
+			continue
+		}
+
+		serviceName := ctr.Labels["com.docker.compose.service"]
+
+		if existing, ok := projects[projectName]; ok {
+			// Add service to existing project
+			existing.Services = append(existing.Services, serviceName)
+		} else {
+			// Create new project entry
+			projects[projectName] = &ProjectInfo{
+				Name:        projectName,
+				WorkingDir:  ctr.Labels["com.docker.compose.project.working_dir"],
+				ConfigFiles: ctr.Labels["com.docker.compose.project.config_files"],
+				Services:    []string{serviceName},
+			}
+		}
+	}
+
+	return projects, nil
 }
