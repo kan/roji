@@ -51,11 +51,12 @@ type DockerStatus struct {
 
 // ProxyStatus contains proxy configuration and state
 type ProxyStatus struct {
-	RoutesCount   int    `json:"routes_count"`
-	DashboardHost string `json:"dashboard_host"`
-	BaseDomain    string `json:"base_domain"`
-	HTTPPort      int    `json:"http_port"`
-	HTTPSPort     int    `json:"https_port"`
+	RoutesCount    int    `json:"routes_count"`
+	DashboardHost  string `json:"dashboard_host"`
+	BaseDomain     string `json:"base_domain"`
+	HTTPPort       int    `json:"http_port"`
+	HTTPSPort      int    `json:"https_port"`
+	SSESubscribers int    `json:"sse_subscribers"`
 }
 
 // parseCertificate reads and parses a certificate file

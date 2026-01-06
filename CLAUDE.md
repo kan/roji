@@ -343,6 +343,122 @@ msgCh, errCh := dockerClient.Events(ctx, events.ListOptions{
   - [x] マルチアーキテクチャDockerイメージ
   - [x] ビルドメタデータ（version, commit, date, built by）の埋め込み
 
+### Phase 9: インタラクティブダッシュボード ✅
+
+- [x] Petite Vue 導入
+  - [x] petite-vue.min.js を `proxy/templates/` に同梱（オフライン対応）
+  - [x] 既存の Go テンプレートを Petite Vue 対応に変換（デリミタ `[[` `]]`）
+  - [x] ビルドステップ不要、`embed.FS` 構成を維持
+- [x] SSE（Server-Sent Events）によるリアルタイム更新
+  - [x] `/_api/events` エンドポイント追加
+  - [x] Router に Pub/Sub 機能追加（Subscribe/notifySubscribers）
+  - [x] Docker Events → Router更新 → SSE broadcast の連携
+  - [x] 接続時に現在のルート一覧を即座に送信
+- [x] ダッシュボードUI更新
+  - [x] EventSource によるSSE接続
+  - [x] ルート変更時のリアクティブ更新（Petite Vue）
+  - [x] 接続状態インジケーター（Live / Disconnected）
+  - [x] 自動再接続対応（EventSource標準動作）
+  - [x] 追加/削除時のアニメーション（CSS transitions）
+- [x] Web Notification 通知
+  - [x] 通知許可リクエストUI
+  - [x] ルート追加時「{hostname} added」通知
+  - [x] ルート削除時「{hostname} removed」通知
+  - [x] 通知ON/OFF設定（localStorage保存）
+
+**技術選定: Petite Vue**
+- Vue作者（Evan You）製の軽量版（~6KB gzip）
+- ビルド不要、CDNまたは単一JSファイル同梱
+- Vue構文（v-for, v-if, v-on）がそのまま使える
+- 将来フルVue 3への移行も容易（構文互換）
+
+**実装イメージ:**
+```html
+<script src="/_assets/petite-vue.min.js" defer init></script>
+
+<div v-scope="Dashboard()">
+  <span v-if="connected">🟢 Live</span>
+  <span v-else>🔴 Disconnected</span>
+
+  <div v-for="route in routes" class="route">
+    <a :href="'https://' + route.hostname">{{ route.hostname }}</a>
+  </div>
+</div>
+
+<script type="module">
+function Dashboard() {
+  return {
+    routes: [],
+    connected: false,
+    init() {
+      const es = new EventSource('/_api/events')
+      es.onopen = () => this.connected = true
+      es.addEventListener('routes', (e) => {
+        this.routes = JSON.parse(e.data)
+      })
+    }
+  }
+}
+PetiteVue.createApp({ Dashboard }).mount()
+</script>
+```
+
+**アーキテクチャ:**
+```
+Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
+                                                      ↓
+                                              SSE endpoint (/_api/events)
+                                                      ↓
+                                              Dashboard (Petite Vue + EventSource)
+                                                      ↓
+                                              リアクティブUI更新 + Web Notification
+```
+
+**将来の拡張:**
+- ルートごとのヘルスチェック表示
+- フィルタリング・検索機能
+- ダークモード対応
+
+### Phase 9.5: プロジェクト履歴・クイックアクセス
+
+- [ ] プロジェクト情報の収集
+  - [ ] `com.docker.compose.project` からプロジェクト名取得
+  - [ ] `com.docker.compose.project.working_dir` から作業ディレクトリ取得
+  - [ ] `com.docker.compose.project.config_files` から設定ファイルパス取得
+  - [ ] 最終起動日時の記録
+- [ ] プロジェクト履歴の永続化
+  - [ ] JSON ファイルで保存（`/data/projects.json` など）
+  - [ ] プロジェクト追加・更新のタイミング管理
+- [ ] ダッシュボードUI
+  - [ ] 現在稼働中のプロジェクト一覧
+  - [ ] 過去に接続したプロジェクト一覧（停止中）
+  - [ ] 起動コマンドのコピーボタン
+    - `cd /path/to/project && docker compose up -d`
+  - [ ] プロジェクトごとのサービス数表示
+
+**ダッシュボード表示イメージ:**
+```
+┌─ Active Projects ────────────────────────────────┐
+│ 🟢 myapp (3 services)                            │
+│    web.localhost, api.localhost, db.localhost    │
+└──────────────────────────────────────────────────┘
+
+┌─ Recent Projects ────────────────────────────────┐
+│ ⚫ backend-api (停止中)              [📋 Copy]   │
+│    /home/user/backend-api                        │
+│    Last active: 2 hours ago                      │
+│                                                  │
+│ ⚫ frontend (停止中)                 [📋 Copy]   │
+│    /home/user/frontend                           │
+│    Last active: 1 day ago                        │
+└──────────────────────────────────────────────────┘
+```
+
+**将来の拡張（操作機能）:**
+- Docker Compose Go SDK（github.com/docker/compose/v2）統合
+- ダッシュボードからの起動/停止操作
+- ※ rojiがDockerコンテナ外で動作する場合に実現可能
+
 ### 将来の課題
 
 - [ ] インテグレーションテスト（Docker統合、E2Eテスト）

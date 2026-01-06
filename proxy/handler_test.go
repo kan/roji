@@ -205,3 +205,145 @@ func TestRedirectHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestHandler_Assets(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+
+	req := httptest.NewRequest("GET", "https://roji.localhost/_assets/petite-vue.min.js", nil)
+	req.Host = "roji.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/javascript" {
+		t.Errorf("Content-Type = %q, want %q", ct, "application/javascript")
+	}
+	if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "max-age") {
+		t.Errorf("Cache-Control should contain max-age, got %q", cc)
+	}
+}
+
+func TestHandler_Assets_NotFound(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+
+	req := httptest.NewRequest("GET", "https://roji.localhost/_assets/nonexistent.js", nil)
+	req.Host = "roji.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandler_Assets_PathTraversal(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+
+	tests := []string{
+		"/_assets/../handler.go",
+		"/_assets/../../go.mod",
+		"/_assets/foo/bar.js",
+	}
+
+	for _, path := range tests {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "https://roji.localhost"+path, nil)
+			req.Host = "roji.localhost"
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			if w.Code != http.StatusNotFound {
+				t.Errorf("path %q: status = %d, want %d", path, w.Code, http.StatusNotFound)
+			}
+		})
+	}
+}
+
+func TestHandler_SSE_Headers(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+
+	req := httptest.NewRequest("GET", "https://roji.localhost/_api/events", nil)
+	req.Host = "roji.localhost"
+	w := httptest.NewRecorder()
+
+	// Run handler in goroutine since it blocks
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(w, req)
+		close(done)
+	}()
+
+	// Wait briefly for headers to be set
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify SSE headers
+	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want %q", ct, "text/event-stream")
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Errorf("Cache-Control = %q, want %q", cc, "no-cache")
+	}
+}
+
+func TestHandler_RoutesAPI(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+
+	// Add a route
+	backend := &docker.Backend{
+		ContainerID:   "abc123",
+		ContainerName: "web",
+		ServiceName:   "web",
+		Host:          "172.17.0.2",
+		Port:          80,
+		Hostname:      "web.localhost",
+	}
+	router.AddBackend(backend)
+
+	req := httptest.NewRequest("GET", "https://roji.localhost/_api/routes", nil)
+	req.Host = "roji.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "web.localhost") {
+		t.Errorf("response should contain route hostname, got %q", body)
+	}
+}
+
+func TestHandler_StatusAPI(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, "roji.localhost", testStatusConfig())
+
+	req := httptest.NewRequest("GET", "https://roji.localhost/_api/status", nil)
+	req.Host = "roji.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "sse_subscribers") {
+		t.Errorf("status response should contain sse_subscribers, got %q", body)
+	}
+}

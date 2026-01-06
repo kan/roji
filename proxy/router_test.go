@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/kan/roji/docker"
 )
@@ -260,4 +262,136 @@ func TestRouteInfo_String(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRouter_Subscribe(t *testing.T) {
+	router := NewRouter()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Subscribe
+	eventCh, cleanup := router.Subscribe(ctx)
+	defer cleanup()
+
+	// Verify subscriber count
+	if count := router.SubscriberCount(); count != 1 {
+		t.Errorf("SubscriberCount() = %d, want 1", count)
+	}
+
+	// Add a backend
+	backend := &docker.Backend{
+		ContainerID:   "test123",
+		ContainerName: "test",
+		ServiceName:   "test",
+		Host:          "172.17.0.2",
+		Port:          80,
+		Hostname:      "test.localhost",
+	}
+
+	router.AddBackend(backend)
+
+	// Should receive event
+	select {
+	case event := <-eventCh:
+		if event.Type != "routes" {
+			t.Errorf("event.Type = %q, want %q", event.Type, "routes")
+		}
+		if len(event.Routes) != 1 {
+			t.Errorf("len(event.Routes) = %d, want 1", len(event.Routes))
+		}
+		if event.Routes[0].Hostname != "test.localhost" {
+			t.Errorf("route.Hostname = %q, want %q", event.Routes[0].Hostname, "test.localhost")
+		}
+	case <-time.After(time.Second):
+		t.Error("timeout waiting for event")
+	}
+}
+
+func TestRouter_SubscriberCount(t *testing.T) {
+	router := NewRouter()
+	ctx := context.Background()
+
+	if router.SubscriberCount() != 0 {
+		t.Error("expected 0 subscribers initially")
+	}
+
+	_, cleanup1 := router.Subscribe(ctx)
+	_, cleanup2 := router.Subscribe(ctx)
+
+	if router.SubscriberCount() != 2 {
+		t.Errorf("expected 2 subscribers, got %d", router.SubscriberCount())
+	}
+
+	cleanup1()
+
+	// Give goroutine time to clean up
+	time.Sleep(10 * time.Millisecond)
+
+	if router.SubscriberCount() != 1 {
+		t.Errorf("expected 1 subscriber after cleanup, got %d", router.SubscriberCount())
+	}
+
+	cleanup2()
+}
+
+func TestRouter_MultipleSubscribers(t *testing.T) {
+	router := NewRouter()
+	ctx := context.Background()
+
+	// Create multiple subscribers
+	ch1, cleanup1 := router.Subscribe(ctx)
+	defer cleanup1()
+	ch2, cleanup2 := router.Subscribe(ctx)
+	defer cleanup2()
+
+	// Add a backend
+	backend := &docker.Backend{
+		ContainerID:   "multi123",
+		ContainerName: "multi",
+		ServiceName:   "multi",
+		Host:          "172.17.0.2",
+		Port:          80,
+		Hostname:      "multi.localhost",
+	}
+
+	router.AddBackend(backend)
+
+	// Both subscribers should receive event
+	received := 0
+	timeout := time.After(time.Second)
+
+	for received < 2 {
+		select {
+		case <-ch1:
+			received++
+		case <-ch2:
+			received++
+		case <-timeout:
+			t.Fatalf("timeout: only received %d events, want 2", received)
+		}
+	}
+}
+
+func TestRouter_SlowSubscriber(t *testing.T) {
+	router := NewRouter()
+	ctx := context.Background()
+
+	// Subscribe but don't read from channel
+	_, cleanup := router.Subscribe(ctx)
+	defer cleanup()
+
+	// Add many backends to fill the buffer (buffer size is 10)
+	for i := 0; i < 15; i++ {
+		router.AddBackend(&docker.Backend{
+			ContainerID:   "slow" + string(rune('0'+i)),
+			ContainerName: "slow",
+			ServiceName:   "slow",
+			Host:          "172.17.0.2",
+			Port:          80,
+			Hostname:      "slow.localhost",
+		})
+	}
+
+	// Should not panic or block - events should be dropped for slow subscriber
+	// This test passes if it doesn't hang
 }

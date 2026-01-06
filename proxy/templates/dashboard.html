@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>roji - Dashboard</title>
+    <script src="/_assets/petite-vue.min.js" defer></script>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -16,12 +17,19 @@
             display: flex;
             align-items: center;
             gap: 12px;
+            flex-wrap: wrap;
         }
         .subtitle {
             color: #666;
             font-weight: normal;
             font-size: 0.9rem;
             margin-left: 8px;
+        }
+        .header-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
         .routes {
             background: white;
@@ -35,6 +43,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            transition: all 0.3s ease;
         }
         .route:last-child { border-bottom: none; }
         .route:hover { background: #fafafa; }
@@ -77,36 +86,216 @@
             border-radius: 4px;
             font-size: 0.75rem;
             font-weight: normal;
-            margin-left: auto;
+        }
+        /* Connection status indicator */
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 16px;
+            background: #f0f0f0;
+            font-weight: normal;
+        }
+        .status.connected { background: #e8f5e9; color: #2e7d32; }
+        .status.disconnected { background: #ffebee; color: #c62828; }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        .status.connected .status-dot { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        /* Route animations */
+        .route-enter {
+            animation: slideIn 0.3s ease;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Notification toggle */
+        .notification-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            color: #666;
+        }
+        .notification-toggle input {
+            margin: 0;
+            cursor: pointer;
+        }
+        .notification-toggle:hover { color: #333; }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
         }
     </style>
 </head>
 <body>
-    <h1>
-        🛤️ roji
-        <span class="subtitle">reverse proxy for local development</span>
-        {{if .Version}}<span class="version">v{{.Version}}</span>{{end}}
-    </h1>
-    {{if .Routes}}
-    <p><span class="count">{{len .Routes}}</span> routes registered</p>
-    <div class="routes">
-        {{range .Routes}}
-        <div class="route">
-            <div>
-                <div class="route-url"><a href="https://{{.Hostname}}{{.PathPrefix}}" target="_blank">{{.Hostname}}{{.PathPrefix}}</a></div>
-                <div class="route-target">→ {{.Target}}</div>
+    <div v-scope="Dashboard()" @vue:mounted="init">
+        <h1>
+            <span>&#x1F6E4;&#xFE0F; roji</span>
+            <span class="subtitle">reverse proxy for local development</span>
+            <span class="header-right">
+                <span v-if="version" class="version">v{{version}}</span>
+                <span :class="['status', connected ? 'connected' : 'disconnected']">
+                    <span class="status-dot"></span>
+                    {{connected ? 'Live' : 'Disconnected'}}
+                </span>
+            </span>
+        </h1>
+
+        <p v-if="routes.length" class="controls">
+            <span><span class="count">{{routes.length}}</span> routes registered</span>
+            <label v-if="notificationSupported" class="notification-toggle">
+                <input type="checkbox" v-model="notificationsEnabled" @change="toggleNotifications">
+                Notifications
+            </label>
+        </p>
+
+        <div class="routes">
+            <div v-if="routes.length === 0" class="empty">
+                <p>&#x1F50D; No routes registered yet</p>
+                <p>Start some containers on the roji network!</p>
             </div>
-            <span class="service-name">{{.ServiceName}}</span>
+            <div v-for="route in routes" :key="route.Hostname + (route.PathPrefix || '')" class="route">
+                <div>
+                    <div class="route-url">
+                        <a :href="'https://' + route.Hostname + (route.PathPrefix || '')" target="_blank">
+                            {{route.Hostname}}{{route.PathPrefix || ''}}
+                        </a>
+                    </div>
+                    <div class="route-target">&#x2192; {{route.Target}}</div>
+                </div>
+                <span class="service-name">{{route.ServiceName}}</span>
+            </div>
         </div>
-        {{end}}
     </div>
-    {{else}}
-    <div class="routes">
-        <div class="empty">
-            <p>🔍 No routes registered yet</p>
-            <p>Start some containers on the roji network!</p>
-        </div>
-    </div>
-    {{end}}
+
+    <script>
+    function Dashboard() {
+        return {
+            routes: [[.RoutesJSON]],
+            version: '[[.Version]]',
+            connected: false,
+            notificationsEnabled: localStorage.getItem('roji-notifications') === 'true',
+            notificationSupported: 'Notification' in window,
+            previousRoutes: {},
+
+            init() {
+                // Initialize previous routes
+                this.routes.forEach(r => {
+                    const key = r.Hostname + (r.PathPrefix || '');
+                    this.previousRoutes[key] = r;
+                });
+
+                this.connectSSE();
+            },
+
+            connectSSE() {
+                const eventSource = new EventSource('/_api/events');
+
+                eventSource.onopen = () => {
+                    this.connected = true;
+                };
+
+                eventSource.onerror = () => {
+                    this.connected = false;
+                    // EventSource will auto-reconnect
+                };
+
+                eventSource.addEventListener('routes', (e) => {
+                    const newRoutes = JSON.parse(e.data);
+                    this.handleRouteUpdate(newRoutes);
+                    this.routes = newRoutes;
+                });
+            },
+
+            handleRouteUpdate(newRoutes) {
+                if (!this.notificationsEnabled || Notification.permission !== 'granted') {
+                    this.updatePreviousRoutes(newRoutes);
+                    return;
+                }
+
+                const newKeys = {};
+                newRoutes.forEach(r => {
+                    const key = r.Hostname + (r.PathPrefix || '');
+                    newKeys[key] = r;
+                });
+
+                // Check for added routes
+                newRoutes.forEach(r => {
+                    const key = r.Hostname + (r.PathPrefix || '');
+                    if (!this.previousRoutes[key]) {
+                        this.notify(
+                            `${r.Hostname} added`,
+                            `Service: ${r.ServiceName}\nTarget: ${r.Target}`
+                        );
+                    }
+                });
+
+                // Check for removed routes
+                Object.keys(this.previousRoutes).forEach(key => {
+                    if (!newKeys[key]) {
+                        const r = this.previousRoutes[key];
+                        this.notify(
+                            `${r.Hostname} removed`,
+                            `Service: ${r.ServiceName}`
+                        );
+                    }
+                });
+
+                this.updatePreviousRoutes(newRoutes);
+            },
+
+            updatePreviousRoutes(routes) {
+                this.previousRoutes = {};
+                routes.forEach(r => {
+                    const key = r.Hostname + (r.PathPrefix || '');
+                    this.previousRoutes[key] = r;
+                });
+            },
+
+            async toggleNotifications() {
+                if (this.notificationsEnabled) {
+                    if (Notification.permission === 'default') {
+                        const permission = await Notification.requestPermission();
+                        if (permission !== 'granted') {
+                            this.notificationsEnabled = false;
+                        }
+                    } else if (Notification.permission === 'denied') {
+                        this.notificationsEnabled = false;
+                        alert('Notifications are blocked. Please enable in browser settings.');
+                    }
+                }
+                localStorage.setItem('roji-notifications', this.notificationsEnabled);
+            },
+
+            notify(title, body) {
+                if (Notification.permission === 'granted') {
+                    new Notification(title, {
+                        body: body,
+                        tag: 'roji-route-change',
+                        requireInteraction: false
+                    });
+                }
+            }
+        };
+    }
+
+    // Initialize Petite Vue when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+        PetiteVue.createApp({ Dashboard }).mount();
+    });
+    </script>
 </body>
 </html>

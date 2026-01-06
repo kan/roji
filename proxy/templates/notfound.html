@@ -12,20 +12,20 @@
     </style>
 </head>
 <body>
-    <h1>🚫 No Route Found</h1>
-    <p>No backend is configured for <code>{{.Hostname}}</code></p>
-    {{if .Routes}}
+    <h1>&#x1F6AB; No Route Found</h1>
+    <p>No backend is configured for <code>[[.Hostname]]</code></p>
+    [[if .Routes]]
     <div class="routes">
         <h3>Available Routes:</h3>
-        {{range .Routes}}
-        <div class="route">• <a href="https://{{.Hostname}}{{if .PathPrefix}}{{.PathPrefix}}{{else}}/{{end}}">{{.Hostname}}{{if .PathPrefix}}{{.PathPrefix}}{{else}}/{{end}}</a> → {{.ServiceName}}</div>
-        {{end}}
+        [[range .Routes]]
+        <div class="route">&#x2022; <a href="https://[[.Hostname]][[if .PathPrefix]][[.PathPrefix]][[else]]/[[end]]">[[.Hostname]][[if .PathPrefix]][[.PathPrefix]][[else]]/[[end]]</a> &#x2192; [[.ServiceName]]</div>
+        [[end]]
     </div>
-    {{else}}
+    [[else]]
     <p>No routes are currently registered. Start some containers on the roji network!</p>
-    {{end}}
-    {{if .DashboardHost}}
-    <p><a href="https://{{.DashboardHost}}">View Dashboard</a></p>
-    {{end}}
+    [[end]]
+    [[if .DashboardHost]]
+    <p><a href="https://[[.DashboardHost]]">View Dashboard</a></p>
+    [[end]]
 </body>
 </html>

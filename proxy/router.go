@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -9,6 +10,19 @@ import (
 
 	"github.com/kan/roji/docker"
 )
+
+// RouteEvent represents a route change event for SSE subscribers
+type RouteEvent struct {
+	Type   string      `json:"type"`   // "routes"
+	Routes []RouteInfo `json:"routes"` // Current route list
+}
+
+// Subscriber represents an SSE subscriber
+type Subscriber struct {
+	ch     chan RouteEvent
+	ctx    context.Context
+	cancel context.CancelFunc
+}
 
 // Route represents a single route configuration
 type Route struct {
@@ -24,13 +38,18 @@ type Router struct {
 
 	// For path-based routing: hostname -> []*Route (sorted by path length desc)
 	pathRoutes map[string][]*Route
+
+	// Pub/Sub for SSE subscribers
+	subMu       sync.RWMutex
+	subscribers map[*Subscriber]struct{}
 }
 
 // NewRouter creates a new route manager
 func NewRouter() *Router {
 	return &Router{
-		routes:     make(map[string]*Route),
-		pathRoutes: make(map[string][]*Route),
+		routes:      make(map[string]*Route),
+		pathRoutes:  make(map[string][]*Route),
+		subscribers: make(map[*Subscriber]struct{}),
 	}
 }
 
@@ -63,6 +82,9 @@ func (r *Router) AddBackend(backend *docker.Backend) {
 		"path", backend.PathPrefix,
 		"target", fmt.Sprintf("%s:%d", backend.Host, backend.Port),
 		"container", backend.ContainerName)
+
+	// Notify SSE subscribers (must be called after unlocking mu)
+	go r.notifySubscribers()
 }
 
 // RemoveBackend removes routes for a container
@@ -99,6 +121,9 @@ func (r *Router) RemoveBackend(containerID string) {
 			r.pathRoutes[hostname] = filtered
 		}
 	}
+
+	// Notify SSE subscribers
+	go r.notifySubscribers()
 }
 
 // RemoveProject removes all routes for a given project
@@ -130,6 +155,9 @@ func (r *Router) RemoveProject(projectName string) {
 			r.pathRoutes[hostname] = filtered
 		}
 	}
+
+	// Notify SSE subscribers
+	go r.notifySubscribers()
 }
 
 // Lookup finds a route for a given hostname and path
@@ -208,4 +236,70 @@ func (ri RouteInfo) String() string {
 	}
 	return fmt.Sprintf("https://%s%s -> %s (%s)",
 		ri.Hostname, path, ri.Target, ri.ServiceName)
+}
+
+// Subscribe creates a new SSE subscriber and returns the event channel and cleanup function.
+// The cleanup function must be called when the subscriber disconnects.
+func (r *Router) Subscribe(ctx context.Context) (<-chan RouteEvent, func()) {
+	subCtx, cancel := context.WithCancel(ctx)
+	sub := &Subscriber{
+		ch:     make(chan RouteEvent, 10), // Buffered to prevent blocking
+		ctx:    subCtx,
+		cancel: cancel,
+	}
+
+	r.subMu.Lock()
+	r.subscribers[sub] = struct{}{}
+	r.subMu.Unlock()
+
+	slog.Debug("SSE subscriber added", "total", r.SubscriberCount())
+
+	// Cleanup function
+	cleanup := func() {
+		r.subMu.Lock()
+		delete(r.subscribers, sub)
+		r.subMu.Unlock()
+		cancel()
+		close(sub.ch)
+		slog.Debug("SSE subscriber removed", "total", r.SubscriberCount())
+	}
+
+	return sub.ch, cleanup
+}
+
+// SubscriberCount returns the number of active SSE subscribers
+func (r *Router) SubscriberCount() int {
+	r.subMu.RLock()
+	defer r.subMu.RUnlock()
+	return len(r.subscribers)
+}
+
+// notifySubscribers broadcasts the current routes to all SSE subscribers
+func (r *Router) notifySubscribers() {
+	r.subMu.RLock()
+	defer r.subMu.RUnlock()
+
+	if len(r.subscribers) == 0 {
+		return
+	}
+
+	// Get current routes
+	routes := r.ListRoutes()
+
+	event := RouteEvent{
+		Type:   "routes",
+		Routes: routes,
+	}
+
+	for sub := range r.subscribers {
+		select {
+		case sub.ch <- event:
+			// Sent successfully
+		case <-sub.ctx.Done():
+			// Subscriber disconnected, will be cleaned up
+		default:
+			// Channel full, skip this update (subscriber too slow)
+			slog.Warn("SSE subscriber channel full, dropping update")
+		}
+	}
 }

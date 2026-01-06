@@ -20,10 +20,12 @@ var sharedTransport = &http.Transport{
 	IdleConnTimeout:     90 * time.Second,
 }
 
-//go:embed templates/*.html
+//go:embed templates/*.html templates/*.js
 var templateFS embed.FS
 
-var templates = template.Must(template.ParseFS(templateFS, "templates/*.html"))
+var templates = template.Must(
+	template.New("").Delims("[[", "]]").ParseFS(templateFS, "templates/*.html"),
+)
 
 // StatusConfig contains configuration for the status endpoint
 type StatusConfig struct {
@@ -82,6 +84,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// API endpoint for route listing
 		if r.URL.Path == "/_api/routes" {
 			h.serveRoutesAPI(w, r)
+			return
+		}
+		// SSE endpoint for real-time route updates
+		if r.URL.Path == "/_api/events" {
+			h.serveSSE(w, r)
+			return
+		}
+		// Static assets (petite-vue.min.js, etc.)
+		if strings.HasPrefix(r.URL.Path, "/_assets/") {
+			h.serveAsset(w, r)
 			return
 		}
 		h.serveDashboard(w, r)
@@ -169,12 +181,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) serveDashboard(w http.ResponseWriter, r *http.Request) {
 	routes := h.router.ListRoutes()
 
+	// Marshal routes to JSON for Petite Vue initialization
+	routesJSON, err := json.Marshal(routes)
+	if err != nil {
+		slog.Error("failed to marshal routes for dashboard", "error", err)
+		routesJSON = []byte("[]")
+	}
+
 	data := struct {
-		Routes  []RouteInfo
-		Version string
+		Routes     []RouteInfo
+		RoutesJSON template.JS // Safe for embedding in script
+		Version    string
 	}{
-		Routes:  routes,
-		Version: h.statusConfig.Version,
+		Routes:     routes,
+		RoutesJSON: template.JS(routesJSON),
+		Version:    h.statusConfig.Version,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -182,6 +203,88 @@ func (h *Handler) serveDashboard(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to render dashboard template", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
+}
+
+func (h *Handler) serveSSE(w http.ResponseWriter, r *http.Request) {
+	// Check for SSE support
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Subscribe to route changes
+	eventCh, cleanup := h.router.Subscribe(r.Context())
+	defer cleanup()
+
+	// Send initial routes immediately
+	routes := h.router.ListRoutes()
+	h.sendSSEEvent(w, flusher, "routes", routes)
+
+	slog.Debug("SSE client connected", "remote", r.RemoteAddr)
+
+	// Stream events until client disconnects
+	for {
+		select {
+		case <-r.Context().Done():
+			slog.Debug("SSE client disconnected", "remote", r.RemoteAddr)
+			return
+
+		case event, ok := <-eventCh:
+			if !ok {
+				return
+			}
+			h.sendSSEEvent(w, flusher, event.Type, event.Routes)
+		}
+	}
+}
+
+func (h *Handler) sendSSEEvent(w http.ResponseWriter, flusher http.Flusher, eventType string, routes []RouteInfo) {
+	data, err := json.Marshal(routes)
+	if err != nil {
+		slog.Error("failed to marshal SSE event", "error", err)
+		return
+	}
+
+	// SSE format: event: <type>\ndata: <json>\n\n
+	fmt.Fprintf(w, "event: %s\n", eventType)
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
+}
+
+func (h *Handler) serveAsset(w http.ResponseWriter, r *http.Request) {
+	// Extract filename from path (e.g., "/_assets/petite-vue.min.js" -> "petite-vue.min.js")
+	filename := strings.TrimPrefix(r.URL.Path, "/_assets/")
+
+	// Security: prevent path traversal
+	if strings.Contains(filename, "..") || strings.Contains(filename, "/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Read from embedded FS
+	content, err := templateFS.ReadFile("templates/" + filename)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Set content type based on extension
+	if strings.HasSuffix(filename, ".js") {
+		w.Header().Set("Content-Type", "application/javascript")
+	} else if strings.HasSuffix(filename, ".css") {
+		w.Header().Set("Content-Type", "text/css")
+	}
+
+	// Cache for 1 hour (static asset)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+
+	w.Write(content)
 }
 
 func (h *Handler) serveRoutesAPI(w http.ResponseWriter, r *http.Request) {
@@ -231,11 +334,12 @@ func (h *Handler) serveStatus(w http.ResponseWriter, r *http.Request) {
 			Network:   h.statusConfig.Network,
 		},
 		Proxy: ProxyStatus{
-			RoutesCount:   len(routes),
-			DashboardHost: h.dashboardHost,
-			BaseDomain:    h.statusConfig.BaseDomain,
-			HTTPPort:      h.statusConfig.HTTPPort,
-			HTTPSPort:     h.statusConfig.HTTPSPort,
+			RoutesCount:    len(routes),
+			DashboardHost:  h.dashboardHost,
+			BaseDomain:     h.statusConfig.BaseDomain,
+			HTTPPort:       h.statusConfig.HTTPPort,
+			HTTPSPort:      h.statusConfig.HTTPSPort,
+			SSESubscribers: h.router.SubscriberCount(),
 		},
 	}
 
