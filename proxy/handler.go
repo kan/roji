@@ -47,16 +47,18 @@ type StatusConfig struct {
 // Handler is the main HTTP handler for the reverse proxy
 type Handler struct {
 	router        *Router
-	dashboardHost string // hostname for dashboard (e.g., "roji.localhost")
+	dashboardHost string // hostname for dashboard (e.g., "roji.dev.localhost")
+	baseDomain    string // base domain (e.g., "dev.localhost")
 	statusConfig  *StatusConfig
 	projectStore  *project.Store
 }
 
 // NewHandler creates a new proxy handler
-func NewHandler(router *Router, dashboardHost string, statusConfig *StatusConfig, projectStore *project.Store) *Handler {
+func NewHandler(router *Router, dashboardHost string, baseDomain string, statusConfig *StatusConfig, projectStore *project.Store) *Handler {
 	return &Handler{
 		router:        router,
 		dashboardHost: strings.ToLower(dashboardHost),
+		baseDomain:    strings.ToLower(baseDomain),
 		statusConfig:  statusConfig,
 		projectStore:  projectStore,
 	}
@@ -73,8 +75,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	hostname = strings.ToLower(hostname)
 
-	// Check if this is the dashboard
-	if h.dashboardHost != "" && hostname == h.dashboardHost {
+	// Check if this is a dashboard-related host
+	isDashboardHost := h.dashboardHost != "" && hostname == h.dashboardHost
+	isBaseDomain := h.baseDomain != "" && hostname == h.baseDomain
+
+	if isDashboardHost || isBaseDomain {
+		// If accessing via base domain, redirect to dashboard host
+		if isBaseDomain && !isDashboardHost {
+			// Construct redirect URL
+			scheme := "https"
+			redirectURL := fmt.Sprintf("%s://%s%s", scheme, h.dashboardHost, r.URL.RequestURI())
+			http.Redirect(w, r, redirectURL, http.StatusFound) // 302 Temporary Redirect
+			return
+		}
+
 		// Health check endpoints
 		if r.URL.Path == "/_api/health" || r.URL.Path == "/healthz" {
 			h.serveHealth(w, r)
