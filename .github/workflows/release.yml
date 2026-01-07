@@ -41,3 +41,9 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger pkg.go.dev update
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "Requesting pkg.go.dev to index $VERSION"
+          curl -f "https://proxy.golang.org/github.com/kan/roji/@v/$VERSION.info" || true
