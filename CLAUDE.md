@@ -438,6 +438,10 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
 - [x] API エンドポイント
   - [x] `/_api/projects` - アクティブ/非アクティブプロジェクト一覧
   - [x] ルート更新時にプロジェクト情報も自動更新
+- [x] ベースドメインからダッシュボードホストへのリダイレクト
+  - [x] 302リダイレクト実装（dev.localhost → roji.dev.localhost）
+  - [x] パス・クエリ文字列の保持
+  - [x] ブックマーク統一の実現
 
 **ダッシュボード表示イメージ:**
 ```
@@ -462,12 +466,23 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
 - ダッシュボードからの起動/停止操作
 - ※ rojiがDockerコンテナ外で動作する場合に実現可能
 
-### v0.4.0 リリース時のタスク
+### v0.4.0 リリース準備
 
+- [x] examples/ ディレクトリ削除（install.shで自動生成されるため不要）
+- [x] README.md 更新
+  - [x] Phase 9.5機能の追記（プロジェクト履歴、リダイレクト）
+  - [x] Manual Installation手順の改善（リポジトリclone方式）
+  - [x] Dashboard セクションの拡充
+  - [x] 環境変数テーブルに `ROJI_DATA_DIR` 追加
+- [ ] CLAUDE.md 更新
+  - [ ] Phase 9.5を完了マーク
+  - [ ] v0.4.0リリースタスク整理
 - [ ] install.sh の更新
   - [ ] `ROJI_DATA_DIR` 環境変数の追加
   - [ ] データディレクトリ（`/data`）のボリュームマウント追加
   - [ ] 生成される docker-compose.yml の更新
+- [ ] CHANGELOG.md 作成（v0.4.0の変更内容）
+- [ ] バージョンタグ作成（v0.4.0）
 
 ### 将来の課題
 

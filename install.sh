@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 INSTALL_DIR="${ROJI_INSTALL_DIR:-$HOME/.roji}"
 NETWORK_NAME="roji"
 DOMAIN="dev.localhost"
-DASHBOARD_HOST="dev.localhost"
+DASHBOARD_HOST="roji.dev.localhost"
 
 # Print colored message
 print_info() {
@@ -114,8 +114,9 @@ create_network() {
 create_compose_file() {
     print_info "Creating docker-compose.yml..."
 
-    # Create certs directory
+    # Create directories
     mkdir -p "${INSTALL_DIR}/certs"
+    mkdir -p "${INSTALL_DIR}/data"
 
     cat > docker-compose.yml <<'EOF'
 services:
@@ -130,12 +131,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./certs:/certs
+      - ./data:/data
     environment:
       - ROJI_NETWORK=roji
       - ROJI_DOMAIN=dev.localhost
       - ROJI_CERTS_DIR=/certs
+      - ROJI_DATA_DIR=/data
       - ROJI_AUTO_CERT=true
-      - ROJI_DASHBOARD=dev.localhost
+      - ROJI_DASHBOARD=roji.dev.localhost
       - ROJI_LOG_LEVEL=info
     networks:
       - roji

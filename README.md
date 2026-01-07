@@ -15,7 +15,8 @@ A simple reverse proxy for local development environments. Automatically discove
 - **TLS Support**: Auto-generates certificates (no mkcert required) or use your own
 - **Label-based Configuration**: Customize hostnames and ports via container labels
 - **Dynamic Updates**: Automatically tracks container start/stop events
-- **Dashboard**: View current routes in your browser
+- **Live Dashboard**: Real-time route updates via Server-Sent Events with optional browser notifications
+- **Project History**: Tracks active and recent Docker Compose projects with quick restart commands
 - **Simple**: Minimal implementation focused on local development
 
 ## Installation
@@ -44,27 +45,41 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | ROJI_INS
 
 ### Manual Installation
 
-If you prefer manual setup:
+If you prefer manual setup or want to contribute to development:
 
-#### 1. Create the shared network
+#### 1. Clone the repository
+
+```bash
+git clone https://github.com/kan/roji.git
+cd roji
+```
+
+#### 2. Create the shared network
 
 ```bash
 docker network create roji
 ```
 
-#### 2. Start roji
+#### 3. Copy environment file (optional)
 
 ```bash
-# Copy the example compose file
-cp examples/docker-compose.yml docker-compose.yml
+cp .env.example .env
+# Edit .env to customize settings if needed
+```
 
-# Start roji
+#### 4. Start roji
+
+```bash
 docker compose up -d
 ```
 
+The repository includes a production-ready `docker-compose.yml` that uses the latest published image.
+
+**For development**: Use `docker compose -f docker-compose.dev.yml up` for hot-reloading with [Air](https://github.com/cosmtrek/air).
+
 Certificates are **automatically generated** on first startup. See [TLS Certificates](#tls-certificates) for how to trust them.
 
-#### 3. Start your application
+#### 5. Start your application
 
 ```yaml
 # your-app/docker-compose.yml
@@ -212,7 +227,8 @@ services:
 | `ROJI_NETWORK` | Docker network to watch | `roji` |
 | `ROJI_DOMAIN` | Base domain | `dev.localhost` |
 | `ROJI_CERTS_DIR` | Certificate directory | `/certs` |
-| `ROJI_DASHBOARD` | Dashboard hostname | `{domain}` |
+| `ROJI_DATA_DIR` | Data directory (project history) | `/data` |
+| `ROJI_DASHBOARD` | Dashboard hostname | `roji.{domain}` |
 | `ROJI_LOG_LEVEL` | Log level | `info` |
 | `ROJI_AUTO_CERT` | Auto-generate certificates | `true` |
 
@@ -226,7 +242,19 @@ environment:
 
 ## Dashboard
 
-Access `https://dev.localhost` (or your custom configured host) to view a list of currently registered routes.
+Access the dashboard at:
+- `https://roji.dev.localhost` (dashboard host)
+- `https://dev.localhost` (redirects to dashboard host)
+
+The dashboard provides:
+
+- **Live Route Updates**: Real-time updates via Server-Sent Events when containers start/stop
+- **Browser Notifications**: Optional desktop notifications for route changes
+- **Active Projects**: Currently running Docker Compose projects with service counts
+- **Project History**: Recently stopped projects with one-click copy of restart commands
+- **System Status**: Build version, uptime, connection status
+
+The dashboard automatically updates without page refresh, and supports dark mode based on your system preferences.
 
 ## Health Check
 
