@@ -474,13 +474,13 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
   - [x] Manual Installation手順の改善（リポジトリclone方式）
   - [x] Dashboard セクションの拡充
   - [x] 環境変数テーブルに `ROJI_DATA_DIR` 追加
-- [ ] CLAUDE.md 更新
-  - [ ] Phase 9.5を完了マーク
-  - [ ] v0.4.0リリースタスク整理
-- [ ] install.sh の更新
-  - [ ] `ROJI_DATA_DIR` 環境変数の追加
-  - [ ] データディレクトリ（`/data`）のボリュームマウント追加
-  - [ ] 生成される docker-compose.yml の更新
+- [x] CLAUDE.md 更新
+  - [x] Phase 9.5を完了マーク
+  - [x] v0.4.0リリースタスク整理
+- [x] install.sh の更新
+  - [x] `ROJI_DATA_DIR` 環境変数の追加
+  - [x] データディレクトリ（`/data`）のボリュームマウント追加
+  - [x] 生成される docker-compose.yml の更新（roji.dev.localhost）
 - [ ] CHANGELOG.md 作成（v0.4.0の変更内容）
 - [ ] バージョンタグ作成（v0.4.0）
 
