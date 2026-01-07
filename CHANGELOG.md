@@ -5,167 +5,123 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2025-12-29
-
-First stable release of roji - a simple reverse proxy for local development.
+## [0.4.0] - 2026-01-07
 
 ### Added
 
-#### Proxy & Routing
-- Auto-discovery of Docker Compose services on shared network
-- Dynamic routing based on hostname and path
-- Container label support for customization:
-  - `roji.host` - Custom hostname
-  - `roji.port` - Target port selection
-  - `roji.path` - Path-based routing
-- Automatic route updates on container start/stop
-- HTTP to HTTPS automatic redirect
-
-#### TLS Certificates
-- Automatic certificate generation (CA + server certificates)
-- Support for wildcard certificates (*.localhost)
-- Certificate expiration tracking
-- OS-specific installation guides (Windows/macOS/Linux)
-- Support for external certificates (mkcert compatible)
-
-#### Dashboard & Monitoring
-- Web dashboard for viewing registered routes
-- Real-time status endpoint with:
-  - Certificate expiration information
-  - Docker connection status
-  - Proxy configuration details
-  - System uptime
-  - Overall health status
-- Health check endpoints (`/_api/health`, `/healthz`)
-- JSON API for route listing
-
-#### CLI
-- Command-line interface built with Cobra
-- Commands:
-  - `roji` - Start the proxy server
-  - `roji routes` - List all registered routes
-  - `roji version` - Display version information
-  - `roji --help` - Show help and available commands
-
-#### Installation & Distribution
-- One-liner installation script:
-  ```bash
-  curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
-  ```
-- Automated prerequisite checks (Docker, Docker Compose)
-- Default installation to `~/.roji`
-- Automatic Docker image publishing to ghcr.io
-- Multi-tag strategy (semver + latest)
-
-#### Developer Experience
-- Hot reload development environment (air)
-- Comprehensive test suite (48.2% coverage)
-- GitHub Actions CI/CD
-- Docker health checks
-- Graceful shutdown handling
-
-### Documentation
-- Installation guide with one-liner setup
-- TLS certificate installation instructions
-- Configuration reference (environment variables & labels)
-- Development setup guide (CONTRIBUTING.md)
-- Troubleshooting section
-- API documentation
-
-## [0.2.0] - 2025-12-30
-
-Security and performance improvements release.
-
-### Security
-
-- **Distroless image migration**: Production image now uses `gcr.io/distroless/static:nonroot` for minimal attack surface
-- **X-Forwarded header protection**: Strip client-provided X-Forwarded-* headers to prevent spoofing
-- **Path traversal prevention**: Reject paths containing `..` in `roji.path` labels
-- **Dependency updates**: Docker client library updated to v28.5.2
-- **Security scanning**: Added govulncheck, Trivy, and hadolint to CI pipeline
-- **Non-root execution**: Container runs as nonroot user (UID 65532)
-
-### Added
-
-- `roji health` command for container healthcheck (replaces curl-based healthcheck)
-- GitHub Actions security scan workflow (weekly + on PR/push)
-- Trivy vulnerability scanning before Docker image release
-
-### Improved
-
-- **SSE support**: Added `FlushInterval = -1` for Server-Sent Events compatibility
-- **Connection pooling**: Shared HTTP transport for better performance
-- **Docker Events reconnection**: Automatic reconnection on Docker daemon restart
-- **Explicit server timeouts**: Configured timeouts for HTTP/HTTPS servers
-- **Docker API timeouts**: Added timeouts to prevent indefinite blocking
+- **Live Dashboard**: Real-time route updates via Server-Sent Events (SSE)
+  - Automatic updates when containers start/stop without page refresh
+  - Connection status indicator (Live/Disconnected)
+  - Auto-reconnection on connection loss
+- **Browser Notifications**: Optional desktop notifications for route changes
+  - Notification settings persisted in localStorage
+  - "Route added" and "Route removed" notifications
+- **Project History**: Track active and recent Docker Compose projects
+  - Automatically detects Docker Compose projects
+  - Shows project name, working directory, and service count
+  - Displays last active time for stopped projects
+  - One-click copy of restart commands
+  - Data persisted in `/data/projects.json`
+- **Dashboard Redirect**: Base domain now redirects to dashboard host
+  - `https://dev.localhost/` → `https://roji.dev.localhost/`
+  - Preserves path and query strings
+  - Ensures consistent bookmarks and URL bar history
+- **Version Info**: Hover tooltip on dashboard showing build metadata
+  - Commit hash, build date, and built by information
+- **Data Persistence**: New `/data` volume for storing project history
+- **API Endpoints**:
+  - `/_api/events` - Server-Sent Events stream for real-time updates
+  - `/_api/projects` - Active and inactive project listing
 
 ### Changed
 
-- Docker healthcheck now uses `/roji health` instead of `curl`
-- install.sh updated with healthcheck configuration
+- Dashboard now accessible at `https://roji.dev.localhost` (primary)
+- Base domain `https://dev.localhost` redirects to dashboard host
+- Environment variable `ROJI_DASHBOARD` default changed to `roji.{domain}`
+- Improved dashboard UI with Petite Vue framework (~6KB)
+- Enhanced version display with build information tooltip
+- Updated install.sh to:
+  - Create `/data` directory for project history
+  - Mount `/data` volume in generated docker-compose.yml
+  - Set `ROJI_DASHBOARD` to `roji.dev.localhost`
+  - Add `ROJI_DATA_DIR` environment variable
 
-## [0.3.0] - 2024-12-30
+### Removed
 
-Major release with GoReleaser integration, improved domain structure, and bug fixes.
-
-### Added
-
-#### Release Automation
-- **GoReleaser integration** for automated multi-platform releases
-  - Binary builds for Linux, macOS, Windows (amd64/arm64)
-  - Multi-arch Docker images with manifest lists
-  - Automated changelog generation from git history
-  - GitHub Release creation with artifacts
-- **Enhanced version command** with detailed build metadata:
-  - Version number from git tag
-  - Git commit hash
-  - Build timestamp
-  - Builder identification (goreleaser/github-actions/docker/manual)
-  - Go version and platform information
-
-#### Installation Improvements
-- Simplified installation script with better error handling
-- Direct certificate mounting (removed Docker volume complexity)
-- Root user execution in container for proper permissions
-- Automatic certificate export from container to host
-
-### Changed
-
-#### BREAKING: Domain Structure
-- **Default domain changed from `localhost` to `dev.localhost`**
-  - Dashboard: `dev.localhost` (was `roji.localhost`)
-  - Services: `*.dev.localhost` (was `*.localhost`)
-  - Provides better browser certificate validation
-  - Migration: Update ROJI_DOMAIN environment variable and reinstall CA certificate
-
-#### Certificate Improvements
-- Fixed duplicate DNS names in certificate SAN entries
-- Improved wildcard certificate support for nested subdomains
-- Better compatibility with browser certificate validation
+- `examples/` directory (install.sh now generates docker-compose.yml)
 
 ### Fixed
 
-- **Certificate validation errors** (ERR_CERT_COMMON_NAME_INVALID) in browsers
-- **Version ldflags** not being applied due to hardcoded override in main.go
-- **Docker socket permission issues** by running container as root
-- **Installation script** certificate handling and error recovery
+- SSE test race condition that occasionally caused test failures
+- Dashboard styling improvements for better visual consistency
 
-### Technical Improvements
+### Technical Details
 
-- Added build metadata to all build methods (Docker, GoReleaser, manual)
-- Improved CI/CD pipeline with version injection
-- Better test coverage for certificate generation
-- Cleaner code structure with removed version override
+- Petite Vue (~6KB) for reactive UI without build step
+- SSE Pub/Sub pattern in Router for efficient event broadcasting
+- Graceful SSE reconnection handling
+- CSS transitions for smooth route add/remove animations
+- Project metadata collection from Docker Compose labels
 
-## [Unreleased]
+## [0.3.0] - 2026-01-05
 
-### Planned
-- Integration tests
-- Additional cloud provider support
+### Added
 
----
+- GoReleaser integration for automated releases
+- Multi-platform binary builds (Linux/macOS/Windows, amd64/arm64)
+- Multi-architecture Docker images (amd64/arm64)
+- Build metadata embedding (version, commit, date, built by)
+- `roji version` command with accurate version information
+- GitHub Release automation
+- Semantic versioning tags (v1.2.3 → 1.2.3, 1.2, 1, latest)
 
-[0.1.0]: https://github.com/kan/roji/releases/tag/v0.1.0
-[0.2.0]: https://github.com/kan/roji/releases/tag/v0.2.0
+### Changed
+
+- Switched from manual Docker builds to GoReleaser
+- Improved release workflow automation
+
+## [0.2.0] - 2026-01-04
+
+### Added
+
+- Security enhancements:
+  - Distroless base image (gcr.io/distroless/static:nonroot)
+  - X-Forwarded header spoofing protection
+  - Path traversal prevention for roji.path label
+  - GitHub Actions security scanning (govulncheck, Trivy, hadolint)
+- Performance improvements:
+  - SSE support (FlushInterval = -1)
+  - Shared Transport for connection pooling
+  - Docker Events auto-reconnection
+- Robustness improvements:
+  - Explicit server timeouts
+  - Docker API timeout handling
+  - `roji health` command for Distroless compatibility
+
+### Changed
+
+- Updated Docker client library to v28.5.2
+- Migrated to Distroless image for better security
+
+## [0.1.0] - 2026-01-03
+
+### Added
+
+- Initial release
+- Auto-discovery of Docker containers on shared network
+- TLS certificate auto-generation
+- Label-based configuration (roji.host, roji.port, roji.path)
+- Dynamic route updates via Docker Events
+- Dashboard for viewing routes
+- CLI commands: routes, version, health
+- Health check endpoints (/_api/health, /healthz)
+- Status API (/_api/status) with certificate expiration monitoring
+- One-liner installation script (install.sh)
+- HTTP to HTTPS redirection
+- Path-based routing support
+- Cobra-based CLI structure
+
+[0.4.0]: https://github.com/kan/roji/releases/tag/v0.4.0
 [0.3.0]: https://github.com/kan/roji/releases/tag/v0.3.0
-[Unreleased]: https://github.com/kan/roji/compare/v0.3.0...HEAD
+[0.2.0]: https://github.com/kan/roji/releases/tag/v0.2.0
+[0.1.0]: https://github.com/kan/roji/releases/tag/v0.1.0
