@@ -1,3 +1,10 @@
+// Package proxy provides HTTP/HTTPS reverse proxy functionality.
+//
+// It handles:
+//   - Dynamic routing based on hostname and path
+//   - TLS termination with auto-generated certificates
+//   - Real-time dashboard with Server-Sent Events (SSE)
+//   - Health check and status endpoints
 package proxy
 
 import (

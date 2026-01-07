@@ -483,10 +483,37 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
   - [x] 生成される docker-compose.yml の更新（roji.dev.localhost）
 - [x] CHANGELOG.md 作成（v0.4.0の変更内容）
 
-**リリース準備完了！次のステップ:**
-- バージョンタグ `v0.4.0` を作成してプッシュ
-- GoReleaserが自動的にリリースを作成
-- GitHub Releaseページで内容を確認
+**リリース手順（v0.5.0の場合）:**
+
+1. **ドキュメント更新**
+   - `README.md`: install.sh URLを新バージョンに更新（2箇所）
+     ```bash
+     v0.4.0 → v0.5.0
+     ```
+   - `CHANGELOG.md`: 新バージョンの変更内容を追加（降順、最新版が上）
+
+2. **変更をコミット**
+   ```bash
+   git add README.md CHANGELOG.md
+   git commit -m "Prepare for vX.Y.Z release"
+   git push origin main
+   ```
+
+3. **タグ作成とプッシュ**
+   ```bash
+   git tag -a vX.Y.Z -m "Release vX.Y.Z: [主要機能の説明]"
+   git push origin main
+   git push origin vX.Y.Z
+   ```
+
+4. **自動リリース確認**
+   - GitHub Actions: https://github.com/kan/roji/actions
+   - GitHub Release: https://github.com/kan/roji/releases/tag/vX.Y.Z
+   - Docker Image: `ghcr.io/kan/roji:X.Y.Z`
+
+5. **リリース後の確認**
+   - pkg.go.dev が自動更新されるまで待つ（通常数分）
+   - ドキュメントリンクが正しく動作することを確認
 
 ### 将来の課題
 

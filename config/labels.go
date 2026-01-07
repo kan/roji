@@ -1,3 +1,9 @@
+// Package config provides Docker container label parsing for roji configuration.
+//
+// It extracts routing configuration from Docker labels such as:
+//   - roji.host: Custom hostname
+//   - roji.port: Target port
+//   - roji.path: Path prefix for path-based routing
 package config
 
 import (

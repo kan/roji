@@ -1,3 +1,10 @@
+// Package docker provides Docker API client functionality for service discovery.
+//
+// It handles:
+//   - Container discovery on the roji network
+//   - Docker Compose project detection
+//   - Backend extraction from container metadata
+//   - Event monitoring for dynamic updates
 package docker
 
 import (

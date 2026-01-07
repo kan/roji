@@ -1,3 +1,7 @@
+// Package project manages Docker Compose project history and metadata.
+//
+// It tracks active and recently stopped projects, persisting data to JSON
+// for display in the dashboard and quick restart functionality.
 package project
 
 import (

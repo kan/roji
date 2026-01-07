@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/kan/roji/actions/workflows/ci.yml/badge.svg)](https://github.com/kan/roji/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kan/roji)](https://github.com/kan/roji/blob/main/go.mod)
+[![GoDoc](https://pkg.go.dev/badge/github.com/kan/roji.svg)](https://pkg.go.dev/github.com/kan/roji)
 [![License](https://img.shields.io/github/license/kan/roji)](https://github.com/kan/roji/blob/main/LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fkan%2Froji-blue?logo=docker)](https://github.com/kan/roji/pkgs/container/roji)
 

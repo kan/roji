@@ -1,3 +1,7 @@
+// Package certgen provides TLS certificate generation for local development.
+//
+// It automatically generates a Certificate Authority (CA) and server certificates
+// for wildcard domains (*.dev.localhost) without requiring external tools like mkcert.
 package certgen
 
 import (
