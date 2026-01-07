@@ -26,7 +26,7 @@ A simple reverse proxy for local development environments. Automatically discove
 Install and start roji with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.4.0/install.sh | bash
 ```
 
 This will:
@@ -40,7 +40,7 @@ This will:
 **Custom installation directory:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.4.0/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
 ```
 
 ### Manual Installation
