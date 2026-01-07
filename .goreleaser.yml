@@ -43,7 +43,7 @@ archives:
     files:
       - LICENSE
       - README.md
-      - examples/docker-compose.yml
+      - CHANGELOG.md
 
 checksum:
   name_template: 'checksums.txt'
