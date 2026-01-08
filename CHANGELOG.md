@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-01-08
+
+### Added
+
+- **Misconfigured Container Warnings**: Dashboard now shows containers with configuration issues
+  - Containers without exposed ports are displayed with warning badge
+  - Warning page with context-aware fix suggestions
+  - Hostname conflict detection when multiple services use the same hostname
+- **Warning Page**: Dedicated error page for misconfigured routes
+  - Shows specific issue and affected service
+  - Provides tailored fix instructions based on warning type
+  - Direct link back to dashboard
+- **GitHub Link**: Added GitHub repository link with Octocat icon to dashboard header
+
+### Fixed
+
+- **Multi-service Hostname Format**: Changed from `service.project.localhost` to `service-project.localhost`
+  - Keeps hostname at single subdomain level
+  - Ensures wildcard SSL certificate (`*.localhost`) compatibility
+  - Prevents certificate errors for multi-service projects
+
+### Technical Details
+
+- Warning type detection in proxy handler for template switching
+- Hostname conflict check in Router.AddBackend with warning propagation
+- Inline SVG for GitHub Octocat icon (no external dependencies)
+
 ## [0.4.0] - 2026-01-07
 
 ### Added
@@ -121,6 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path-based routing support
 - Cobra-based CLI structure
 
+[0.5.0]: https://github.com/kan/roji/releases/tag/v0.5.0
 [0.4.0]: https://github.com/kan/roji/releases/tag/v0.4.0
 [0.3.0]: https://github.com/kan/roji/releases/tag/v0.3.0
 [0.2.0]: https://github.com/kan/roji/releases/tag/v0.2.0
