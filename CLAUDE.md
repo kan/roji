@@ -72,7 +72,8 @@ roji/
 │   ├── router.go             # ホスト名/パスルーティング
 │   └── templates/            # HTMLテンプレート
 │       ├── dashboard.html
-│       └── notfound.html
+│       ├── notfound.html
+│       └── warning.html      # 設定ミス警告ページ
 ├── certgen/
 │   └── generator.go          # TLS証明書生成
 ├── config/
@@ -515,11 +516,118 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
    - pkg.go.dev が自動更新されるまで待つ（通常数分）
    - ドキュメントリンクが正しく動作することを確認
 
+### Phase 10: テスト強化・アップグレード対応（v0.6.0）
+
+- [ ] インテグレーションテスト
+  - [ ] Docker Compose を使った実環境テスト
+  - [ ] テスト用 docker-compose.yml の作成（`test/` ディレクトリ）
+  - [ ] コンテナ起動 → ルート検出 → プロキシ動作の一連のフロー検証
+  - [ ] ポートなし/ホスト名競合など警告ケースのテスト
+  - [ ] GitHub Actions での自動実行（Docker-in-Docker または services）
+- [ ] E2Eテスト
+  - [ ] 実際のHTTPリクエストを使った動作検証
+  - [ ] ダッシュボードのアクセス確認
+  - [ ] SSE接続・リアルタイム更新の検証
+  - [ ] TLS証明書の検証（自己署名CA）
+- [ ] install.sh アップグレード対応
+  - [ ] 既存インストールの検出（`$ROJI_INSTALL_DIR/docker-compose.yml` の存在確認）
+  - [ ] バージョン確認（現在のイメージタグ取得）
+  - [ ] アップグレードモード（`--upgrade` フラグまたは自動検出）
+  - [ ] docker-compose.yml のイメージタグ更新
+  - [ ] `docker compose pull && docker compose up -d` の実行
+  - [ ] 設定ファイル（docker-compose.yml）のマイグレーション
+    - 新しい環境変数の追加
+    - 非推奨設定の警告
+  - [ ] ロールバック手順の案内
+
+**インテグレーションテスト構成案:**
+```
+test/
+├── docker-compose.yml      # テスト用サービス群
+├── integration_test.go     # Goテストコード
+└── testdata/
+    └── expected/           # 期待値ファイル
+```
+
+**テストシナリオ:**
+1. 基本フロー: コンテナ起動 → ダッシュボードでルート確認 → プロキシアクセス
+2. 動的更新: コンテナ追加/削除 → SSEイベント受信 → ルート更新確認
+3. 警告ケース: ポートなしコンテナ → 警告表示確認
+4. 競合ケース: 同一ホスト名 → 競合警告確認
+5. TLS: HTTPS接続 → 証明書検証
+
+**install.sh アップグレードフロー:**
+```
+$ curl -fsSL .../install.sh | bash
+
+Existing roji installation detected at ~/.roji
+Current version: 0.5.0
+Latest version: 0.6.0
+
+Upgrading roji...
+✓ Pulled new image
+✓ Restarted roji
+✓ Upgrade complete!
+
+roji is now running at https://roji.dev.localhost
+```
+
+### Phase 10.5: UX改善・開発支援機能（v0.6.0）
+
+- [ ] ダークモード対応
+  - [ ] CSS変数によるテーマ切り替え
+  - [ ] localStorage で設定保存
+  - [ ] システム設定の自動検出（prefers-color-scheme）
+  - [ ] ダッシュボードにトグルボタン追加
+- [ ] リクエストログビューア
+  - [ ] リングバッファでログ保持（直近100件程度）
+  - [ ] SSEで新規リクエストをリアルタイム配信
+  - [ ] ダッシュボードにログパネル追加
+  - [ ] メソッド、パス、ステータス、レイテンシ、ホスト名を表示
+  - [ ] フィルタリング機能（ホスト名、ステータスコード）
+- [ ] 複数ネットワーク対応
+  - [ ] `ROJI_NETWORK` でカンマ区切り複数指定
+  - [ ] 各ネットワークを並行して監視
+  - [ ] ダッシュボードでネットワーク別表示（オプション）
+- [ ] コンテナ再起動ボタン
+  - [ ] ダッシュボードの各ルートに再起動ボタン追加
+  - [ ] Docker API `ContainerRestart` 呼び出し
+  - [ ] `/_api/containers/{id}/restart` エンドポイント
+  - [ ] 確認ダイアログ表示
+- [ ] シンプルなリクエストモック
+  - [ ] `roji.mock.{METHOD}.{PATH}` ラベルでレスポンス定義
+  - [ ] JSON/テキストレスポンスのサポート
+  - [ ] ステータスコード指定（`roji.mock.status.{PATH}=404`）
+  - [ ] バックエンド未実装時のフロントエンド開発支援
+
+**リクエストログビューア実装イメージ:**
+```
+┌─ Request Log ─────────────────────────────────────────────┐
+│ 🟢 GET  /api/users      200  45ms  api-myapp.localhost    │
+│ 🔴 POST /api/login      401  12ms  api-myapp.localhost    │
+│ 🟢 GET  /assets/app.js  200   3ms  web-myapp.localhost    │
+│ 🟡 GET  /api/slow       200 2.1s   api-myapp.localhost    │
+└───────────────────────────────────────────────────────────┘
+```
+
+**モック機能の使用例:**
+```yaml
+services:
+  mock-api:
+    image: alpine
+    command: ["sleep", "infinity"]
+    labels:
+      - "roji.host=api.localhost"
+      - "roji.mock.GET./api/users=[{\"id\":1,\"name\":\"Test\"}]"
+      - "roji.mock.GET./api/health={\"status\":\"ok\"}"
+      - "roji.mock.status.POST./api/users=201"
+    networks:
+      - roji
+```
+
 ### 将来の課題
 
-- [ ] インテグレーションテスト（Docker統合、E2Eテスト）
-- [ ] Kubernetes対応（Helm chart）
-- [ ] メトリクス/プロメテウス対応
+（検討中）
 
 ## 出力ファイル仕様
 
