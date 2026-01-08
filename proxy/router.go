@@ -59,6 +59,26 @@ func (r *Router) AddBackend(backend *docker.Backend) {
 	defer r.mu.Unlock()
 
 	hostname := strings.ToLower(backend.Hostname)
+
+	// Check for hostname conflict with different container
+	if backend.PathPrefix == "" {
+		if existing, ok := r.routes[hostname]; ok {
+			if existing.Backend.ContainerID != backend.ContainerID {
+				// Conflict detected - different container is using the same hostname
+				conflictMsg := fmt.Sprintf("hostname conflict: overwrites %s", existing.Backend.ServiceName)
+				if backend.Warning != "" {
+					backend.Warning += "; " + conflictMsg
+				} else {
+					backend.Warning = conflictMsg
+				}
+				slog.Warn("hostname conflict detected",
+					"hostname", hostname,
+					"new_service", backend.ServiceName,
+					"existing_service", existing.Backend.ServiceName)
+			}
+		}
+	}
+
 	route := &Route{
 		Hostname:   hostname,
 		PathPrefix: backend.PathPrefix,
@@ -188,23 +208,33 @@ func (r *Router) ListRoutes() []RouteInfo {
 	var infos []RouteInfo
 
 	for _, route := range r.routes {
+		target := ""
+		if route.Backend.Port > 0 {
+			target = fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port)
+		}
 		infos = append(infos, RouteInfo{
 			Hostname:      route.Hostname,
 			PathPrefix:    route.PathPrefix,
-			Target:        fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port),
+			Target:        target,
 			ContainerName: route.Backend.ContainerName,
 			ServiceName:   route.Backend.ServiceName,
+			Warning:       route.Backend.Warning,
 		})
 	}
 
 	for _, routes := range r.pathRoutes {
 		for _, route := range routes {
+			target := ""
+			if route.Backend.Port > 0 {
+				target = fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port)
+			}
 			infos = append(infos, RouteInfo{
 				Hostname:      route.Hostname,
 				PathPrefix:    route.PathPrefix,
-				Target:        fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port),
+				Target:        target,
 				ContainerName: route.Backend.ContainerName,
 				ServiceName:   route.Backend.ServiceName,
+				Warning:       route.Backend.Warning,
 			})
 		}
 	}
@@ -222,11 +252,12 @@ func (r *Router) ListRoutes() []RouteInfo {
 
 // RouteInfo is a display-friendly route representation
 type RouteInfo struct {
-	Hostname      string
-	PathPrefix    string
-	Target        string
-	ContainerName string
-	ServiceName   string
+	Hostname      string `json:"hostname"`
+	PathPrefix    string `json:"pathPrefix,omitempty"`
+	Target        string `json:"target"`
+	ContainerName string `json:"containerName"`
+	ServiceName   string `json:"serviceName"`
+	Warning       string `json:"warning,omitempty"`
 }
 
 func (ri RouteInfo) String() string {

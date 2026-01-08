@@ -153,13 +153,14 @@ func TestClient_Close(t *testing.T) {
 
 func TestClient_DiscoverBackends(t *testing.T) {
 	tests := []struct {
-		name           string
-		networkName    string
-		baseDomain     string
-		containers     []types.Container
-		inspectMap     map[string]types.ContainerJSON
-		expectedCount  int
-		expectedHosts  []string
+		name            string
+		networkName     string
+		baseDomain      string
+		containers      []types.Container
+		inspectMap      map[string]types.ContainerJSON
+		expectedCount   int
+		expectedHosts   []string
+		expectedWarning string
 	}{
 		{
 			name:        "single service project",
@@ -187,10 +188,10 @@ func TestClient_DiscoverBackends(t *testing.T) {
 				"def456": createMockContainerJSON("def456", "myproject-api-1", "api", "myproject", 3000, "roji"),
 			},
 			expectedCount: 2,
-			expectedHosts: []string{"web.myproject.localhost", "api.myproject.localhost"},
+			expectedHosts: []string{"web-myproject.localhost", "api-myproject.localhost"},
 		},
 		{
-			name:          "skip container without port",
+			name:          "container without port has warning",
 			networkName:   "roji",
 			baseDomain:    "localhost",
 			containers: []types.Container{
@@ -199,8 +200,9 @@ func TestClient_DiscoverBackends(t *testing.T) {
 			inspectMap: map[string]types.ContainerJSON{
 				"abc123": createMockContainerJSON("abc123", "noport-1", "noport", "test", 0, "roji"),
 			},
-			expectedCount: 0,
-			expectedHosts: []string{},
+			expectedCount:   1,
+			expectedHosts:   []string{"test.localhost"},
+			expectedWarning: "no port exposed",
 		},
 		{
 			name:          "skip roji itself",
@@ -242,6 +244,13 @@ func TestClient_DiscoverBackends(t *testing.T) {
 			for i, backend := range backends {
 				if i < len(tt.expectedHosts) && backend.Hostname != tt.expectedHosts[i] {
 					t.Errorf("Backend[%d] hostname = %v, want %v", i, backend.Hostname, tt.expectedHosts[i])
+				}
+			}
+
+			// Check expected warning if specified
+			if tt.expectedWarning != "" && len(backends) > 0 {
+				if backends[0].Warning != tt.expectedWarning {
+					t.Errorf("Backend[0] warning = %v, want %v", backends[0].Warning, tt.expectedWarning)
 				}
 			}
 		})
@@ -430,7 +439,7 @@ func TestClient_detectHostname(t *testing.T) {
 			info:                createMockContainerJSON("abc", "myproject-web-1", "web", "myproject", 80, "roji"),
 			projectServiceCount: map[string]int{"myproject": 2},
 			baseDomain:          "localhost",
-			wantHostname:        "web.myproject.localhost",
+			wantHostname:        "web-myproject.localhost",
 		},
 		{
 			name:                "non-compose container",

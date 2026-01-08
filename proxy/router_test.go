@@ -395,3 +395,70 @@ func TestRouter_SlowSubscriber(t *testing.T) {
 	// Should not panic or block - events should be dropped for slow subscriber
 	// This test passes if it doesn't hang
 }
+
+func TestRouter_HostnameConflict(t *testing.T) {
+	router := NewRouter()
+
+	// Add first backend
+	backend1 := &docker.Backend{
+		ContainerID:   "web1",
+		ContainerName: "web-1",
+		ServiceName:   "web",
+		Host:          "172.17.0.2",
+		Port:          80,
+		Hostname:      "app.localhost",
+	}
+	router.AddBackend(backend1)
+
+	// Add second backend with same hostname but different container
+	backend2 := &docker.Backend{
+		ContainerID:   "api1",
+		ContainerName: "api-1",
+		ServiceName:   "api",
+		Host:          "172.17.0.3",
+		Port:          8080,
+		Hostname:      "app.localhost",
+	}
+	router.AddBackend(backend2)
+
+	// The second backend should have a warning about conflict
+	if backend2.Warning == "" {
+		t.Error("expected warning on conflicting backend")
+	}
+	if backend2.Warning != "hostname conflict: overwrites web" {
+		t.Errorf("Warning = %q, want %q", backend2.Warning, "hostname conflict: overwrites web")
+	}
+
+	// The route should now point to the second backend
+	route := router.Lookup("app.localhost", "/")
+	if route == nil {
+		t.Fatal("expected route, got nil")
+	}
+	if route.Backend.ContainerID != "api1" {
+		t.Errorf("route points to %q, want %q", route.Backend.ContainerID, "api1")
+	}
+}
+
+func TestRouter_SameContainerNoConflict(t *testing.T) {
+	router := NewRouter()
+
+	// Add backend
+	backend := &docker.Backend{
+		ContainerID:   "web1",
+		ContainerName: "web-1",
+		ServiceName:   "web",
+		Host:          "172.17.0.2",
+		Port:          80,
+		Hostname:      "app.localhost",
+	}
+	router.AddBackend(backend)
+
+	// Update the same backend (same container ID) - should not be a conflict
+	backend.Port = 8080
+	router.AddBackend(backend)
+
+	// Should not have a warning
+	if backend.Warning != "" {
+		t.Errorf("expected no warning for same container, got %q", backend.Warning)
+	}
+}

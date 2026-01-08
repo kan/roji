@@ -275,6 +275,33 @@
             color: #999;
             font-size: 0.9rem;
         }
+        /* Warning styles */
+        .route.has-warning {
+            background: #fff8e1;
+            border-left: 3px solid #ffc107;
+        }
+        .route.has-warning:hover { background: #fff3c4; }
+        .warning-badge {
+            background: #fff3cd;
+            color: #856404;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .route-url.disabled a {
+            color: #999;
+            pointer-events: none;
+            cursor: default;
+            text-decoration: none;
+        }
+        .route-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
     </style>
 </head>
 <body>
@@ -311,16 +338,19 @@
                 <p>&#x1F50D; No routes registered yet</p>
                 <p>Start some containers on the roji network!</p>
             </div>
-            <div v-for="route in routes" :key="route.Hostname + (route.PathPrefix || '')" class="route">
+            <div v-for="route in routes" :key="route.hostname + (route.pathPrefix || '')" :class="['route', route.warning ? 'has-warning' : '']">
                 <div>
-                    <div class="route-url">
-                        <a :href="'https://' + route.Hostname + (route.PathPrefix || '')" target="_blank">
-                            {{route.Hostname}}{{route.PathPrefix || ''}}
+                    <div :class="['route-url', route.warning ? 'disabled' : '']">
+                        <a :href="'https://' + route.hostname + (route.pathPrefix || '')" target="_blank">
+                            {{route.hostname}}{{route.pathPrefix || ''}}
                         </a>
                     </div>
-                    <div class="route-target">&#x2192; {{route.Target}}</div>
+                    <div v-if="route.target" class="route-target">&#x2192; {{route.target}}</div>
+                    <div v-if="route.warning" class="warning-badge">&#x26A0;&#xFE0F; {{route.warning}}</div>
                 </div>
-                <span class="service-name">{{route.ServiceName}}</span>
+                <div class="route-info">
+                    <span class="service-name">{{route.serviceName}}</span>
+                </div>
             </div>
         </div>
 
@@ -388,7 +418,7 @@
             init() {
                 // Initialize previous routes
                 this.routes.forEach(r => {
-                    const key = r.Hostname + (r.PathPrefix || '');
+                    const key = r.hostname + (r.pathPrefix || '');
                     this.previousRoutes[key] = r;
                 });
 
@@ -427,17 +457,17 @@
 
                 const newKeys = {};
                 newRoutes.forEach(r => {
-                    const key = r.Hostname + (r.PathPrefix || '');
+                    const key = r.hostname + (r.pathPrefix || '');
                     newKeys[key] = r;
                 });
 
                 // Check for added routes
                 newRoutes.forEach(r => {
-                    const key = r.Hostname + (r.PathPrefix || '');
+                    const key = r.hostname + (r.pathPrefix || '');
                     if (!this.previousRoutes[key]) {
                         this.notify(
-                            `${r.Hostname} added`,
-                            `Service: ${r.ServiceName}\nTarget: ${r.Target}`
+                            `${r.hostname} added`,
+                            `Service: ${r.serviceName}\nTarget: ${r.target}`
                         );
                     }
                 });
@@ -447,8 +477,8 @@
                     if (!newKeys[key]) {
                         const r = this.previousRoutes[key];
                         this.notify(
-                            `${r.Hostname} removed`,
-                            `Service: ${r.ServiceName}`
+                            `${r.hostname} removed`,
+                            `Service: ${r.serviceName}`
                         );
                     }
                 });
@@ -459,7 +489,7 @@
             updatePreviousRoutes(routes) {
                 this.previousRoutes = {};
                 routes.forEach(r => {
-                    const key = r.Hostname + (r.PathPrefix || '');
+                    const key = r.hostname + (r.pathPrefix || '');
                     this.previousRoutes[key] = r;
                 });
             },

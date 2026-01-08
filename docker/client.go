@@ -52,6 +52,7 @@ type Backend struct {
 	Port          int
 	Hostname      string // The hostname to route to this backend
 	PathPrefix    string // Optional path prefix
+	Warning       string // Warning message (e.g., "no port exposed")
 }
 
 // ProjectInfo contains docker-compose project metadata
@@ -245,11 +246,14 @@ func (c *Client) inspectToBackend(info types.ContainerJSON, net *network.Endpoin
 	if port == 0 {
 		port = c.detectPort(info)
 	}
+
+	// Track warning for containers without exposed ports
+	var warning string
 	if port == 0 {
+		warning = "no port exposed"
 		slog.Debug("no port found for container",
 			"container", shortID(info.ID),
 			"name", info.Name)
-		return nil, nil
 	}
 
 	// Extract project and service names from compose labels
@@ -274,6 +278,7 @@ func (c *Client) inspectToBackend(info types.ContainerJSON, net *network.Endpoin
 		Port:          port,
 		Hostname:      hostname,
 		PathPrefix:    labelCfg.PathPrefix,
+		Warning:       warning,
 	}, nil
 }
 
@@ -300,7 +305,7 @@ func (c *Client) detectPort(info types.ContainerJSON) int {
 
 // detectHostname generates a hostname based on project/service context
 // - Single service in project: project.localhost
-// - Multiple services in project: service.project.localhost
+// - Multiple services in project: service-project.localhost (hyphen to keep single subdomain level)
 // - Non-compose container: container-name.localhost
 func (c *Client) detectHostname(info types.ContainerJSON, projectServiceCount map[string]int) string {
 	projectName := info.Config.Labels["com.docker.compose.project"]
@@ -313,8 +318,8 @@ func (c *Client) detectHostname(info types.ContainerJSON, projectServiceCount ma
 			// Single service: use project name only
 			return config.DefaultHostname(projectName, c.baseDomain)
 		}
-		// Multiple services: use service.project format
-		return config.DefaultHostname(serviceName+"."+projectName, c.baseDomain)
+		// Multiple services: use service-project format (hyphen keeps wildcard cert valid)
+		return config.DefaultHostname(serviceName+"-"+projectName, c.baseDomain)
 	}
 
 	// Fall back to container name for non-compose containers

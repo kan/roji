@@ -137,6 +137,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if route has a warning (e.g., no port exposed)
+	if route.Backend.Warning != "" {
+		h.handleRouteWarning(w, r, hostname, route)
+		return
+	}
+
 	// Create reverse proxy for this request
 	targetURL := &url.URL{
 		Scheme: "http",
@@ -438,6 +444,43 @@ func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request, hostnam
 	if err := templates.ExecuteTemplate(w, "notfound.html", data); err != nil {
 		slog.Error("failed to render notfound template", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleRouteWarning(w http.ResponseWriter, r *http.Request, hostname string, route *Route) {
+	slog.Warn("route has warning",
+		"hostname", hostname,
+		"path", r.URL.Path,
+		"warning", route.Backend.Warning,
+		"container", route.Backend.ContainerName)
+
+	// Determine warning type for template
+	warningType := "unknown"
+	if strings.Contains(route.Backend.Warning, "no port") {
+		warningType = "no_port"
+	} else if strings.Contains(route.Backend.Warning, "hostname conflict") {
+		warningType = "conflict"
+	}
+
+	data := struct {
+		Hostname      string
+		ServiceName   string
+		Warning       string
+		WarningType   string
+		DashboardHost string
+	}{
+		Hostname:      hostname,
+		ServiceName:   route.Backend.ServiceName,
+		Warning:       route.Backend.Warning,
+		WarningType:   warningType,
+		DashboardHost: h.dashboardHost,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusBadGateway)
+	if err := templates.ExecuteTemplate(w, "warning.html", data); err != nil {
+		slog.Error("failed to render warning template", "error", err)
+		http.Error(w, fmt.Sprintf("Service unavailable: %s", route.Backend.Warning), http.StatusBadGateway)
 	}
 }
 
