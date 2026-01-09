@@ -29,7 +29,7 @@ var sharedTransport = &http.Transport{
 	IdleConnTimeout:     90 * time.Second,
 }
 
-//go:embed templates/*.html templates/*.js
+//go:embed templates/*.html templates/*.js templates/*.svg
 var templateFS embed.FS
 
 var templates = template.Must(
@@ -315,6 +315,8 @@ func (h *Handler) serveAsset(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 	} else if strings.HasSuffix(filename, ".css") {
 		w.Header().Set("Content-Type", "text/css")
+	} else if strings.HasSuffix(filename, ".svg") {
+		w.Header().Set("Content-Type", "image/svg+xml")
 	}
 
 	// Cache for 1 hour (static asset)

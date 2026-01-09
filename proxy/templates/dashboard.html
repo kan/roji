@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>roji - Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/_assets/favicon.svg">
     <script src="/_assets/petite-vue.min.js" defer></script>
     <style>
         * { box-sizing: border-box; }
@@ -20,6 +21,11 @@
             align-items: center;
             gap: 12px;
             flex-wrap: wrap;
+        }
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            vertical-align: middle;
         }
         .subtitle {
             color: #666;
@@ -320,7 +326,8 @@
 <body>
     <div v-scope="Dashboard()" @vue:mounted="init">
         <h1>
-            <span>&#x1F6E4;&#xFE0F; roji</span>
+            <img src="/_assets/favicon.svg" alt="roji" class="logo-icon">
+            <span>roji</span>
             <span class="subtitle">reverse proxy for local development</span>
             <span class="header-right">
                 <a href="https://github.com/kan/roji" target="_blank" class="github-link" title="View on GitHub">

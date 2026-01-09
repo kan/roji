@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Main road - trapezoid (wider at bottom) -->
+  <path d="M 26 12 L 10 54 L 54 54 L 38 12 Z" fill="#5a6268" stroke="#343a40" stroke-width="2"/>
+
+  <!-- Center line markers (straight dashed) -->
+  <line x1="32" y1="18" x2="32" y2="25" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="32" y1="30" x2="32" y2="37" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="32" y1="42" x2="32" y2="49" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

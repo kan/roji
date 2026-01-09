@@ -1,5 +1,9 @@
 # roji
 
+<p align="center">
+  <img src="proxy/templates/favicon.svg" alt="roji" width="120" height="120">
+</p>
+
 [![CI](https://github.com/kan/roji/actions/workflows/ci.yml/badge.svg)](https://github.com/kan/roji/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kan/roji)](https://github.com/kan/roji/blob/main/go.mod)
 [![GoDoc](https://pkg.go.dev/badge/github.com/kan/roji.svg)](https://pkg.go.dev/github.com/kan/roji)

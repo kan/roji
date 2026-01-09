@@ -12,7 +12,7 @@ bin = "./tmp/roji"
 # Arguments to pass to the binary (empty - use environment variables from .env)
 args_bin = []
 # Watch these extensions
-include_ext = ["go", "toml"]
+include_ext = ["go", "toml", "html", "js", "svg"]
 # Exclude these directories
 exclude_dir = ["tmp", "certs", "examples", "test", "vendor"]
 # Exclude files matching these patterns
