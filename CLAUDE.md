@@ -516,7 +516,7 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
    - pkg.go.dev が自動更新されるまで待つ（通常数分）
    - ドキュメントリンクが正しく動作することを確認
 
-### Phase 10: テスト強化・アップグレード対応（v0.6.0）
+### Phase 10: テスト強化・アップグレード対応（v0.6.0） ✅
 
 - [x] インテグレーションテスト
   - [x] Docker Compose を使った実環境テスト
@@ -529,16 +529,17 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
   - [x] ダッシュボードのアクセス確認
   - [x] SSE接続・リアルタイム更新の検証
   - [x] TLS証明書の検証（自己署名CA）
-- [ ] install.sh アップグレード対応
-  - [ ] 既存インストールの検出（`$ROJI_INSTALL_DIR/docker-compose.yml` の存在確認）
-  - [ ] バージョン確認（現在のイメージタグ取得）
-  - [ ] アップグレードモード（`--upgrade` フラグまたは自動検出）
-  - [ ] docker-compose.yml のイメージタグ更新
-  - [ ] `docker compose pull && docker compose up -d` の実行
-  - [ ] 設定ファイル（docker-compose.yml）のマイグレーション
-    - 新しい環境変数の追加
-    - 非推奨設定の警告
-  - [ ] ロールバック手順の案内
+- [x] install.sh アップグレード対応
+  - [x] 既存インストールの検出（`$ROJI_INSTALL_DIR/docker-compose.yml` の存在確認）
+  - [x] バージョン確認（現在のイメージタグ取得 + GitHub API で最新版取得）
+  - [x] アップグレードモード（`--upgrade` フラグまたは自動検出）
+  - [x] docker-compose.yml のイメージタグ更新
+  - [x] `docker compose pull && docker compose up -d` の実行
+  - [x] 設定ファイル（docker-compose.yml）のマイグレーション
+    - 新しい環境変数の追加（ROJI_DATA_DIR等）
+    - データボリュームの追加
+  - [x] 設定バックアップ（`backups/` ディレクトリに日時付きで保存）
+  - [x] ロールバック手順の案内
 
 **インテグレーションテスト構成案:**
 ```
