@@ -36,7 +36,7 @@ A simple reverse proxy for local development environments. Automatically discove
 Install and start roji with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.1/install.sh | bash
 ```
 
 This will:
@@ -50,7 +50,7 @@ This will:
 **Custom installation directory:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.0/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.1/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
 ```
 
 ### Upgrading
@@ -58,7 +58,7 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.0/install.sh | ROJI_I
 The install script automatically detects existing installations and offers to upgrade:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.1/install.sh | bash
 ```
 
 When an existing installation is detected:
@@ -70,7 +70,7 @@ The script backs up your configuration before upgrading and provides rollback in
 **Force upgrade (skip prompts):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.0/install.sh | bash -s -- --upgrade
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.1/install.sh | bash -s -- --upgrade
 ```
 
 ### Manual Installation
