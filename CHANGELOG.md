@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-01-10
+
+### Added
+
+- **Dark Mode**: Automatic theme switching based on system preferences
+  - Manual toggle button (sun/moon icon) in dashboard
+  - Settings persisted in localStorage
+  - FOUC prevention (theme applied before page render)
+  - Applied to all pages (dashboard, not found, warning)
+- **Request Log Viewer**: Real-time request logging in dashboard
+  - Ring buffer storing last 100 requests
+  - Real-time streaming via SSE
+  - Filtering by hostname (dropdown) and path (text input)
+  - Shows method, path, status code, latency, and hostname
+- **Multiple Network Support**: Monitor multiple Docker networks simultaneously
+  - Comma-separated network names in `ROJI_NETWORK`
+  - Network badge on each route in dashboard
+  - Click network badge to filter routes
+- **Container Restart Button**: Restart containers directly from dashboard
+  - Restart button on each route card
+  - Confirmation dialog before restart
+  - `/_api/containers/{id}/restart` API endpoint
+- **Request Mocking**: Define mock responses via container labels
+  - `roji.mock.{METHOD}.{PATH}` for response body
+  - `roji.mock.status.{METHOD}.{PATH}` for status code
+  - Supports JSON and text responses
+  - Useful for frontend development without backend
+- **Upgrade Support in install.sh**: Seamless upgrades via one-liner
+  - Automatic detection of existing installation
+  - Version comparison with GitHub API
+  - Interactive upgrade menu (upgrade/keep/reinstall)
+  - Automatic upgrade when running non-interactively
+  - Configuration backup before upgrade
+  - Configuration migration for new settings
+  - Rollback instructions
+- **Integration Tests**: Docker Compose based testing
+  - Real container lifecycle testing
+  - Route detection and proxy verification
+  - Warning case testing (no port, hostname conflicts)
+  - GitHub Actions integration
+- **E2E Tests**: Full HTTP/HTTPS server testing
+  - Real HTTP request verification
+  - TLS certificate validation
+  - SSE connection testing
+  - Dashboard accessibility testing
+
+### Changed
+
+- `ROJI_NETWORK` now supports comma-separated values for multiple networks
+- Dashboard now shows network badges for each route
+- Request log panel added below routes in dashboard
+
+### Technical Details
+
+- CSS variables for theme management (`theme.css`)
+- LogBuffer ring buffer for efficient request log storage
+- SSE endpoint `/_api/logs` for real-time log streaming
+- Network-aware container discovery and routing
+- Docker API `ContainerRestart` integration
+
 ## [0.5.0] - 2026-01-08
 
 ### Added
@@ -148,6 +208,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path-based routing support
 - Cobra-based CLI structure
 
+[0.6.0]: https://github.com/kan/roji/releases/tag/v0.6.0
 [0.5.0]: https://github.com/kan/roji/releases/tag/v0.5.0
 [0.4.0]: https://github.com/kan/roji/releases/tag/v0.4.0
 [0.3.0]: https://github.com/kan/roji/releases/tag/v0.3.0

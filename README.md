@@ -22,6 +22,11 @@ A simple reverse proxy for local development environments. Automatically discove
 - **Dynamic Updates**: Automatically tracks container start/stop events
 - **Live Dashboard**: Real-time route updates via Server-Sent Events with optional browser notifications
 - **Project History**: Tracks active and recent Docker Compose projects with quick restart commands
+- **Dark Mode**: Automatic theme switching based on system preferences with manual toggle
+- **Request Logging**: Real-time request log viewer with filtering by host and path
+- **Multiple Networks**: Monitor multiple Docker networks simultaneously
+- **Container Management**: Restart containers directly from the dashboard
+- **Request Mocking**: Define mock responses via labels for frontend development
 - **Simple**: Minimal implementation focused on local development
 
 ## Installation
@@ -31,7 +36,7 @@ A simple reverse proxy for local development environments. Automatically discove
 Install and start roji with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.5.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.0/install.sh | bash
 ```
 
 This will:
@@ -45,7 +50,27 @@ This will:
 **Custom installation directory:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.5.0/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.0/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
+```
+
+### Upgrading
+
+The install script automatically detects existing installations and offers to upgrade:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.0/install.sh | bash
+```
+
+When an existing installation is detected:
+- **Interactive mode**: Choose to upgrade, keep current version, or reinstall
+- **Piped mode** (`curl | bash`): Automatically upgrades to the latest version
+
+The script backs up your configuration before upgrading and provides rollback instructions.
+
+**Force upgrade (skip prompts):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.0/install.sh | bash -s -- --upgrade
 ```
 
 ### Manual Installation
@@ -190,6 +215,8 @@ roji will use existing certificates and skip auto-generation.
 | `roji.host` | Custom hostname | `{service}.dev.localhost` |
 | `roji.port` | Target port | First EXPOSE'd port |
 | `roji.path` | Path prefix | none |
+| `roji.mock.{METHOD}.{PATH}` | Mock response body | none |
+| `roji.mock.status.{METHOD}.{PATH}` | Mock response status code | `200` |
 
 #### Examples
 
@@ -223,13 +250,26 @@ services:
       - "roji.path=/api"
     networks:
       - roji
+
+  # Request mocking (for frontend development)
+  # Returns mock JSON responses without a real backend
+  mock-api:
+    image: alpine
+    command: ["sleep", "infinity"]
+    labels:
+      - "roji.host=api.dev.localhost"
+      - 'roji.mock.GET./api/users=[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]'
+      - 'roji.mock.GET./api/health={"status":"ok"}'
+      - "roji.mock.status.POST./api/users=201"
+    networks:
+      - roji
 ```
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ROJI_NETWORK` | Docker network to watch | `roji` |
+| `ROJI_NETWORK` | Docker network(s) to watch (comma-separated) | `roji` |
 | `ROJI_DOMAIN` | Base domain | `dev.localhost` |
 | `ROJI_CERTS_DIR` | Certificate directory | `/certs` |
 | `ROJI_DATA_DIR` | Data directory (project history) | `/data` |
@@ -257,9 +297,12 @@ The dashboard provides:
 - **Browser Notifications**: Optional desktop notifications for route changes
 - **Active Projects**: Currently running Docker Compose projects with service counts
 - **Project History**: Recently stopped projects with one-click copy of restart commands
+- **Request Log Viewer**: Real-time request logging with filtering by host and path
+- **Container Restart**: Restart containers directly from the dashboard
+- **Dark Mode**: Toggle between light/dark themes or follow system preferences
 - **System Status**: Build version, uptime, connection status
 
-The dashboard automatically updates without page refresh, and supports dark mode based on your system preferences.
+The dashboard automatically updates without page refresh.
 
 ## Health Check
 
