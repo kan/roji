@@ -590,7 +590,7 @@ roji is now running at https://roji.dev.localhost
 - [x] 複数ネットワーク対応
   - [x] `ROJI_NETWORK` でカンマ区切り複数指定
   - [x] 各ネットワークを並行して監視
-  - [ ] ダッシュボードでネットワーク別表示（オプション）
+  - [x] ダッシュボードでネットワーク別表示（バッジクリックでフィルタリング）
 - [ ] コンテナ再起動ボタン
   - [ ] ダッシュボードの各ルートに再起動ボタン追加
   - [ ] Docker API `ContainerRestart` 呼び出し

@@ -241,10 +241,14 @@ func TestClient_DiscoverBackends(t *testing.T) {
 				t.Errorf("DiscoverBackends() got %d backends, want %d", len(backends), tt.expectedCount)
 			}
 
-			// Check hostnames
-			for i, backend := range backends {
-				if i < len(tt.expectedHosts) && backend.Hostname != tt.expectedHosts[i] {
-					t.Errorf("Backend[%d] hostname = %v, want %v", i, backend.Hostname, tt.expectedHosts[i])
+			// Check hostnames (order-independent)
+			gotHosts := make(map[string]bool)
+			for _, backend := range backends {
+				gotHosts[backend.Hostname] = true
+			}
+			for _, expectedHost := range tt.expectedHosts {
+				if !gotHosts[expectedHost] {
+					t.Errorf("DiscoverBackends() missing expected hostname %q", expectedHost)
 				}
 			}
 
