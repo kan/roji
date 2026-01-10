@@ -58,6 +58,7 @@ type StatusConfig struct {
 type Handler struct {
 	router        *Router
 	dockerClient  *docker.Client
+	logBuffer     *LogBuffer
 	dashboardHost string // hostname for dashboard (e.g., "roji.dev.localhost")
 	baseDomain    string // base domain (e.g., "dev.localhost")
 	statusConfig  *StatusConfig
@@ -69,6 +70,7 @@ func NewHandler(router *Router, dockerClient *docker.Client, dashboardHost strin
 	return &Handler{
 		router:        router,
 		dockerClient:  dockerClient,
+		logBuffer:     NewLogBuffer(100), // Keep last 100 requests
 		dashboardHost: strings.ToLower(dashboardHost),
 		baseDomain:    strings.ToLower(baseDomain),
 		statusConfig:  statusConfig,
@@ -129,6 +131,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Container restart endpoint
 		if strings.HasPrefix(r.URL.Path, "/_api/containers/") && strings.HasSuffix(r.URL.Path, "/restart") {
 			h.serveContainerRestart(w, r)
+			return
+		}
+		// Request logs endpoint
+		if r.URL.Path == "/_api/logs" {
+			h.serveLogsAPI(w, r)
+			return
+		}
+		// SSE endpoint for real-time log updates
+		if r.URL.Path == "/_api/logs/events" {
+			h.serveLogsSSE(w, r)
 			return
 		}
 		// Static assets (petite-vue.min.js, etc.)
@@ -224,6 +236,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"status", resp.StatusCode,
 			"duration", duration.Round(time.Millisecond),
 			"target", route.Backend.ServiceName)
+
+		// Add to log buffer
+		h.logBuffer.Add(RequestLog{
+			Timestamp: startTime,
+			Method:    r.Method,
+			Host:      hostname,
+			Path:      r.URL.Path,
+			Status:    resp.StatusCode,
+			Duration:  duration.Milliseconds(),
+			Service:   route.Backend.ServiceName,
+		})
 		return nil
 	}
 
@@ -428,6 +451,70 @@ func (h *Handler) serveContainerRestart(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (h *Handler) serveLogsAPI(w http.ResponseWriter, r *http.Request) {
+	logs := h.logBuffer.ListRecent(100)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(logs); err != nil {
+		slog.Error("failed to encode logs as JSON", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) serveLogsSSE(w http.ResponseWriter, r *http.Request) {
+	// Check for SSE support
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Subscribe to log updates
+	logCh, cleanup := h.logBuffer.Subscribe()
+	defer cleanup()
+
+	// Send initial logs
+	logs := h.logBuffer.ListRecent(50) // Send last 50 on connect
+	for i := len(logs) - 1; i >= 0; i-- {
+		h.sendLogSSEEvent(w, flusher, logs[i])
+	}
+
+	slog.Debug("Logs SSE client connected", "remote", r.RemoteAddr)
+
+	// Stream logs until client disconnects
+	for {
+		select {
+		case <-r.Context().Done():
+			slog.Debug("Logs SSE client disconnected", "remote", r.RemoteAddr)
+			return
+
+		case log, ok := <-logCh:
+			if !ok {
+				return
+			}
+			h.sendLogSSEEvent(w, flusher, log)
+		}
+	}
+}
+
+func (h *Handler) sendLogSSEEvent(w http.ResponseWriter, flusher http.Flusher, log RequestLog) {
+	data, err := json.Marshal(log)
+	if err != nil {
+		slog.Error("failed to marshal log SSE event", "error", err)
+		return
+	}
+
+	// SSE format: event: log\ndata: <json>\n\n
+	fmt.Fprintf(w, "event: log\n")
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
+}
+
 func (h *Handler) serveHealth(w http.ResponseWriter, r *http.Request) {
 	routes := h.router.ListRoutes()
 
@@ -600,6 +687,18 @@ func (h *Handler) serveMockResponse(w http.ResponseWriter, r *http.Request, mock
 		"status", mock.StatusCode,
 		"duration", duration.Round(time.Millisecond),
 		"service", route.Backend.ServiceName)
+
+	// Add to log buffer
+	h.logBuffer.Add(RequestLog{
+		Timestamp: startTime,
+		Method:    r.Method,
+		Host:      hostname,
+		Path:      r.URL.Path,
+		Status:    mock.StatusCode,
+		Duration:  duration.Milliseconds(),
+		Service:   route.Backend.ServiceName,
+		IsMock:    true,
+	})
 }
 
 // RedirectHandler redirects HTTP to HTTPS

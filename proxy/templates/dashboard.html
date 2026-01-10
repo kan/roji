@@ -453,6 +453,153 @@
         .btn-restart:hover {
             background: var(--warning-text);
         }
+        /* Request Log Panel */
+        .log-section {
+            margin-top: 32px;
+        }
+        .log-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .log-header h2 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .log-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .log-filter {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .log-filter input {
+            padding: 4px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 0.8rem;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            width: 140px;
+        }
+        .log-filter input:focus {
+            outline: none;
+            border-color: var(--link-color);
+        }
+        .log-filter select {
+            padding: 4px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 0.8rem;
+            background: var(--bg-input);
+            color: var(--text-primary);
+        }
+        .clear-logs-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+        .clear-logs-btn:hover {
+            background: var(--bg-hover);
+            color: var(--error-text);
+            border-color: var(--error-text);
+        }
+        .log-panel {
+            background: var(--bg-card);
+            border-radius: 8px;
+            box-shadow: 0 1px 3px var(--shadow-color);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            animation: fadeIn 0.3s ease;
+        }
+        .log-entry:last-child { border-bottom: none; }
+        @keyframes fadeIn {
+            from { opacity: 0; background: var(--success-bg); }
+            to { opacity: 1; background: transparent; }
+        }
+        .log-status {
+            min-width: 40px;
+            text-align: center;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.75rem;
+        }
+        .log-status.s2xx { background: var(--success-bg); color: var(--success-text); }
+        .log-status.s3xx { background: var(--bg-badge); color: var(--text-secondary); }
+        .log-status.s4xx { background: var(--warning-bg); color: var(--warning-text); }
+        .log-status.s5xx { background: var(--error-bg); color: var(--error-text); }
+        .log-method {
+            min-width: 50px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        .log-method.GET { color: var(--success-text); }
+        .log-method.POST { color: var(--link-color); }
+        .log-method.PUT { color: var(--warning-text); }
+        .log-method.DELETE { color: var(--error-text); }
+        .log-path {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text-primary);
+        }
+        .log-duration {
+            min-width: 60px;
+            text-align: right;
+            color: var(--text-tertiary);
+        }
+        .log-duration.slow { color: var(--warning-text); }
+        .log-duration.very-slow { color: var(--error-text); }
+        .log-host {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .log-mock {
+            background: var(--bg-badge);
+            color: var(--text-tertiary);
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-size: 0.7rem;
+        }
+        .log-empty {
+            padding: 40px;
+            text-align: center;
+            color: var(--text-tertiary);
+        }
+        .log-paused-badge {
+            background: var(--warning-bg);
+            color: var(--warning-text);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
         /* GitHub link */
         .github-link {
             display: inline-flex;
@@ -623,6 +770,55 @@
                 <div v-if="project.working_dir" class="project-path">{{project.working_dir}}</div>
             </div>
         </div>
+
+        <!-- Request Log Section -->
+        <div class="log-section">
+            <div class="log-header">
+                <h2>
+                    &#x1F4DD; Request Log
+                    <span v-if="logsPaused" class="log-paused-badge">Paused</span>
+                </h2>
+                <div class="log-controls">
+                    <div class="log-filter">
+                        <select v-model="logFilter.host">
+                            <option value="">All hosts</option>
+                            <option v-for="host in activeHosts" :key="host" :value="host">{{host}}</option>
+                        </select>
+                        <input
+                            type="text"
+                            v-model="logFilter.path"
+                            placeholder="Filter by path..."
+                        >
+                        <select v-model="logFilter.status">
+                            <option value="">All status</option>
+                            <option value="2xx">2xx Success</option>
+                            <option value="3xx">3xx Redirect</option>
+                            <option value="4xx">4xx Client Error</option>
+                            <option value="5xx">5xx Server Error</option>
+                        </select>
+                    </div>
+                    <label class="notification-toggle">
+                        <input type="checkbox" v-model="logsPaused">
+                        Pause
+                    </label>
+                    <button class="clear-logs-btn" @click="clearLogs">Clear</button>
+                </div>
+            </div>
+            <div class="log-panel">
+                <div v-if="filteredLogs.length === 0" class="log-empty">
+                    <p>&#x1F50D; No requests yet</p>
+                    <p>Requests to proxied services will appear here</p>
+                </div>
+                <div v-for="log in filteredLogs" :key="log.id" class="log-entry">
+                    <span :class="['log-status', getStatusClass(log.status)]">{{log.status}}</span>
+                    <span :class="['log-method', log.method]">{{log.method}}</span>
+                    <span class="log-path" :title="log.path">{{log.path}}</span>
+                    <span v-if="log.is_mock" class="log-mock">mock</span>
+                    <span :class="['log-duration', getDurationClass(log.duration_ms)]">{{formatDuration(log.duration_ms)}}</span>
+                    <span class="log-host" :title="log.host">{{log.host}}</span>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -643,6 +839,10 @@
             theme: 'light',
             confirmRestart: null,
             restartingContainer: null,
+            logs: [],
+            logsPaused: false,
+            logFilter: { host: '', path: '', status: '' },
+            logsEventSource: null,
 
             init() {
                 // Initialize theme
@@ -657,6 +857,7 @@
                 this.connectSSE();
                 this.fetchProjects();
                 this.fetchBuildInfo();
+                this.connectLogsSSE();
             },
 
             initTheme() {
@@ -893,6 +1094,84 @@
                         this.restartingContainer = null;
                     }, 1000);
                 }
+            },
+
+            // Logs functionality
+            connectLogsSSE() {
+                this.logsEventSource = new EventSource('/_api/logs/events');
+
+                this.logsEventSource.addEventListener('log', (e) => {
+                    if (this.logsPaused) return;
+
+                    const log = JSON.parse(e.data);
+                    // Add to beginning (newest first)
+                    this.logs.unshift(log);
+                    // Keep only last 100
+                    if (this.logs.length > 100) {
+                        this.logs.pop();
+                    }
+                });
+
+                this.logsEventSource.onerror = () => {
+                    // EventSource will auto-reconnect
+                };
+            },
+
+            get activeHosts() {
+                // Get unique hostnames from active routes
+                const hosts = new Set();
+                this.routes.forEach(r => {
+                    if (r.hostname) {
+                        hosts.add(r.hostname);
+                    }
+                });
+                return Array.from(hosts).sort();
+            },
+
+            get filteredLogs() {
+                return this.logs.filter(log => {
+                    // Filter by host (exact match from dropdown)
+                    if (this.logFilter.host && log.host !== this.logFilter.host) {
+                        return false;
+                    }
+                    // Filter by path (partial match)
+                    if (this.logFilter.path && !log.path.toLowerCase().includes(this.logFilter.path.toLowerCase())) {
+                        return false;
+                    }
+                    // Filter by status
+                    if (this.logFilter.status) {
+                        const statusPrefix = this.logFilter.status[0];
+                        if (Math.floor(log.status / 100) !== parseInt(statusPrefix)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+            },
+
+            clearLogs() {
+                this.logs = [];
+            },
+
+            getStatusClass(status) {
+                if (status >= 200 && status < 300) return 's2xx';
+                if (status >= 300 && status < 400) return 's3xx';
+                if (status >= 400 && status < 500) return 's4xx';
+                if (status >= 500) return 's5xx';
+                return '';
+            },
+
+            getDurationClass(ms) {
+                if (ms >= 2000) return 'very-slow';
+                if (ms >= 500) return 'slow';
+                return '';
+            },
+
+            formatDuration(ms) {
+                if (ms >= 1000) {
+                    return (ms / 1000).toFixed(1) + 's';
+                }
+                return ms + 'ms';
             }
         };
     }
