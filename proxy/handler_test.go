@@ -67,6 +67,36 @@ func TestHandler_ServeHTTP_Dashboard(t *testing.T) {
 	}
 }
 
+func TestHandler_ServeHTTP_DashboardEmptyRoutes(t *testing.T) {
+	// Test that dashboard renders correctly when no containers are connected
+	// This prevents the JavaScript error: "Cannot read properties of null (reading 'forEach')"
+	router := NewRouter()
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	req := httptest.NewRequest("GET", "https://roji.dev.localhost/", nil)
+	req.Host = "roji.dev.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	body := w.Body.String()
+
+	// Verify routes is initialized as empty array, not null
+	// This is critical for Petite Vue to work correctly
+	if !strings.Contains(body, "routes: []") {
+		t.Errorf("dashboard should initialize routes as empty array '[]', not null")
+	}
+
+	// Verify the dashboard HTML structure is present
+	if !strings.Contains(body, "PetiteVue") {
+		t.Errorf("dashboard should contain PetiteVue initialization")
+	}
+}
+
 func TestHandler_ServeHTTP_DashboardWithRoutes(t *testing.T) {
 	router := NewRouter()
 	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)

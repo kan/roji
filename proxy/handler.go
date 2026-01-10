@@ -256,6 +256,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) serveDashboard(w http.ResponseWriter, r *http.Request) {
 	routes := h.router.ListRoutes()
+	if routes == nil {
+		routes = []RouteInfo{}
+	}
 
 	// Marshal routes to JSON for Petite Vue initialization
 	routesJSON, err := json.Marshal(routes)
