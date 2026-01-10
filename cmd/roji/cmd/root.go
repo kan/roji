@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -41,7 +42,7 @@ func Execute() error {
 func init() {
 	// Server flags
 	rootCmd.Flags().StringVarP(&networkName, "network", "n", getEnv("ROJI_NETWORK", "roji"),
-		"Docker network name to watch")
+		"Docker network name(s) to watch (comma-separated for multiple)")
 	rootCmd.Flags().StringVarP(&baseDomain, "domain", "d", getEnv("ROJI_DOMAIN", "dev.localhost"),
 		"Base domain for auto-generated hostnames")
 	rootCmd.Flags().IntVar(&httpPort, "http-port", 80,
@@ -67,6 +68,21 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
+// parseNetworks parses comma-separated network names and trims whitespace
+func parseNetworks(networkStr string) []string {
+	var networks []string
+	for _, n := range strings.Split(networkStr, ",") {
+		n = strings.TrimSpace(n)
+		if n != "" {
+			networks = append(networks, n)
+		}
+	}
+	if len(networks) == 0 {
+		networks = []string{"roji"} // Default network
+	}
+	return networks
+}
+
 func runServer(cmd *cobra.Command, args []string) error {
 	// Import here to avoid circular dependencies
 	setupLogging(logLevel)
@@ -77,8 +93,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 		dashboardHost = baseDomain
 	}
 
+	// Parse comma-separated network names
+	networks := parseNetworks(networkName)
+
 	cfg := Config{
-		NetworkName:   networkName,
+		Networks:      networks,
 		BaseDomain:    baseDomain,
 		HTTPPort:      httpPort,
 		HTTPSPort:     httpsPort,

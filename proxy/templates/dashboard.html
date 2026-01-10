@@ -82,6 +82,14 @@
             border-radius: 4px;
             font-size: 0.8rem;
         }
+        .network-name {
+            background: var(--bg-badge);
+            color: var(--text-secondary);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-family: monospace;
+        }
         .empty {
             padding: 40px;
             text-align: center;
@@ -188,6 +196,46 @@
             display: flex;
             align-items: center;
             gap: 16px;
+            flex-wrap: wrap;
+        }
+        .networks-info {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .networks-label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        .network-badge {
+            background: var(--bg-badge);
+            color: var(--text-secondary);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+        .network-badge.clickable {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .network-badge.clickable:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .network-badge.selected {
+            background: var(--link-color);
+            color: var(--text-inverse);
+        }
+        .clear-filter {
+            cursor: pointer;
+            color: var(--text-tertiary);
+            font-size: 0.8rem;
+            padding: 2px 4px;
+            transition: color 0.2s;
+        }
+        .clear-filter:hover {
+            color: var(--error-text);
         }
         /* Section headers */
         .section-header {
@@ -373,8 +421,19 @@
             </span>
         </h1>
 
-        <p v-if="routes.length" class="controls">
-            <span><span class="count">{{routes.length}}</span> routes registered</span>
+        <p class="controls">
+            <span v-if="routes.length"><span class="count">{{routes.length}}</span> routes registered</span>
+            <span v-if="networks.length" class="networks-info">
+                <span class="networks-label">Networks:</span>
+                <span
+                    v-for="(net, index) in networks"
+                    :key="net"
+                    :class="['network-badge', 'clickable', selectedNetwork === net ? 'selected' : '']"
+                    @click="toggleNetworkFilter(net)"
+                    :title="selectedNetwork === net ? 'Click to show all' : 'Click to filter by ' + net"
+                >{{net}}</span>
+                <span v-if="selectedNetwork" class="clear-filter" @click="selectedNetwork = null" title="Clear filter">&#x2715;</span>
+            </span>
             <label v-if="notificationSupported" class="notification-toggle">
                 <input type="checkbox" v-model="notificationsEnabled" @change="toggleNotifications">
                 Notifications
@@ -382,11 +441,12 @@
         </p>
 
         <div class="routes">
-            <div v-if="routes.length === 0" class="empty">
-                <p>&#x1F50D; No routes registered yet</p>
-                <p>Start some containers on the roji network!</p>
+            <div v-if="filteredRoutes.length === 0" class="empty">
+                <p v-if="selectedNetwork">No routes on network "{{selectedNetwork}}"</p>
+                <p v-else>&#x1F50D; No routes registered yet</p>
+                <p v-if="!selectedNetwork">Start some containers on the roji network!</p>
             </div>
-            <div v-for="route in routes" :key="route.hostname + (route.pathPrefix || '')" :class="['route', route.warning ? 'has-warning' : '']">
+            <div v-for="route in filteredRoutes" :key="route.hostname + (route.pathPrefix || '')" :class="['route', route.warning ? 'has-warning' : '']">
                 <div>
                     <div :class="['route-url', route.warning ? 'disabled' : '']">
                         <a :href="'https://' + route.hostname + (route.pathPrefix || '')" target="_blank">
@@ -397,6 +457,7 @@
                     <div v-if="route.warning" class="warning-badge">&#x26A0;&#xFE0F; {{route.warning}}</div>
                 </div>
                 <div class="route-info">
+                    <span v-if="route.network" class="network-name">{{route.network}}</span>
                     <span class="service-name">{{route.serviceName}}</span>
                 </div>
             </div>
@@ -455,6 +516,8 @@
             routes: [[.RoutesJSON]],
             version: '[[.Version]]',
             buildInfo: {},
+            networks: [],
+            selectedNetwork: null,
             connected: false,
             notificationsEnabled: localStorage.getItem('roji-notifications') === 'true',
             notificationSupported: 'Notification' in window,
@@ -619,6 +682,7 @@
                     const resp = await fetch('/_api/status');
                     const data = await resp.json();
                     this.buildInfo = data.build || {};
+                    this.networks = data.docker?.networks || [];
                 } catch (e) {
                     console.error('Failed to fetch build info:', e);
                 }
@@ -660,6 +724,21 @@
                     }, 2000);
                 } catch (e) {
                     console.error('Failed to copy:', e);
+                }
+            },
+
+            get filteredRoutes() {
+                if (!this.selectedNetwork) {
+                    return this.routes;
+                }
+                return this.routes.filter(r => r.network === this.selectedNetwork);
+            },
+
+            toggleNetworkFilter(network) {
+                if (this.selectedNetwork === network) {
+                    this.selectedNetwork = null;
+                } else {
+                    this.selectedNetwork = network;
                 }
             }
         };

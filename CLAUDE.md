@@ -125,7 +125,7 @@ services:
 
 | 環境変数 | フラグ | 説明 | デフォルト |
 |----------|--------|------|-----------|
-| `ROJI_NETWORK` | `-network` | 監視するDockerネットワーク | `roji` |
+| `ROJI_NETWORK` | `-network` | 監視するDockerネットワーク（カンマ区切りで複数指定可） | `roji` |
 | `ROJI_DOMAIN` | `-domain` | ベースドメイン | `localhost` |
 | `ROJI_HTTP_PORT` | `-http-port` | HTTPポート（リダイレクト用） | `80` |
 | `ROJI_HTTPS_PORT` | `-https-port` | HTTPSポート | `443` |
@@ -587,9 +587,9 @@ roji is now running at https://roji.dev.localhost
   - [ ] ダッシュボードにログパネル追加
   - [ ] メソッド、パス、ステータス、レイテンシ、ホスト名を表示
   - [ ] フィルタリング機能（ホスト名、ステータスコード）
-- [ ] 複数ネットワーク対応
-  - [ ] `ROJI_NETWORK` でカンマ区切り複数指定
-  - [ ] 各ネットワークを並行して監視
+- [x] 複数ネットワーク対応
+  - [x] `ROJI_NETWORK` でカンマ区切り複数指定
+  - [x] 各ネットワークを並行して監視
   - [ ] ダッシュボードでネットワーク別表示（オプション）
 - [ ] コンテナ再起動ボタン
   - [ ] ダッシュボードの各ルートに再起動ボタン追加

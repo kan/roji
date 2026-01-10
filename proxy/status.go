@@ -44,9 +44,9 @@ type CertInfo struct {
 
 // DockerStatus contains Docker connection information
 type DockerStatus struct {
-	Connected  bool   `json:"connected"`
-	Network    string `json:"network"`
-	APIVersion string `json:"api_version,omitempty"`
+	Connected  bool     `json:"connected"`
+	Networks   []string `json:"networks"`
+	APIVersion string   `json:"api_version,omitempty"`
 }
 
 // ProxyStatus contains proxy configuration and state

@@ -114,28 +114,29 @@ func createMockContainerJSON(id, name, serviceName, projectName string, port int
 
 func TestNewClientWithAPI(t *testing.T) {
 	mock := &mockDockerAPI{}
-	client := NewClientWithAPI(mock, "test-network", "test.localhost")
+	client := NewClientWithAPI(mock, []string{"test-network"}, "test.localhost")
 
-	if client.networkName != "test-network" {
-		t.Errorf("expected networkName 'test-network', got %s", client.networkName)
+	if len(client.networks) != 1 || client.networks[0] != "test-network" {
+		t.Errorf("expected networks ['test-network'], got %v", client.networks)
 	}
 	if client.baseDomain != "test.localhost" {
 		t.Errorf("expected baseDomain 'test.localhost', got %s", client.baseDomain)
 	}
 }
 
-func TestClient_NetworkName(t *testing.T) {
+func TestClient_Networks(t *testing.T) {
 	mock := &mockDockerAPI{}
-	client := NewClientWithAPI(mock, "my-network", "localhost")
+	client := NewClientWithAPI(mock, []string{"my-network", "other-network"}, "localhost")
 
-	if got := client.NetworkName(); got != "my-network" {
-		t.Errorf("NetworkName() = %v, want %v", got, "my-network")
+	got := client.Networks()
+	if len(got) != 2 || got[0] != "my-network" || got[1] != "other-network" {
+		t.Errorf("Networks() = %v, want [my-network, other-network]", got)
 	}
 }
 
 func TestClient_BaseDomain(t *testing.T) {
 	mock := &mockDockerAPI{}
-	client := NewClientWithAPI(mock, "network", "example.localhost")
+	client := NewClientWithAPI(mock, []string{"network"}, "example.localhost")
 
 	if got := client.BaseDomain(); got != "example.localhost" {
 		t.Errorf("BaseDomain() = %v, want %v", got, "example.localhost")
@@ -144,7 +145,7 @@ func TestClient_BaseDomain(t *testing.T) {
 
 func TestClient_Close(t *testing.T) {
 	mock := &mockDockerAPI{}
-	client := NewClientWithAPI(mock, "network", "localhost")
+	client := NewClientWithAPI(mock, []string{"network"}, "localhost")
 
 	if err := client.Close(); err != nil {
 		t.Errorf("Close() error = %v", err)
@@ -229,7 +230,7 @@ func TestClient_DiscoverBackends(t *testing.T) {
 				containers: tt.containers,
 				inspectMap: tt.inspectMap,
 			}
-			client := NewClientWithAPI(mock, tt.networkName, tt.baseDomain)
+			client := NewClientWithAPI(mock, []string{tt.networkName}, tt.baseDomain)
 
 			backends, err := client.DiscoverBackends(context.Background())
 			if err != nil {
@@ -293,7 +294,7 @@ func TestClient_GetBackend(t *testing.T) {
 					return tt.inspectData, nil
 				},
 			}
-			client := NewClientWithAPI(mock, tt.networkName, tt.baseDomain)
+			client := NewClientWithAPI(mock, []string{tt.networkName}, tt.baseDomain)
 
 			backend, err := client.GetBackend(context.Background(), tt.containerID)
 			if err != nil {
@@ -335,7 +336,7 @@ func TestClient_detectPort(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockDockerAPI{}
-			client := NewClientWithAPI(mock, "roji", "localhost")
+			client := NewClientWithAPI(mock, []string{"roji"}, "localhost")
 
 			got := client.detectPort(tt.info)
 			if got != tt.wantPort {
@@ -395,7 +396,7 @@ func TestClient_GetProjectBackends(t *testing.T) {
 				containers: tt.containers,
 				inspectMap: tt.inspectMap,
 			}
-			client := NewClientWithAPI(mock, tt.networkName, tt.baseDomain)
+			client := NewClientWithAPI(mock, []string{tt.networkName}, tt.baseDomain)
 
 			backends, err := client.GetProjectBackends(context.Background(), tt.projectName)
 			if err != nil {
@@ -411,7 +412,7 @@ func TestClient_GetProjectBackends(t *testing.T) {
 
 func TestClient_DockerClient(t *testing.T) {
 	mock := &mockDockerAPI{}
-	client := NewClientWithAPI(mock, "network", "localhost")
+	client := NewClientWithAPI(mock, []string{"network"}, "localhost")
 
 	dockerClient := client.DockerClient()
 	if dockerClient != mock {
@@ -453,7 +454,7 @@ func TestClient_detectHostname(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockDockerAPI{}
-			client := NewClientWithAPI(mock, "roji", tt.baseDomain)
+			client := NewClientWithAPI(mock, []string{"roji"}, tt.baseDomain)
 
 			got := client.detectHostname(tt.info, tt.projectServiceCount)
 			if got != tt.wantHostname {

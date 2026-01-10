@@ -8,7 +8,7 @@ import (
 
 func TestNewWatcher(t *testing.T) {
 	mock := &mockDockerAPI{}
-	client := NewClientWithAPI(mock, "network", "localhost")
+	client := NewClientWithAPI(mock, []string{"network"}, "localhost")
 
 	watcher := NewWatcher(client)
 
@@ -84,7 +84,7 @@ func TestWatcher_processEvent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockDockerAPI{}
-			client := NewClientWithAPI(mock, "network", "localhost")
+			client := NewClientWithAPI(mock, []string{"network"}, "localhost")
 			watcher := NewWatcher(client)
 
 			event := watcher.processEvent(tt.msg)

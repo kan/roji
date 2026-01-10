@@ -219,6 +219,7 @@ func (r *Router) ListRoutes() []RouteInfo {
 			ContainerName: route.Backend.ContainerName,
 			ServiceName:   route.Backend.ServiceName,
 			Warning:       route.Backend.Warning,
+			Network:       route.Backend.Network,
 		})
 	}
 
@@ -235,6 +236,7 @@ func (r *Router) ListRoutes() []RouteInfo {
 				ContainerName: route.Backend.ContainerName,
 				ServiceName:   route.Backend.ServiceName,
 				Warning:       route.Backend.Warning,
+				Network:       route.Backend.Network,
 			})
 		}
 	}
@@ -258,6 +260,7 @@ type RouteInfo struct {
 	ContainerName string `json:"containerName"`
 	ServiceName   string `json:"serviceName"`
 	Warning       string `json:"warning,omitempty"`
+	Network       string `json:"network,omitempty"`
 }
 
 func (ri RouteInfo) String() string {

@@ -53,6 +53,7 @@ type Backend struct {
 	Hostname      string // The hostname to route to this backend
 	PathPrefix    string // Optional path prefix
 	Warning       string // Warning message (e.g., "no port exposed")
+	Network       string // Docker network name this container was found on
 }
 
 // ProjectInfo contains docker-compose project metadata
@@ -65,28 +66,28 @@ type ProjectInfo struct {
 
 // Client wraps the Docker client for container discovery
 type Client struct {
-	docker      DockerAPI
-	networkName string // The shared network to watch (e.g., "roji")
-	baseDomain  string // Base domain for auto-generated hostnames (e.g., "kan.localhost")
+	docker     DockerAPI
+	networks   []string // The shared networks to watch (e.g., ["roji", "custom"])
+	baseDomain string   // Base domain for auto-generated hostnames (e.g., "kan.localhost")
 }
 
 // NewClient creates a new Docker client wrapper
-func NewClient(networkName, baseDomain string) (*Client, error) {
+func NewClient(networks []string, baseDomain string) (*Client, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
 	}
 
-	return NewClientWithAPI(cli, networkName, baseDomain), nil
+	return NewClientWithAPI(cli, networks, baseDomain), nil
 }
 
 // NewClientWithAPI creates a new client with a custom DockerAPI implementation
 // This is useful for testing with mock implementations
-func NewClientWithAPI(api DockerAPI, networkName, baseDomain string) *Client {
+func NewClientWithAPI(api DockerAPI, networks []string, baseDomain string) *Client {
 	return &Client{
-		docker:      api,
-		networkName: networkName,
-		baseDomain:  baseDomain,
+		docker:     api,
+		networks:   networks,
+		baseDomain: baseDomain,
 	}
 }
 
@@ -95,9 +96,9 @@ func (c *Client) Close() error {
 	return c.docker.Close()
 }
 
-// NetworkName returns the network name being watched
-func (c *Client) NetworkName() string {
-	return c.networkName
+// Networks returns the network names being watched
+func (c *Client) Networks() []string {
+	return c.networks
 }
 
 // BaseDomain returns the base domain for hostnames
@@ -120,30 +121,50 @@ func buildProjectServiceCounts(containers []types.Container) map[string]int {
 	return counts
 }
 
-// DiscoverBackends finds all containers connected to the shared network
+// DiscoverBackends finds all containers connected to any of the watched networks
 func (c *Client) DiscoverBackends(ctx context.Context) ([]*Backend, error) {
 	// Add timeout for Docker API call
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	// Filter containers by network
-	filterArgs := filters.NewArgs()
-	filterArgs.Add("network", c.networkName)
+	// Collect containers from all networks (deduplicated by container ID)
+	seenContainers := make(map[string]types.Container)
+	containerNetworks := make(map[string]string) // containerID -> networkName
 
-	containers, err := c.docker.ContainerList(ctx, container.ListOptions{
-		Filters: filterArgs,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list containers: %w", err)
+	for _, networkName := range c.networks {
+		filterArgs := filters.NewArgs()
+		filterArgs.Add("network", networkName)
+
+		containers, err := c.docker.ContainerList(ctx, container.ListOptions{
+			Filters: filterArgs,
+		})
+		if err != nil {
+			slog.Warn("failed to list containers for network", "network", networkName, "error", err)
+			continue
+		}
+
+		for _, ctr := range containers {
+			if _, seen := seenContainers[ctr.ID]; !seen {
+				seenContainers[ctr.ID] = ctr
+				containerNetworks[ctr.ID] = networkName
+			}
+		}
+	}
+
+	// Convert map to slice
+	var allContainers []types.Container
+	for _, ctr := range seenContainers {
+		allContainers = append(allContainers, ctr)
 	}
 
 	// Count services per project for hostname generation
-	projectServiceCount := buildProjectServiceCounts(containers)
+	projectServiceCount := buildProjectServiceCounts(allContainers)
 
 	// Create backends with correct hostnames
 	var backends []*Backend
-	for _, ctr := range containers {
-		backend, err := c.containerToBackend(ctx, ctr, projectServiceCount)
+	for _, ctr := range allContainers {
+		networkName := containerNetworks[ctr.ID]
+		backend, err := c.containerToBackend(ctx, ctr, networkName, projectServiceCount)
 		if err != nil {
 			slog.Warn("failed to process container",
 				"container", shortID(ctr.ID),
@@ -169,10 +190,18 @@ func (c *Client) GetBackend(ctx context.Context, containerID string) (*Backend, 
 		return nil, fmt.Errorf("failed to inspect container: %w", err)
 	}
 
-	// Check if container is on our network
-	net, ok := ctr.NetworkSettings.Networks[c.networkName]
-	if !ok {
-		return nil, nil // Not on our network
+	// Check if container is on any of our networks
+	var foundNetwork string
+	var net *network.EndpointSettings
+	for _, networkName := range c.networks {
+		if n, ok := ctr.NetworkSettings.Networks[networkName]; ok {
+			foundNetwork = networkName
+			net = n
+			break
+		}
+	}
+	if net == nil {
+		return nil, nil // Not on any of our networks
 	}
 
 	// Count services in the same project for hostname generation
@@ -186,41 +215,45 @@ func (c *Client) GetBackend(ctx context.Context, containerID string) (*Backend, 
 		projectServiceCount[project] = count
 	}
 
-	return c.inspectToBackend(ctr, net, projectServiceCount)
+	return c.inspectToBackend(ctr, foundNetwork, net, projectServiceCount)
 }
 
-// countProjectServices counts how many services from the same project are on the network
+// countProjectServices counts how many services from the same project are on any of our networks
 func (c *Client) countProjectServices(ctx context.Context, projectName string) (int, error) {
 	// Add timeout for Docker API call
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	filterArgs := filters.NewArgs()
-	filterArgs.Add("network", c.networkName)
-	filterArgs.Add("label", "com.docker.compose.project="+projectName)
+	// Count unique containers across all networks
+	seenIDs := make(map[string]bool)
 
-	containers, err := c.docker.ContainerList(ctx, container.ListOptions{
-		Filters: filterArgs,
-	})
-	if err != nil {
-		return 0, err
-	}
+	for _, networkName := range c.networks {
+		filterArgs := filters.NewArgs()
+		filterArgs.Add("network", networkName)
+		filterArgs.Add("label", "com.docker.compose.project="+projectName)
 
-	// Exclude roji itself
-	count := 0
-	for _, ctr := range containers {
-		if ctr.Labels["roji.self"] != "true" {
-			count++
+		containers, err := c.docker.ContainerList(ctx, container.ListOptions{
+			Filters: filterArgs,
+		})
+		if err != nil {
+			continue
+		}
+
+		for _, ctr := range containers {
+			if ctr.Labels["roji.self"] != "true" {
+				seenIDs[ctr.ID] = true
+			}
 		}
 	}
-	return count, nil
+
+	return len(seenIDs), nil
 }
 
-func (c *Client) containerToBackend(ctx context.Context, ctr types.Container, projectServiceCount map[string]int) (*Backend, error) {
-	// Get the container's IP in our network
-	net, ok := ctr.NetworkSettings.Networks[c.networkName]
+func (c *Client) containerToBackend(ctx context.Context, ctr types.Container, networkName string, projectServiceCount map[string]int) (*Backend, error) {
+	// Get the container's IP in the specified network
+	net, ok := ctr.NetworkSettings.Networks[networkName]
 	if !ok {
-		return nil, nil // Not on our network (shouldn't happen with filter)
+		return nil, nil // Not on the specified network (shouldn't happen with filter)
 	}
 
 	// Get full container info for labels
@@ -229,10 +262,10 @@ func (c *Client) containerToBackend(ctx context.Context, ctr types.Container, pr
 		return nil, fmt.Errorf("failed to inspect container: %w", err)
 	}
 
-	return c.inspectToBackend(info, net, projectServiceCount)
+	return c.inspectToBackend(info, networkName, net, projectServiceCount)
 }
 
-func (c *Client) inspectToBackend(info types.ContainerJSON, net *network.EndpointSettings, projectServiceCount map[string]int) (*Backend, error) {
+func (c *Client) inspectToBackend(info types.ContainerJSON, networkName string, net *network.EndpointSettings, projectServiceCount map[string]int) (*Backend, error) {
 	// Skip if this is roji itself (avoid self-routing)
 	if info.Config.Labels["roji.self"] == "true" {
 		return nil, nil
@@ -279,6 +312,7 @@ func (c *Client) inspectToBackend(info types.ContainerJSON, net *network.Endpoin
 		Hostname:      hostname,
 		PathPrefix:    labelCfg.PathPrefix,
 		Warning:       warning,
+		Network:       networkName,
 	}, nil
 }
 
@@ -327,29 +361,49 @@ func (c *Client) detectHostname(info types.ContainerJSON, projectServiceCount ma
 	return config.DefaultHostname(name, c.baseDomain)
 }
 
-// GetProjectBackends gets all backends for a specific project
+// GetProjectBackends gets all backends for a specific project across all watched networks
 func (c *Client) GetProjectBackends(ctx context.Context, projectName string) ([]*Backend, error) {
 	// Add timeout for Docker API call
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	filterArgs := filters.NewArgs()
-	filterArgs.Add("network", c.networkName)
-	filterArgs.Add("label", "com.docker.compose.project="+projectName)
+	// Collect containers from all networks (deduplicated by container ID)
+	seenContainers := make(map[string]types.Container)
+	containerNetworks := make(map[string]string)
 
-	containers, err := c.docker.ContainerList(ctx, container.ListOptions{
-		Filters: filterArgs,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list containers: %w", err)
+	for _, networkName := range c.networks {
+		filterArgs := filters.NewArgs()
+		filterArgs.Add("network", networkName)
+		filterArgs.Add("label", "com.docker.compose.project="+projectName)
+
+		containers, err := c.docker.ContainerList(ctx, container.ListOptions{
+			Filters: filterArgs,
+		})
+		if err != nil {
+			continue
+		}
+
+		for _, ctr := range containers {
+			if _, seen := seenContainers[ctr.ID]; !seen {
+				seenContainers[ctr.ID] = ctr
+				containerNetworks[ctr.ID] = networkName
+			}
+		}
+	}
+
+	// Convert to slice
+	var allContainers []types.Container
+	for _, ctr := range seenContainers {
+		allContainers = append(allContainers, ctr)
 	}
 
 	// Count services in this project for hostname generation
-	projectServiceCount := buildProjectServiceCounts(containers)
+	projectServiceCount := buildProjectServiceCounts(allContainers)
 
 	var backends []*Backend
-	for _, ctr := range containers {
-		backend, err := c.containerToBackend(ctx, ctr, projectServiceCount)
+	for _, ctr := range allContainers {
+		networkName := containerNetworks[ctr.ID]
+		backend, err := c.containerToBackend(ctx, ctr, networkName, projectServiceCount)
 		if err != nil {
 			slog.Warn("failed to process container",
 				"container", shortID(ctr.ID),
@@ -391,24 +445,35 @@ func (c *Client) GetProjectInfo(ctx context.Context, containerID string) (*Proje
 	}, nil
 }
 
-// DiscoverProjects finds all docker-compose projects on the network
+// DiscoverProjects finds all docker-compose projects on any of the watched networks
 func (c *Client) DiscoverProjects(ctx context.Context) (map[string]*ProjectInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	filterArgs := filters.NewArgs()
-	filterArgs.Add("network", c.networkName)
+	// Collect containers from all networks (deduplicated)
+	seenContainers := make(map[string]types.Container)
 
-	containers, err := c.docker.ContainerList(ctx, container.ListOptions{
-		Filters: filterArgs,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list containers: %w", err)
+	for _, networkName := range c.networks {
+		filterArgs := filters.NewArgs()
+		filterArgs.Add("network", networkName)
+
+		containers, err := c.docker.ContainerList(ctx, container.ListOptions{
+			Filters: filterArgs,
+		})
+		if err != nil {
+			continue
+		}
+
+		for _, ctr := range containers {
+			if _, seen := seenContainers[ctr.ID]; !seen {
+				seenContainers[ctr.ID] = ctr
+			}
+		}
 	}
 
 	projects := make(map[string]*ProjectInfo)
 
-	for _, ctr := range containers {
+	for _, ctr := range seenContainers {
 		// Skip roji itself
 		if ctr.Labels["roji.self"] == "true" {
 			continue
