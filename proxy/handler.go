@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kan/roji/config"
 	"github.com/kan/roji/project"
 )
 
@@ -140,6 +141,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check if route has a warning (e.g., no port exposed)
 	if route.Backend.Warning != "" {
 		h.handleRouteWarning(w, r, hostname, route)
+		return
+	}
+
+	// Check if this request matches a mock route
+	if mock := h.findMockRoute(route, r.Method, r.URL.Path); mock != nil {
+		h.serveMockResponse(w, r, mock, hostname, route)
 		return
 	}
 
@@ -484,6 +491,61 @@ func (h *Handler) handleRouteWarning(w http.ResponseWriter, r *http.Request, hos
 		slog.Error("failed to render warning template", "error", err)
 		http.Error(w, fmt.Sprintf("Service unavailable: %s", route.Backend.Warning), http.StatusBadGateway)
 	}
+}
+
+// findMockRoute looks for a mock route that matches the request method and path
+func (h *Handler) findMockRoute(route *Route, method, path string) *config.MockRoute {
+	if len(route.Backend.MockRoutes) == 0 {
+		return nil
+	}
+
+	// Strip path prefix if configured
+	checkPath := path
+	if route.PathPrefix != "" {
+		checkPath = strings.TrimPrefix(path, route.PathPrefix)
+		if checkPath == "" {
+			checkPath = "/"
+		}
+	}
+
+	for _, mock := range route.Backend.MockRoutes {
+		if mock.Method == method && mock.Path == checkPath {
+			return mock
+		}
+	}
+	return nil
+}
+
+// serveMockResponse returns a mock response for the request
+func (h *Handler) serveMockResponse(w http.ResponseWriter, r *http.Request, mock *config.MockRoute, hostname string, route *Route) {
+	startTime := time.Now()
+
+	// Determine content type based on response body
+	contentType := "text/plain"
+	body := mock.Body
+	if len(body) > 0 {
+		// Check if body looks like JSON
+		trimmed := strings.TrimSpace(body)
+		if (strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) ||
+			(strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
+			contentType = "application/json"
+		}
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Roji-Mock", "true")
+	w.WriteHeader(mock.StatusCode)
+	w.Write([]byte(body))
+
+	// Log the mock response
+	duration := time.Since(startTime)
+	slog.Info("mock response",
+		"method", r.Method,
+		"host", hostname,
+		"path", r.URL.Path,
+		"status", mock.StatusCode,
+		"duration", duration.Round(time.Millisecond),
+		"service", route.Backend.ServiceName)
 }
 
 // RedirectHandler redirects HTTP to HTTPS

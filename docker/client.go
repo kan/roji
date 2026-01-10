@@ -50,10 +50,11 @@ type Backend struct {
 	ProjectName   string // docker-compose project name
 	Host          string // Container IP in the shared network
 	Port          int
-	Hostname      string // The hostname to route to this backend
-	PathPrefix    string // Optional path prefix
-	Warning       string // Warning message (e.g., "no port exposed")
-	Network       string // Docker network name this container was found on
+	Hostname      string              // The hostname to route to this backend
+	PathPrefix    string              // Optional path prefix
+	Warning       string              // Warning message (e.g., "no port exposed")
+	Network       string              // Docker network name this container was found on
+	MockRoutes    []*config.MockRoute // Mock responses defined via labels
 }
 
 // ProjectInfo contains docker-compose project metadata
@@ -313,6 +314,7 @@ func (c *Client) inspectToBackend(info types.ContainerJSON, networkName string, 
 		PathPrefix:    labelCfg.PathPrefix,
 		Warning:       warning,
 		Network:       networkName,
+		MockRoutes:    labelCfg.MockRoutes,
 	}, nil
 }
 

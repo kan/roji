@@ -596,11 +596,11 @@ roji is now running at https://roji.dev.localhost
   - [ ] Docker API `ContainerRestart` 呼び出し
   - [ ] `/_api/containers/{id}/restart` エンドポイント
   - [ ] 確認ダイアログ表示
-- [ ] シンプルなリクエストモック
-  - [ ] `roji.mock.{METHOD}.{PATH}` ラベルでレスポンス定義
-  - [ ] JSON/テキストレスポンスのサポート
-  - [ ] ステータスコード指定（`roji.mock.status.{PATH}=404`）
-  - [ ] バックエンド未実装時のフロントエンド開発支援
+- [x] シンプルなリクエストモック
+  - [x] `roji.mock.{METHOD}.{PATH}` ラベルでレスポンス定義
+  - [x] JSON/テキストレスポンスのサポート
+  - [x] ステータスコード指定（`roji.mock.status.{METHOD}.{PATH}=201`）
+  - [x] バックエンド未実装時のフロントエンド開発支援
 
 **リクエストログビューア実装イメージ:**
 ```

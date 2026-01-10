@@ -160,3 +160,126 @@ func TestDefaultHostname(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMockLabels(t *testing.T) {
+	tests := []struct {
+		name     string
+		labels   map[string]string
+		expected []*MockRoute
+	}{
+		{
+			name:     "no mock labels",
+			labels:   map[string]string{},
+			expected: nil,
+		},
+		{
+			name: "single GET mock",
+			labels: map[string]string{
+				"roji.mock.GET./api/users": `[{"id":1,"name":"Test"}]`,
+			},
+			expected: []*MockRoute{
+				{Method: "GET", Path: "/api/users", Body: `[{"id":1,"name":"Test"}]`, StatusCode: 200},
+			},
+		},
+		{
+			name: "mock with custom status code",
+			labels: map[string]string{
+				"roji.mock.POST./api/users":        `{"created":true}`,
+				"roji.mock.status.POST./api/users": "201",
+			},
+			expected: []*MockRoute{
+				{Method: "POST", Path: "/api/users", Body: `{"created":true}`, StatusCode: 201},
+			},
+		},
+		{
+			name: "multiple mocks",
+			labels: map[string]string{
+				"roji.mock.GET./api/users":  `[]`,
+				"roji.mock.GET./api/health": `{"status":"ok"}`,
+			},
+			expected: []*MockRoute{
+				{Method: "GET", Path: "/api/users", Body: `[]`, StatusCode: 200},
+				{Method: "GET", Path: "/api/health", Body: `{"status":"ok"}`, StatusCode: 200},
+			},
+		},
+		{
+			name: "status code only (no body)",
+			labels: map[string]string{
+				"roji.mock.status.DELETE./api/users/1": "204",
+			},
+			expected: []*MockRoute{
+				{Method: "DELETE", Path: "/api/users/1", Body: "", StatusCode: 204},
+			},
+		},
+		{
+			name: "case insensitive method",
+			labels: map[string]string{
+				"roji.mock.get./api/test": `test`,
+			},
+			expected: []*MockRoute{
+				{Method: "GET", Path: "/api/test", Body: `test`, StatusCode: 200},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := ParseLabels(tt.labels)
+
+			if len(cfg.MockRoutes) != len(tt.expected) {
+				t.Fatalf("got %d mock routes, want %d", len(cfg.MockRoutes), len(tt.expected))
+			}
+
+			// Create a map for easier comparison (order-independent)
+			expectedMap := make(map[string]*MockRoute)
+			for _, m := range tt.expected {
+				key := m.Method + " " + m.Path
+				expectedMap[key] = m
+			}
+
+			for _, got := range cfg.MockRoutes {
+				key := got.Method + " " + got.Path
+				exp, ok := expectedMap[key]
+				if !ok {
+					t.Errorf("unexpected mock route: %s %s", got.Method, got.Path)
+					continue
+				}
+				if got.Body != exp.Body {
+					t.Errorf("mock %s: body = %q, want %q", key, got.Body, exp.Body)
+				}
+				if got.StatusCode != exp.StatusCode {
+					t.Errorf("mock %s: status = %d, want %d", key, got.StatusCode, exp.StatusCode)
+				}
+			}
+		})
+	}
+}
+
+func TestParseMethodPath(t *testing.T) {
+	tests := []struct {
+		input      string
+		wantMethod string
+		wantPath   string
+	}{
+		{"GET./api/users", "GET", "/api/users"},
+		{"POST./api/users", "POST", "/api/users"},
+		{"DELETE./api/users/1", "DELETE", "/api/users/1"},
+		{"get./test", "GET", "/test"},
+		{"GET/invalid", "", ""},      // missing dot before slash
+		{"GET.", "", ""},             // no path after dot
+		{"./api", "", ""},            // no method
+		{"", "", ""},                 // empty string
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			method, path := parseMethodPath(tt.input)
+			if method != tt.wantMethod {
+				t.Errorf("method = %q, want %q", method, tt.wantMethod)
+			}
+			if path != tt.wantPath {
+				t.Errorf("path = %q, want %q", path, tt.wantPath)
+			}
+		})
+	}
+}
