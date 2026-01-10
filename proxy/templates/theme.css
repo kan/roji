@@ -1,0 +1,121 @@
+/* roji Theme CSS - Common variables and base styles */
+
+/* Light theme (default) */
+:root {
+    --bg-primary: #f5f5f5;
+    --bg-card: #ffffff;
+    --bg-hover: #fafafa;
+    --bg-badge: #e8e8e8;
+    --bg-input: #f0f0f0;
+    --bg-code: #f4f4f4;
+    --bg-pre: #2d2d2d;
+    --text-primary: #333333;
+    --text-secondary: #666666;
+    --text-tertiary: #999999;
+    --text-inverse: #ffffff;
+    --border-color: #eeeeee;
+    --border-color-dark: #dddddd;
+    --link-color: #0066cc;
+    --success-bg: #e8f5e9;
+    --success-text: #2e7d32;
+    --success-dot: #4caf50;
+    --error-bg: #ffebee;
+    --error-text: #c62828;
+    --warning-bg: #fff8e1;
+    --warning-border: #ffc107;
+    --warning-badge-bg: #fff3cd;
+    --warning-text: #856404;
+    --count-bg: #333333;
+    --tooltip-bg: #333333;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+    --shadow-color-strong: rgba(0, 0, 0, 0.2);
+    color-scheme: light;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+    --bg-primary: #1a1a1a;
+    --bg-card: #2d2d2d;
+    --bg-hover: #363636;
+    --bg-badge: #404040;
+    --bg-input: #363636;
+    --bg-code: #363636;
+    --bg-pre: #1a1a1a;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --text-tertiary: #707070;
+    --text-inverse: #1a1a1a;
+    --border-color: #404040;
+    --border-color-dark: #505050;
+    --link-color: #66b3ff;
+    --success-bg: #1b3d1b;
+    --success-text: #6fcf6f;
+    --success-dot: #4caf50;
+    --error-bg: #3d1b1b;
+    --error-text: #ff6b6b;
+    --warning-bg: #3d3520;
+    --warning-border: #ffc107;
+    --warning-badge-bg: #4d4020;
+    --warning-text: #ffd54f;
+    --count-bg: #505050;
+    --tooltip-bg: #404040;
+    --shadow-color: rgba(0, 0, 0, 0.3);
+    --shadow-color-strong: rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+}
+
+/* Base styles */
+* { box-sizing: border-box; }
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+a { color: var(--link-color); }
+a:hover { text-decoration: underline; }
+
+code {
+    background: var(--bg-code);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+/* Card component */
+.card {
+    background: var(--bg-card);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px var(--shadow-color);
+    overflow: hidden;
+}
+
+/* Theme toggle button */
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: var(--bg-input);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.theme-toggle:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.theme-toggle svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}

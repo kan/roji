@@ -3,13 +3,20 @@
 <head>
     <title>No Route Found - roji</title>
     <link rel="icon" type="image/svg+xml" href="/_assets/favicon.svg">
+    <script>
+        (function() {
+            const saved = localStorage.getItem('roji-theme');
+            const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+    <link rel="stylesheet" href="/_assets/theme.css">
     <style>
-        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
-        h1 { color: #e74c3c; }
-        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
-        .routes { background: #f9f9f9; padding: 15px; border-radius: 5px; margin-top: 20px; }
+        /* Page-specific styles */
+        body { max-width: 600px; margin: 50px auto; }
+        h1 { color: var(--error-text); }
+        .routes { background: var(--bg-card); padding: 15px; border-radius: 5px; margin-top: 20px; }
         .route { margin: 5px 0; font-family: monospace; }
-        .route a { color: #0066cc; }
     </style>
 </head>
 <body>

@@ -70,10 +70,11 @@ roji/
 ├── proxy/
 │   ├── handler.go            # ReverseProxy 実装
 │   ├── router.go             # ホスト名/パスルーティング
-│   └── templates/            # HTMLテンプレート
+│   └── templates/            # HTMLテンプレート・静的アセット
 │       ├── dashboard.html
 │       ├── notfound.html
-│       └── warning.html      # 設定ミス警告ページ
+│       ├── warning.html      # 設定ミス警告ページ
+│       └── theme.css         # 共通テーマ（CSS変数、ダークモード）
 ├── certgen/
 │   └── generator.go          # TLS証明書生成
 ├── config/
@@ -418,7 +419,6 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
 **将来の拡張:**
 - ルートごとのヘルスチェック表示
 - フィルタリング・検索機能
-- ダークモード対応
 
 ### Phase 9.5: プロジェクト履歴・クイックアクセス ✅
 
@@ -574,11 +574,13 @@ roji is now running at https://roji.dev.localhost
 
 ### Phase 10.5: UX改善・開発支援機能（v0.6.0）
 
-- [ ] ダークモード対応
-  - [ ] CSS変数によるテーマ切り替え
-  - [ ] localStorage で設定保存
-  - [ ] システム設定の自動検出（prefers-color-scheme）
-  - [ ] ダッシュボードにトグルボタン追加
+- [x] ダークモード対応
+  - [x] CSS変数によるテーマ切り替え（`theme.css` 外部ファイル化）
+  - [x] localStorage で設定保存
+  - [x] システム設定の自動検出（prefers-color-scheme）
+  - [x] ダッシュボードにトグルボタン追加（太陽/月アイコン）
+  - [x] 全ページ対応（dashboard, notfound, warning）
+  - [x] FOUC防止（ページ読み込み前にテーマ適用）
 - [ ] リクエストログビューア
   - [ ] リングバッファでログ保持（直近100件程度）
   - [ ] SSEで新規リクエストをリアルタイム配信

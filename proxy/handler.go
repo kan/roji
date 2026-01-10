@@ -29,7 +29,7 @@ var sharedTransport = &http.Transport{
 	IdleConnTimeout:     90 * time.Second,
 }
 
-//go:embed templates/*.html templates/*.js templates/*.svg
+//go:embed templates/*.html templates/*.js templates/*.svg templates/*.css
 var templateFS embed.FS
 
 var templates = template.Must(
