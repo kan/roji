@@ -524,11 +524,11 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
   - [x] コンテナ起動 → ルート検出 → プロキシ動作の一連のフロー検証
   - [x] ポートなし/ホスト名競合など警告ケースのテスト
   - [x] GitHub Actions での自動実行
-- [ ] E2Eテスト
-  - [ ] 実際のHTTPリクエストを使った動作検証
-  - [ ] ダッシュボードのアクセス確認
-  - [ ] SSE接続・リアルタイム更新の検証
-  - [ ] TLS証明書の検証（自己署名CA）
+- [x] E2Eテスト
+  - [x] 実際のHTTPリクエストを使った動作検証
+  - [x] ダッシュボードのアクセス確認
+  - [x] SSE接続・リアルタイム更新の検証
+  - [x] TLS証明書の検証（自己署名CA）
 - [ ] install.sh アップグレード対応
   - [ ] 既存インストールの検出（`$ROJI_INSTALL_DIR/docker-compose.yml` の存在確認）
   - [ ] バージョン確認（現在のイメージタグ取得）
