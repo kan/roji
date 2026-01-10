@@ -1,5 +1,6 @@
 # GoReleaser configuration
 # Documentation: https://goreleaser.com/customization/
+version: 2
 
 project_name: roji
 
@@ -39,7 +40,7 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - LICENSE
       - README.md
@@ -49,7 +50,7 @@ checksum:
   name_template: 'checksums.txt'
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc
@@ -81,48 +82,24 @@ changelog:
     - title: 'Other'
       order: 999
 
-dockers:
-  - id: roji-amd64
-    image_templates:
-      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-amd64"
+dockers_v2:
+  - id: roji
+    images:
+      - "ghcr.io/kan/{{ .ProjectName }}"
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
     dockerfile: Dockerfile.goreleaser
-    use: buildx
-    goos: linux
-    goarch: amd64
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.source=https://github.com/kan/roji"
-      - "--label=org.opencontainers.image.licenses=MIT"
-  
-  - id: roji-arm64
-    image_templates:
-      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-arm64"
-    dockerfile: Dockerfile.goreleaser
-    use: buildx
-    goos: linux
-    goarch: arm64
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.source=https://github.com/kan/roji"
-      - "--label=org.opencontainers.image.licenses=MIT"
-
-docker_manifests:
-  - name_template: "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-amd64"
-      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kan/{{ .ProjectName }}:latest"
-    image_templates:
-      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-amd64"
-      - "ghcr.io/kan/{{ .ProjectName }}:{{ .Version }}-arm64"
+    labels:
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: "https://github.com/kan/roji"
+      org.opencontainers.image.licenses: "MIT"
 
 release:
   github:

@@ -4,13 +4,16 @@
 
 FROM gcr.io/distroless/static:nonroot
 
+# Required for multi-platform builds with dockers_v2
+ARG TARGETPLATFORM
+
 # Metadata
 LABEL org.opencontainers.image.source="https://github.com/kan/roji"
 LABEL org.opencontainers.image.description="Reverse proxy for local development"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Copy the pre-built binary from GoReleaser
-COPY roji /roji
+# Copy the pre-built binary from GoReleaser (platform-specific path)
+COPY ${TARGETPLATFORM}/roji /roji
 
 EXPOSE 80 443
 
