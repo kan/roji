@@ -216,6 +216,7 @@ func (r *Router) ListRoutes() []RouteInfo {
 			Hostname:      route.Hostname,
 			PathPrefix:    route.PathPrefix,
 			Target:        target,
+			ContainerID:   route.Backend.ContainerID,
 			ContainerName: route.Backend.ContainerName,
 			ServiceName:   route.Backend.ServiceName,
 			Warning:       route.Backend.Warning,
@@ -233,6 +234,7 @@ func (r *Router) ListRoutes() []RouteInfo {
 				Hostname:      route.Hostname,
 				PathPrefix:    route.PathPrefix,
 				Target:        target,
+				ContainerID:   route.Backend.ContainerID,
 				ContainerName: route.Backend.ContainerName,
 				ServiceName:   route.Backend.ServiceName,
 				Warning:       route.Backend.Warning,
@@ -257,6 +259,7 @@ type RouteInfo struct {
 	Hostname      string `json:"hostname"`
 	PathPrefix    string `json:"pathPrefix,omitempty"`
 	Target        string `json:"target"`
+	ContainerID   string `json:"containerId"`
 	ContainerName string `json:"containerName"`
 	ServiceName   string `json:"serviceName"`
 	Warning       string `json:"warning,omitempty"`

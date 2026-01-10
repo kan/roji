@@ -591,11 +591,11 @@ roji is now running at https://roji.dev.localhost
   - [x] `ROJI_NETWORK` でカンマ区切り複数指定
   - [x] 各ネットワークを並行して監視
   - [x] ダッシュボードでネットワーク別表示（バッジクリックでフィルタリング）
-- [ ] コンテナ再起動ボタン
-  - [ ] ダッシュボードの各ルートに再起動ボタン追加
-  - [ ] Docker API `ContainerRestart` 呼び出し
-  - [ ] `/_api/containers/{id}/restart` エンドポイント
-  - [ ] 確認ダイアログ表示
+- [x] コンテナ再起動ボタン
+  - [x] ダッシュボードの各ルートに再起動ボタン追加
+  - [x] Docker API `ContainerRestart` 呼び出し
+  - [x] `/_api/containers/{id}/restart` エンドポイント
+  - [x] 確認ダイアログ表示
 - [x] シンプルなリクエストモック
   - [x] `roji.mock.{METHOD}.{PATH}` ラベルでレスポンス定義
   - [x] JSON/テキストレスポンスのサポート

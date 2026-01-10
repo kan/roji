@@ -26,7 +26,7 @@ func testStatusConfig() *StatusConfig {
 
 func TestHandler_ServeHTTP_NotFound(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://unknown.localhost/", nil)
 	req.Host = "unknown.localhost"
@@ -46,7 +46,7 @@ func TestHandler_ServeHTTP_NotFound(t *testing.T) {
 
 func TestHandler_ServeHTTP_Dashboard(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://roji.dev.localhost/", nil)
 	req.Host = "roji.dev.localhost"
@@ -69,7 +69,7 @@ func TestHandler_ServeHTTP_Dashboard(t *testing.T) {
 
 func TestHandler_ServeHTTP_DashboardWithRoutes(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	// Add a route
 	backend := &docker.Backend{
@@ -99,7 +99,7 @@ func TestHandler_ServeHTTP_DashboardWithRoutes(t *testing.T) {
 
 func TestHandler_ServeHTTP_RouteExists(t *testing.T) {
 	router := NewRouter()
-	_ = NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	_ = NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	// Add a route
 	backend := &docker.Backend{
@@ -124,7 +124,7 @@ func TestHandler_ServeHTTP_RouteExists(t *testing.T) {
 
 func TestHandler_CaseInsensitiveHostname(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "ROJI.DEV.LOCALHOST", "DEV.LOCALHOST", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "ROJI.DEV.LOCALHOST", "DEV.LOCALHOST", testStatusConfig(), nil)
 
 	// Dashboard should work with uppercase
 	req := httptest.NewRequest("GET", "https://ROJI.DEV.LOCALHOST/", nil)
@@ -140,7 +140,7 @@ func TestHandler_CaseInsensitiveHostname(t *testing.T) {
 
 func TestHandler_HostnameWithPort(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	// Should strip port from hostname
 	req := httptest.NewRequest("GET", "https://roji.dev.localhost:443/", nil)
@@ -209,7 +209,7 @@ func TestRedirectHandler(t *testing.T) {
 
 func TestHandler_Assets(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://roji.dev.localhost/_assets/petite-vue.min.js", nil)
 	req.Host = "roji.dev.localhost"
@@ -230,7 +230,7 @@ func TestHandler_Assets(t *testing.T) {
 
 func TestHandler_Assets_NotFound(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://roji.dev.localhost/_assets/nonexistent.js", nil)
 	req.Host = "roji.dev.localhost"
@@ -245,7 +245,7 @@ func TestHandler_Assets_NotFound(t *testing.T) {
 
 func TestHandler_Assets_PathTraversal(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	tests := []string{
 		"/_assets/../handler.go",
@@ -270,7 +270,7 @@ func TestHandler_Assets_PathTraversal(t *testing.T) {
 
 func TestHandler_SSE_Headers(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	// Create request with cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -304,7 +304,7 @@ func TestHandler_SSE_Headers(t *testing.T) {
 
 func TestHandler_RoutesAPI(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	// Add a route
 	backend := &docker.Backend{
@@ -338,7 +338,7 @@ func TestHandler_RoutesAPI(t *testing.T) {
 
 func TestHandler_StatusAPI(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://roji.dev.localhost/_api/status", nil)
 	req.Host = "roji.dev.localhost"
@@ -358,7 +358,7 @@ func TestHandler_StatusAPI(t *testing.T) {
 
 func TestHandler_ProjectsAPI_NilStore(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	req := httptest.NewRequest("GET", "https://roji.dev.localhost/_api/projects", nil)
 	req.Host = "roji.dev.localhost"
@@ -384,7 +384,7 @@ func TestHandler_ProjectsAPI_NilStore(t *testing.T) {
 
 func TestHandler_BaseDomainRedirect(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	// Test that base domain redirects to dashboard host
 	req := httptest.NewRequest("GET", "https://dev.localhost/", nil)
@@ -406,7 +406,7 @@ func TestHandler_BaseDomainRedirect(t *testing.T) {
 
 func TestHandler_BaseDomainRedirectWithPath(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	tests := []struct {
 		name             string
@@ -452,7 +452,7 @@ func TestHandler_BaseDomainRedirectWithPath(t *testing.T) {
 
 func TestHandler_DashboardHostNoRedirect(t *testing.T) {
 	router := NewRouter()
-	handler := NewHandler(router, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	// Dashboard host should NOT redirect
 	req := httptest.NewRequest("GET", "https://roji.dev.localhost/", nil)

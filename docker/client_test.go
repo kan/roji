@@ -53,6 +53,10 @@ func (m *mockDockerAPI) Close() error {
 	return nil
 }
 
+func (m *mockDockerAPI) ContainerRestart(ctx context.Context, containerID string, options container.StopOptions) error {
+	return nil
+}
+
 // Test helper to create a mock container
 func createMockContainer(id, name, serviceName, projectName string, port int, networkName string) types.Container {
 	labels := map[string]string{}

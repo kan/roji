@@ -363,6 +363,96 @@
             align-items: center;
             gap: 8px;
         }
+        .restart-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .restart-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--warning-border);
+            color: var(--warning-text);
+        }
+        .restart-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .restart-btn.restarting {
+            border-color: var(--warning-border);
+            color: var(--warning-text);
+        }
+        /* Confirm dialog */
+        .confirm-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .confirm-dialog {
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 4px 20px var(--shadow-color-strong);
+            max-width: 400px;
+            width: 90%;
+        }
+        .confirm-dialog h3 {
+            margin: 0 0 12px 0;
+            color: var(--text-primary);
+        }
+        .confirm-dialog p {
+            margin: 0 0 20px 0;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .confirm-dialog code {
+            background: var(--bg-badge);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .confirm-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+        .confirm-buttons button {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-cancel {
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+        .btn-cancel:hover {
+            background: var(--bg-hover);
+        }
+        .btn-restart {
+            background: var(--warning-border);
+            border: none;
+            color: white;
+        }
+        .btn-restart:hover {
+            background: var(--warning-text);
+        }
         /* GitHub link */
         .github-link {
             display: inline-flex;
@@ -457,8 +547,33 @@
                     <div v-if="route.warning" class="warning-badge">&#x26A0;&#xFE0F; {{route.warning}}</div>
                 </div>
                 <div class="route-info">
+                    <button
+                        class="restart-btn"
+                        :class="{ restarting: restartingContainer === route.containerId }"
+                        :disabled="restartingContainer === route.containerId"
+                        @click="showRestartConfirm(route)"
+                        title="Restart container"
+                    >
+                        <span v-if="restartingContainer === route.containerId">&#x21BB; Restarting...</span>
+                        <span v-else>&#x21BB; Restart</span>
+                    </button>
                     <span v-if="route.network" class="network-name">{{route.network}}</span>
                     <span class="service-name">{{route.serviceName}}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Restart Confirm Dialog -->
+        <div v-if="confirmRestart" class="confirm-overlay" @click.self="confirmRestart = null">
+            <div class="confirm-dialog">
+                <h3>&#x1F504; Restart Container?</h3>
+                <p>
+                    Are you sure you want to restart <code>{{confirmRestart.containerName}}</code>?<br>
+                    This will briefly interrupt the service.
+                </p>
+                <div class="confirm-buttons">
+                    <button class="btn-cancel" @click="confirmRestart = null">Cancel</button>
+                    <button class="btn-restart" @click="restartContainer(confirmRestart)">Restart</button>
                 </div>
             </div>
         </div>
@@ -526,6 +641,8 @@
             inactiveProjects: [],
             copiedProject: null,
             theme: 'light',
+            confirmRestart: null,
+            restartingContainer: null,
 
             init() {
                 // Initialize theme
@@ -739,6 +856,42 @@
                     this.selectedNetwork = null;
                 } else {
                     this.selectedNetwork = network;
+                }
+            },
+
+            showRestartConfirm(route) {
+                this.confirmRestart = route;
+            },
+
+            async restartContainer(route) {
+                this.confirmRestart = null;
+                this.restartingContainer = route.containerId;
+
+                try {
+                    const resp = await fetch(`/_api/containers/${route.containerId}/restart`, {
+                        method: 'POST'
+                    });
+
+                    if (!resp.ok) {
+                        const error = await resp.text();
+                        throw new Error(error);
+                    }
+
+                    // Show success notification
+                    if (this.notificationsEnabled && Notification.permission === 'granted') {
+                        this.notify(
+                            `${route.containerName} restarted`,
+                            'Container restart initiated successfully'
+                        );
+                    }
+                } catch (e) {
+                    console.error('Failed to restart container:', e);
+                    alert(`Failed to restart container: ${e.message}`);
+                } finally {
+                    // Reset after a short delay to show the restarting state
+                    setTimeout(() => {
+                        this.restartingContainer = null;
+                    }, 1000);
                 }
             }
         };

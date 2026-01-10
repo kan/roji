@@ -100,7 +100,7 @@ func run(ctx context.Context, cfg Config) error {
 		HTTPSPort:     cfg.HTTPSPort,
 	}
 
-	handler := proxy.NewHandler(router, cfg.DashboardHost, cfg.BaseDomain, statusConfig, projectStore)
+	handler := proxy.NewHandler(router, dockerClient, cfg.DashboardHost, cfg.BaseDomain, statusConfig, projectStore)
 
 	// Discover existing containers and projects
 	if err := discoverExisting(ctx, dockerClient, router, projectStore); err != nil {

@@ -38,6 +38,7 @@ func shortID(id string) string {
 type DockerAPI interface {
 	ContainerList(ctx context.Context, options container.ListOptions) ([]types.Container, error)
 	ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error)
+	ContainerRestart(ctx context.Context, containerID string, options container.StopOptions) error
 	Events(ctx context.Context, options events.ListOptions) (<-chan events.Message, <-chan error)
 	Close() error
 }
@@ -503,4 +504,12 @@ func (c *Client) DiscoverProjects(ctx context.Context) (map[string]*ProjectInfo,
 	}
 
 	return projects, nil
+}
+
+// RestartContainer restarts a container by ID
+func (c *Client) RestartContainer(ctx context.Context, containerID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	return c.docker.ContainerRestart(ctx, containerID, container.StopOptions{})
 }

@@ -8,6 +8,7 @@
 package proxy
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"github.com/kan/roji/config"
+	"github.com/kan/roji/docker"
 	"github.com/kan/roji/project"
 )
 
@@ -55,6 +57,7 @@ type StatusConfig struct {
 // Handler is the main HTTP handler for the reverse proxy
 type Handler struct {
 	router        *Router
+	dockerClient  *docker.Client
 	dashboardHost string // hostname for dashboard (e.g., "roji.dev.localhost")
 	baseDomain    string // base domain (e.g., "dev.localhost")
 	statusConfig  *StatusConfig
@@ -62,9 +65,10 @@ type Handler struct {
 }
 
 // NewHandler creates a new proxy handler
-func NewHandler(router *Router, dashboardHost string, baseDomain string, statusConfig *StatusConfig, projectStore *project.Store) *Handler {
+func NewHandler(router *Router, dockerClient *docker.Client, dashboardHost string, baseDomain string, statusConfig *StatusConfig, projectStore *project.Store) *Handler {
 	return &Handler{
 		router:        router,
+		dockerClient:  dockerClient,
 		dashboardHost: strings.ToLower(dashboardHost),
 		baseDomain:    strings.ToLower(baseDomain),
 		statusConfig:  statusConfig,
@@ -120,6 +124,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// SSE endpoint for real-time route updates
 		if r.URL.Path == "/_api/events" {
 			h.serveSSE(w, r)
+			return
+		}
+		// Container restart endpoint
+		if strings.HasPrefix(r.URL.Path, "/_api/containers/") && strings.HasSuffix(r.URL.Path, "/restart") {
+			h.serveContainerRestart(w, r)
 			return
 		}
 		// Static assets (petite-vue.min.js, etc.)
@@ -372,6 +381,51 @@ func (h *Handler) serveProjectsAPI(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to encode projects as JSON", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
+}
+
+func (h *Handler) serveContainerRestart(w http.ResponseWriter, r *http.Request) {
+	// Only allow POST method
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract container ID from path: /_api/containers/{id}/restart
+	path := strings.TrimPrefix(r.URL.Path, "/_api/containers/")
+	path = strings.TrimSuffix(path, "/restart")
+	containerID := path
+
+	if containerID == "" {
+		http.Error(w, "Container ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check if docker client is available
+	if h.dockerClient == nil {
+		http.Error(w, "Docker client not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Restart the container
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	if err := h.dockerClient.RestartContainer(ctx, containerID); err != nil {
+		slog.Error("failed to restart container",
+			"container", containerID,
+			"error", err)
+		http.Error(w, fmt.Sprintf("Failed to restart container: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("container restarted", "container", containerID)
+
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":    "restarted",
+		"container": containerID,
+	})
 }
 
 func (h *Handler) serveHealth(w http.ResponseWriter, r *http.Request) {
