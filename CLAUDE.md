@@ -122,7 +122,7 @@ roji/
 
 ### 配布・品質
 - ワンライナーインストール（アップグレード対応）
-- GoReleaser（マルチプラットフォーム）
+- GoReleaser v2（マルチプラットフォーム）
 - Distrolessイメージ
 - セキュリティスキャン（Trivy, govulncheck）
 - インテグレーション/E2Eテスト
@@ -191,6 +191,26 @@ cd test && go test -v -tags=integration ./...
 # E2Eテスト
 cd test && go test -v -tags=e2e ./...
 ```
+
+### GoReleaser
+
+GoReleaser v2を使用。設定変更時は必ず検証を実行：
+
+```bash
+# インストール（未導入の場合）
+go install github.com/goreleaser/goreleaser/v2@latest
+
+# 設定検証
+goreleaser check
+
+# ローカルでスナップショットビルド（リリースなし）
+goreleaser release --snapshot --clean
+```
+
+**v2の主な特徴:**
+- `version: 2` ヘッダーが必須
+- `dockers_v2`: 単一設定でマルチプラットフォームイメージ+マニフェスト生成
+- Dockerfileで `ARG TARGETPLATFORM` を使用し `${TARGETPLATFORM}/binary` からコピー
 
 ### 手動テスト
 
