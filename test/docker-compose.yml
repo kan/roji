@@ -1,0 +1,54 @@
+# Test services for integration testing
+# These services are used to verify roji's routing and proxy functionality
+
+services:
+  # Basic web service - auto-detected
+  web:
+    image: nginx:alpine
+    networks:
+      - roji-test
+
+  # API service with custom hostname
+  api:
+    image: nginx:alpine
+    labels:
+      - "roji.host=api.test.localhost"
+    networks:
+      - roji-test
+
+  # Service with custom port
+  app:
+    image: nginx:alpine
+    expose:
+      - "80"
+      - "8080"
+    labels:
+      - "roji.port=80"
+    networks:
+      - roji-test
+
+  # Service without exposed port (should show warning)
+  noport:
+    image: alpine:latest
+    command: ["sleep", "infinity"]
+    labels:
+      - "roji.host=noport.test.localhost"
+    networks:
+      - roji-test
+
+  # Mock API service
+  mock:
+    image: alpine:latest
+    command: ["sleep", "infinity"]
+    labels:
+      - "roji.host=mock.test.localhost"
+      - "roji.mock.GET./api/users=[{\"id\":1,\"name\":\"Test User\"}]"
+      - "roji.mock.GET./api/health={\"status\":\"ok\"}"
+      - "roji.mock.status.POST./api/users=201"
+      - "roji.mock.POST./api/users={\"created\":true}"
+    networks:
+      - roji-test
+
+networks:
+  roji-test:
+    name: roji-test

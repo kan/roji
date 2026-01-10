@@ -37,5 +37,5 @@ coverage.html
 .DS_Store
 Thumbs.db
 
-# Test
-test/
+# Test artifacts
+test/testdata/expected/

@@ -159,15 +159,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if route has a warning (e.g., no port exposed)
-	if route.Backend.Warning != "" {
-		h.handleRouteWarning(w, r, hostname, route)
+	// Check if this request matches a mock route (before warning check,
+	// since mocks can work without a real backend)
+	if mock := h.findMockRoute(route, r.Method, r.URL.Path); mock != nil {
+		h.serveMockResponse(w, r, mock, hostname, route)
 		return
 	}
 
-	// Check if this request matches a mock route
-	if mock := h.findMockRoute(route, r.Method, r.URL.Path); mock != nil {
-		h.serveMockResponse(w, r, mock, hostname, route)
+	// Check if route has a warning (e.g., no port exposed)
+	if route.Backend.Warning != "" {
+		h.handleRouteWarning(w, r, hostname, route)
 		return
 	}
 

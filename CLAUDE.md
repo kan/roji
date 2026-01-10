@@ -518,12 +518,12 @@ Docker Events → Watcher → Router.Update() → Router.notifySubscribers()
 
 ### Phase 10: テスト強化・アップグレード対応（v0.6.0）
 
-- [ ] インテグレーションテスト
-  - [ ] Docker Compose を使った実環境テスト
-  - [ ] テスト用 docker-compose.yml の作成（`test/` ディレクトリ）
-  - [ ] コンテナ起動 → ルート検出 → プロキシ動作の一連のフロー検証
-  - [ ] ポートなし/ホスト名競合など警告ケースのテスト
-  - [ ] GitHub Actions での自動実行（Docker-in-Docker または services）
+- [x] インテグレーションテスト
+  - [x] Docker Compose を使った実環境テスト
+  - [x] テスト用 docker-compose.yml の作成（`test/` ディレクトリ）
+  - [x] コンテナ起動 → ルート検出 → プロキシ動作の一連のフロー検証
+  - [x] ポートなし/ホスト名競合など警告ケースのテスト
+  - [x] GitHub Actions での自動実行
 - [ ] E2Eテスト
   - [ ] 実際のHTTPリクエストを使った動作検証
   - [ ] ダッシュボードのアクセス確認
