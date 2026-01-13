@@ -147,35 +147,255 @@ roji/
 3. **確認**
    - GitHub Actions → GitHub Release → Docker Image
 
-## 将来の課題（v0.7.0〜）
+## ロードマップ（v0.7.0 → v1.0.0）
 
-### v0.7.0 候補
+### バージョン計画
 
-- [ ] **ログのエクスポート**
-  - リクエストログをJSON/CSVでダウンロード
-  - ダッシュボードにエクスポートボタン追加
-  - 期間指定・フィルタ適用後のエクスポート
+| Version | テーマ | 主要機能 |
+|---------|--------|----------|
+| **v0.7.0** | プロトコル拡張 | WebSocket対応、gRPC対応、ログエクスポート |
+| **v0.8.0** | Native Mode | 単体バイナリ化、`roji doctor`、CA自動インストール |
+| **v0.9.0** | 運用強化 | サービス登録、Docker Compose操作、httpd機能、BASIC認証 |
+| **v1.0.0** | 安定版 | ドキュメント整備、破壊的変更の整理、Docker Mode廃止 |
+
+---
+
+### v0.7.0: プロトコル拡張
 
 - [ ] **WebSocket対応**
   - WebSocket接続のプロキシ（`Upgrade: websocket`）
   - フロントエンド開発での必須機能
   - 既存のReverseProxyにWebSocketハンドラー追加
 
-- [ ] **VS Code拡張**
-  - ルート一覧表示（サイドバー）
-  - ワンクリックでブラウザを開く
-  - コンテナ再起動
-  - ログビューア連携
-  - roji APIとの通信（`/_api/*`）
+- [ ] **gRPC対応**
+  - HTTP/2 + gRPCプロキシ
+  - gRPC-Web対応（ブラウザからのgRPC呼び出し）
+  - `roji.protocol=grpc` ラベルでgRPCモード指定
 
-### 将来構想
+- [ ] **ログのエクスポート**
+  - リクエストログをJSON/CSVでダウンロード
+  - ダッシュボードにエクスポートボタン追加
+  - 期間指定・フィルタ適用後のエクスポート
 
-| 機能 | 説明 |
-|------|------|
-| ルート別ヘルスチェック | 各バックエンドの死活監視 |
-| レスポンスタイム統計 | P50/P95/P99レイテンシ表示 |
-| gRPC対応 | HTTP/2 + gRPCプロキシ |
-| プロジェクト操作 | ダッシュボードからstart/stop |
+---
+
+### v0.8.0: Native Mode（単体バイナリ化）
+
+v0.8.0以降は**Native Mode**を主とする。Docker Modeは1.0.0で廃止予定。
+
+#### 概要
+
+ホスト上で直接動作し、Docker環境を外部から操作する形態に移行。
+
+```
+v0.8.0 Architecture (Native Mode)
+┌─────────────────────────────────────────────────────────────────┐
+│                     roji (Native Mode)                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐      │
+│  │   Docker     │  │    Route     │  │   HTTP/HTTPS     │      │
+│  │   Watcher    │→ │   Manager    │→ │  Reverse Proxy   │      │
+│  └──────────────┘  └──────────────┘  └──────────────────┘      │
+│         ↓                ↓                   ↑                  │
+│   Docker Socket    SSE Broadcast        Host :80/:443           │
+│  (/var/run/...)                         (特権必要)              │
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐                             │
+│  │    Doctor    │  │     CA       │                             │
+│  │    Command   │  │   Installer  │                             │
+│  └──────────────┘  └──────────────┘                             │
+│   環境チェック      OS Trust Store                               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 設定の優先順位
+
+設定は以下の優先順位で適用（後が優先）：
+
+1. デフォルト値
+2. 設定ファイル（`~/.config/roji/config.yaml`）
+3. 環境変数（`ROJI_*`）
+4. コマンドライン引数（`--network` 等）
+
+#### 設定ファイル仕様
+
+```yaml
+# ~/.config/roji/config.yaml
+network: roji
+domain: dev.localhost
+certs_dir: ~/.local/share/roji/certs
+data_dir: ~/.local/share/roji/data
+dashboard: roji.dev.localhost
+log_level: info
+http_port: 80
+https_port: 443
+```
+
+#### roji doctor コマンド
+
+```
+$ roji doctor
+
+✓ Docker daemon is running
+✓ Docker socket is accessible (/var/run/docker.sock)
+✓ Network 'roji' exists
+✓ Ports 80, 443 are available
+✓ CA certificate is installed (macOS Keychain)
+✓ Server certificate is valid (expires in 364 days)
+✗ Firefox certificate not installed (manual step required)
+
+Issues found: 1
+Run 'roji doctor --fix' to auto-fix where possible
+```
+
+**チェック項目:**
+- Docker daemon稼働
+- Docker socketアクセス権
+- 指定ネットワークの存在
+- ポート80/443の利用可能性
+- CA証明書のインストール状態
+- サーバー証明書の有効期限
+- DNS解決（*.localhost）
+
+#### CA証明書の自動インストール
+
+**新コマンド:**
+- `roji ca install` - CA証明書をシステムにインストール
+- `roji ca uninstall` - CA証明書を削除
+- `roji ca export` - CA証明書をエクスポート（他デバイス用）
+
+**プラットフォーム別実装:**
+
+| プラットフォーム | 方法 | 実装 |
+|------------------|------|------|
+| macOS | Keychain | `security add-trusted-cert` |
+| Linux (Debian系) | update-ca-certificates | `/usr/local/share/ca-certificates/` |
+| Linux (RHEL系) | update-ca-trust | `/etc/pki/ca-trust/source/anchors/` |
+| Windows | certutil | `certutil -addstore -f "ROOT"` |
+
+---
+
+### v0.9.0: 運用強化
+
+#### サービスとしての稼働
+
+**新コマンド:**
+- `roji service install` - サービス登録
+- `roji service uninstall` - サービス削除
+- `roji service start/stop/restart` - サービス制御
+- `roji service status` - 状態確認
+
+**プラットフォーム別:**
+
+| プラットフォーム | サービス管理 | 設定場所 |
+|------------------|--------------|----------|
+| Linux | systemd | `/etc/systemd/system/roji.service` |
+| macOS | launchd | `~/Library/LaunchAgents/com.roji.plist` |
+| Windows | Windows Service | NSSM または sc.exe |
+
+#### Docker Compose操作
+
+ダッシュボード/APIからdocker-composeプロジェクトを操作:
+
+| API | 説明 |
+|-----|------|
+| `POST /_api/projects/{name}/up` | `docker compose up -d` |
+| `POST /_api/projects/{name}/down` | `docker compose down` |
+| `POST /_api/projects/{name}/restart` | 全サービス再起動 |
+| `GET /_api/projects/{name}/logs` | ログ取得（SSE） |
+
+**実装方針:**
+- `project.Store`に保存済みの`working_dir`と`config_files`を使用
+- `docker compose -f <files> -p <project> <command>` を実行
+
+#### 静的ファイルホスティング（httpd機能）
+
+**設定ファイルで定義:**
+
+```yaml
+# ~/.config/roji/config.yaml
+static_sites:
+  - host: docs.dev.localhost
+    root: ~/projects/docs/build
+  - host: assets.dev.localhost
+    root: /var/www/assets
+```
+
+**または新コマンド:**
+
+```bash
+# 一時的にホスト（rojiサーバーに登録）
+roji serve ~/projects/docs --host docs.dev.localhost
+```
+
+#### BASIC認証
+
+特定ルートにBASIC認証を設定可能。
+
+**Docker Composeラベルで設定:**
+
+```yaml
+# docker-compose.yml
+services:
+  admin:
+    labels:
+      - "roji.auth.basic.user=admin"
+      - "roji.auth.basic.pass=secret"
+      - "roji.auth.basic.realm=Admin Area"  # 任意
+```
+
+**設定ファイルで静的サイトに適用:**
+
+```yaml
+# ~/.config/roji/config.yaml
+static_sites:
+  - host: docs.dev.localhost
+    root: ~/projects/docs/build
+    auth:
+      basic:
+        user: admin
+        pass: secret
+        realm: Documentation  # 任意
+```
+
+**実装方針:**
+- 標準ライブラリのみで実装（`net/http`）
+- パスワードは平文（ローカル開発用途のため）
+- 401レスポンス時に`WWW-Authenticate`ヘッダー付与
+
+---
+
+### v1.0.0: 安定版リリース
+
+- [ ] **Docker Mode廃止**
+  - Native Modeへの完全移行
+  - Dockerfile、docker-compose.yml は開発・テスト用に維持
+
+- [ ] **インストール方法の刷新**
+  - install.shの全面書き換え
+  - バイナリダウンロード + サービス登録の自動化
+  - Homebrew対応（macOS）
+  - APT/RPMパッケージ検討
+
+- [ ] **ドキュメント整備**
+  - README.mdの全面改訂
+  - Getting Started ガイド
+  - トラブルシューティングガイド
+
+- [ ] **破壊的変更の整理**
+  - 環境変数のデフォルト値見直し
+  - 設定ファイルパスの標準化
+  - 廃止予定のAPIの削除
+
+---
+
+### 将来構想（v1.x〜）
+
+| 機能 | 説明 | 優先度 |
+|------|------|--------|
+| VS Code拡張 | ルート一覧、ブラウザ起動、ログ連携（API安定後） | 高 |
+| ルート別ヘルスチェック | 各バックエンドの死活監視、ダッシュボード表示 | 中 |
+| レスポンスタイム統計 | P50/P95/P99レイテンシ、ダッシュボードでグラフ表示 | 中 |
+| プラグインシステム | カスタムミドルウェア、認証プロキシ等の拡張 | 低 |
 
 ## 開発メモ
 
