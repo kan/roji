@@ -14,6 +14,7 @@ import (
 	"github.com/kan/roji/docker"
 	"github.com/kan/roji/project"
 	"github.com/kan/roji/proxy"
+	"golang.org/x/net/http2"
 )
 
 // Config holds the server configuration
@@ -166,8 +167,13 @@ func startHTTPSServer(cfg Config, handler http.Handler) (*http.Server, error) {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	// Enable HTTP/2 support for gRPC
+	if err := http2.ConfigureServer(httpsServer, &http2.Server{}); err != nil {
+		return nil, fmt.Errorf("failed to configure HTTP/2: %w", err)
+	}
+
 	go func() {
-		slog.Info("starting HTTPS server", "port", cfg.HTTPSPort)
+		slog.Info("starting HTTPS server", "port", cfg.HTTPSPort, "http2", true)
 		if err := httpsServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
 			slog.Error("HTTPS server error", "error", err)
 		}

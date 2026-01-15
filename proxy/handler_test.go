@@ -700,3 +700,99 @@ func TestHandler_WebSocketProxy_BackendUnavailable(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
 	}
 }
+
+func TestIsGRPCRequest(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		wantResult  bool
+	}{
+		{
+			name:        "valid grpc request",
+			contentType: "application/grpc",
+			wantResult:  true,
+		},
+		{
+			name:        "grpc with proto suffix",
+			contentType: "application/grpc+proto",
+			wantResult:  true,
+		},
+		{
+			name:        "grpc-web",
+			contentType: "application/grpc-web",
+			wantResult:  true,
+		},
+		{
+			name:        "grpc-web+proto",
+			contentType: "application/grpc-web+proto",
+			wantResult:  true,
+		},
+		{
+			name:        "regular json",
+			contentType: "application/json",
+			wantResult:  false,
+		},
+		{
+			name:        "empty content type",
+			contentType: "",
+			wantResult:  false,
+		},
+		{
+			name:        "text/html",
+			contentType: "text/html",
+			wantResult:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/chat.ChatService/SendMessage", nil)
+			if tt.contentType != "" {
+				req.Header.Set("Content-Type", tt.contentType)
+			}
+
+			got := isGRPCRequest(req)
+			if got != tt.wantResult {
+				t.Errorf("isGRPCRequest() = %v, want %v", got, tt.wantResult)
+			}
+		})
+	}
+}
+
+func TestHandler_GRPCProxy_BackendUnavailable(t *testing.T) {
+	// Setup router with route to non-existent backend
+	router := NewRouter()
+	backend := &docker.Backend{
+		ContainerID:   "grpc-test",
+		ContainerName: "grpc-test",
+		ServiceName:   "grpc-test",
+		Host:          "127.0.0.1",
+		Port:          59998, // Non-existent port
+		Hostname:      "grpc.localhost",
+	}
+	router.AddBackend(backend)
+
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	// Create gRPC request
+	req := httptest.NewRequest("POST", "https://grpc.localhost/chat.ChatService/GetUsers", nil)
+	req.Host = "grpc.localhost"
+	req.Header.Set("Content-Type", "application/grpc")
+	req.Header.Set("TE", "trailers")
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// Should return Bad Gateway when backend is unavailable
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
+	}
+
+	// Should have gRPC error headers
+	if ct := w.Header().Get("Content-Type"); ct != "application/grpc" {
+		t.Errorf("Content-Type = %q, want %q", ct, "application/grpc")
+	}
+	if status := w.Header().Get("Grpc-Status"); status != "14" {
+		t.Errorf("Grpc-Status = %q, want %q", status, "14")
+	}
+}

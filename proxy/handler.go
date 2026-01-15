@@ -9,11 +9,13 @@ package proxy
 
 import (
 	"context"
+	"crypto/tls"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -24,13 +26,29 @@ import (
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
 	"github.com/kan/roji/project"
+	"golang.org/x/net/http2"
 )
 
-// sharedTransport is used for connection pooling across all proxied requests
+// sharedTransport is used for connection pooling across all proxied requests (HTTP/1.1)
 var sharedTransport = &http.Transport{
 	MaxIdleConns:        100,
 	MaxIdleConnsPerHost: 10,
 	IdleConnTimeout:     90 * time.Second,
+}
+
+// http2Transport is used for gRPC proxying (HTTP/2)
+var http2Transport = &http2.Transport{
+	AllowHTTP: true, // Allow h2c (HTTP/2 without TLS) for backend connections
+	DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+		// Use plain TCP for backend connections (h2c)
+		return net.Dial(network, addr)
+	},
+}
+
+// isGRPCRequest checks if the request is a gRPC request
+func isGRPCRequest(r *http.Request) bool {
+	contentType := r.Header.Get("Content-Type")
+	return strings.HasPrefix(contentType, "application/grpc")
 }
 
 // wsUpgrader is used to upgrade HTTP connections to WebSocket
@@ -197,6 +215,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Handle WebSocket upgrade requests
 	if isWebSocketRequest(r) {
 		h.serveWebSocket(w, r, targetURL, route, hostname, startTime)
+		return
+	}
+
+	// Handle gRPC requests (HTTP/2)
+	if isGRPCRequest(r) {
+		h.serveGRPC(w, r, targetURL, route, hostname, startTime)
 		return
 	}
 
@@ -887,4 +911,93 @@ func (h *Handler) serveWebSocket(w http.ResponseWriter, r *http.Request, targetU
 		"path", r.URL.Path,
 		"duration", time.Since(startTime).Round(time.Millisecond),
 		"target", route.Backend.ServiceName)
+}
+
+// serveGRPC handles gRPC requests by proxying to backend using HTTP/2
+func (h *Handler) serveGRPC(w http.ResponseWriter, r *http.Request, targetURL *url.URL, route *Route, hostname string, startTime time.Time) {
+	slog.Debug("grpc request",
+		"host", hostname,
+		"path", r.URL.Path,
+		"content-type", r.Header.Get("Content-Type"))
+
+	// Create reverse proxy with HTTP/2 transport
+	proxy := &httputil.ReverseProxy{
+		Transport:     http2Transport,
+		FlushInterval: -1, // Flush immediately for streaming
+		Director: func(req *http.Request) {
+			req.URL.Scheme = "http"
+			req.URL.Host = targetURL.Host
+
+			// Strip path prefix if configured
+			if route.PathPrefix != "" {
+				req.URL.Path = strings.TrimPrefix(req.URL.Path, route.PathPrefix)
+				if req.URL.Path == "" {
+					req.URL.Path = "/"
+				}
+			}
+
+			// Preserve the original path for gRPC service routing
+			if req.URL.RawPath == "" {
+				req.URL.RawPath = req.URL.Path
+			}
+
+			// Set host header
+			req.Host = targetURL.Host
+
+			// Security: Remove existing X-Forwarded-* headers to prevent spoofing
+			req.Header.Del("X-Forwarded-For")
+			req.Header.Del("X-Forwarded-Host")
+			req.Header.Del("X-Forwarded-Proto")
+			req.Header.Del("X-Real-IP")
+
+			// Set X-Forwarded-* headers with trusted values
+			req.Header.Set("X-Forwarded-Host", r.Host)
+			req.Header.Set("X-Forwarded-Proto", "https")
+			if r.RemoteAddr != "" {
+				if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
+					req.Header.Set("X-Forwarded-For", r.RemoteAddr[:idx])
+				}
+			}
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			slog.Error("grpc proxy error",
+				"hostname", hostname,
+				"path", r.URL.Path,
+				"target", targetURL.String(),
+				"error", err)
+			// Return gRPC-compatible error
+			w.Header().Set("Content-Type", "application/grpc")
+			w.Header().Set("Grpc-Status", "14") // UNAVAILABLE
+			w.Header().Set("Grpc-Message", "backend unavailable")
+			w.WriteHeader(http.StatusBadGateway)
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			duration := time.Since(startTime)
+			grpcStatus := resp.Header.Get("Grpc-Status")
+			if grpcStatus == "" {
+				grpcStatus = "0" // OK
+			}
+			slog.Info("grpc request",
+				"method", r.Method,
+				"host", hostname,
+				"path", r.URL.Path,
+				"grpc-status", grpcStatus,
+				"duration", duration.Round(time.Millisecond),
+				"target", route.Backend.ServiceName)
+
+			// Add to log buffer
+			h.logBuffer.Add(RequestLog{
+				Timestamp: startTime,
+				Method:    "gRPC",
+				Host:      hostname,
+				Path:      r.URL.Path,
+				Status:    resp.StatusCode,
+				Duration:  duration.Milliseconds(),
+				Service:   route.Backend.ServiceName,
+			})
+			return nil
+		},
+	}
+
+	proxy.ServeHTTP(w, r)
 }

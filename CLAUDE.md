@@ -168,10 +168,10 @@ roji/
   - フロントエンド開発での必須機能
   - 既存のReverseProxyにWebSocketハンドラー追加
 
-- [ ] **gRPC対応**
-  - HTTP/2 + gRPCプロキシ
-  - gRPC-Web対応（ブラウザからのgRPC呼び出し）
-  - `roji.protocol=grpc` ラベルでgRPCモード指定
+- [x] **gRPC対応**
+  - HTTP/2 + gRPCプロキシ（`Content-Type: application/grpc`で自動検出）
+  - HTTPSサーバーでHTTP/2を有効化（gRPCに必須）
+  - ※ gRPC-Web対応は要望があれば検討
 
 - [ ] **ログのエクスポート**
   - リクエストログをJSON/CSVでダウンロード
