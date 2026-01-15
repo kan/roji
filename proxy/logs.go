@@ -130,3 +130,39 @@ func (lb *LogBuffer) Clear() {
 	defer lb.mu.Unlock()
 	lb.logs = lb.logs[:0]
 }
+
+// LogFilter defines criteria for filtering logs
+type LogFilter struct {
+	From    time.Time // Start time (inclusive)
+	To      time.Time // End time (inclusive)
+	Service string    // Filter by service name
+	Host    string    // Filter by host
+	Method  string    // Filter by HTTP method
+}
+
+// ListFiltered returns logs matching the filter criteria
+func (lb *LogBuffer) ListFiltered(filter LogFilter) []RequestLog {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
+
+	result := make([]RequestLog, 0, len(lb.logs))
+	for _, log := range lb.logs {
+		if !filter.From.IsZero() && log.Timestamp.Before(filter.From) {
+			continue
+		}
+		if !filter.To.IsZero() && log.Timestamp.After(filter.To) {
+			continue
+		}
+		if filter.Service != "" && log.Service != filter.Service {
+			continue
+		}
+		if filter.Host != "" && log.Host != filter.Host {
+			continue
+		}
+		if filter.Method != "" && log.Method != filter.Method {
+			continue
+		}
+		result = append(result, log)
+	}
+	return result
+}

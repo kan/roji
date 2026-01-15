@@ -177,6 +177,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.serveLogsSSE(w, r)
 			return
 		}
+		// Log export endpoint
+		if r.URL.Path == "/_api/logs/export" {
+			h.serveLogsExport(w, r)
+			return
+		}
 		// Static assets (petite-vue.min.js, etc.)
 		if strings.HasPrefix(r.URL.Path, "/_assets/") {
 			h.serveAsset(w, r)
@@ -564,6 +569,85 @@ func (h *Handler) sendLogSSEEvent(w http.ResponseWriter, flusher http.Flusher, l
 	fmt.Fprintf(w, "event: log\n")
 	fmt.Fprintf(w, "data: %s\n\n", data)
 	flusher.Flush()
+}
+
+func (h *Handler) serveLogsExport(w http.ResponseWriter, r *http.Request) {
+	// Parse query parameters
+	query := r.URL.Query()
+	format := query.Get("format")
+	if format == "" {
+		format = "json"
+	}
+
+	// Build filter from query parameters
+	filter := LogFilter{
+		Service: query.Get("service"),
+		Host:    query.Get("host"),
+		Method:  query.Get("method"),
+	}
+
+	// Parse time range
+	if fromStr := query.Get("from"); fromStr != "" {
+		if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			filter.From = t
+		}
+	}
+	if toStr := query.Get("to"); toStr != "" {
+		if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			filter.To = t
+		}
+	}
+
+	// Get filtered logs
+	logs := h.logBuffer.ListFiltered(filter)
+
+	// Generate filename with timestamp
+	timestamp := time.Now().Format("20060102-150405")
+	filename := fmt.Sprintf("roji-logs-%s.%s", timestamp, format)
+
+	switch format {
+	case "csv":
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+		h.writeLogsCSV(w, logs)
+	case "json":
+		fallthrough
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+		if err := json.NewEncoder(w).Encode(logs); err != nil {
+			slog.Error("failed to encode logs as JSON", "error", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	}
+}
+
+func (h *Handler) writeLogsCSV(w http.ResponseWriter, logs []RequestLog) {
+	// Write CSV header
+	fmt.Fprintln(w, "id,timestamp,method,host,path,status,duration_ms,service,is_mock")
+
+	// Write data rows
+	for _, log := range logs {
+		fmt.Fprintf(w, "%d,%s,%s,%s,%s,%d,%d,%s,%t\n",
+			log.ID,
+			log.Timestamp.Format(time.RFC3339),
+			log.Method,
+			log.Host,
+			csvEscape(log.Path),
+			log.Status,
+			log.Duration,
+			log.Service,
+			log.IsMock,
+		)
+	}
+}
+
+// csvEscape escapes a string for CSV (handles commas and quotes)
+func csvEscape(s string) string {
+	if strings.ContainsAny(s, ",\"\n") {
+		return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
+	}
+	return s
 }
 
 func (h *Handler) serveHealth(w http.ResponseWriter, r *http.Request) {

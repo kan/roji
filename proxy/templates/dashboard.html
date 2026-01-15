@@ -503,7 +503,7 @@
             background: var(--bg-input);
             color: var(--text-primary);
         }
-        .clear-logs-btn {
+        .log-action-btn {
             background: none;
             border: 1px solid var(--border-color);
             border-radius: 4px;
@@ -511,9 +511,14 @@
             font-size: 0.75rem;
             cursor: pointer;
             color: var(--text-secondary);
+            margin-left: 4px;
         }
-        .clear-logs-btn:hover {
+        .log-action-btn:hover {
             background: var(--bg-hover);
+            color: var(--accent-primary);
+            border-color: var(--accent-primary);
+        }
+        .log-action-btn.clear:hover {
             color: var(--error-text);
             border-color: var(--error-text);
         }
@@ -801,7 +806,9 @@
                         <input type="checkbox" v-model="logsPaused">
                         Pause
                     </label>
-                    <button class="clear-logs-btn" @click="clearLogs">Clear</button>
+                    <button class="log-action-btn" @click="exportLogs('json')" title="Export as JSON">JSON</button>
+                    <button class="log-action-btn" @click="exportLogs('csv')" title="Export as CSV">CSV</button>
+                    <button class="log-action-btn clear" @click="clearLogs">Clear</button>
                 </div>
             </div>
             <div class="log-panel">
@@ -1151,6 +1158,17 @@
 
             clearLogs() {
                 this.logs = [];
+            },
+
+            exportLogs(format) {
+                // Build query parameters with current filters
+                const params = new URLSearchParams();
+                params.set('format', format);
+                if (this.logFilter.host) {
+                    params.set('host', this.logFilter.host);
+                }
+                // Trigger download
+                window.location.href = '/_api/logs/export?' + params.toString();
             },
 
             getStatusClass(status) {
