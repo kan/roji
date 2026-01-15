@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
 	"github.com/kan/roji/project"
@@ -30,6 +31,21 @@ var sharedTransport = &http.Transport{
 	MaxIdleConns:        100,
 	MaxIdleConnsPerHost: 10,
 	IdleConnTimeout:     90 * time.Second,
+}
+
+// wsUpgrader is used to upgrade HTTP connections to WebSocket
+var wsUpgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins for local development
+	},
+}
+
+// isWebSocketRequest checks if the request is a WebSocket upgrade request
+func isWebSocketRequest(r *http.Request) bool {
+	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket") &&
+		strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
 }
 
 //go:embed templates/*.html templates/*.js templates/*.svg templates/*.css
@@ -172,12 +188,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create reverse proxy for this request
+	// Create target URL for backend
 	targetURL := &url.URL{
 		Scheme: "http",
 		Host:   fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port),
 	}
 
+	// Handle WebSocket upgrade requests
+	if isWebSocketRequest(r) {
+		h.serveWebSocket(w, r, targetURL, route, hostname, startTime)
+		return
+	}
+
+	// Create reverse proxy for this request
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
 	// Use shared transport for connection pooling
@@ -724,4 +747,144 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	targetURL += r.URL.RequestURI()
 
 	http.Redirect(w, r, targetURL, http.StatusMovedPermanently)
+}
+
+// serveWebSocket handles WebSocket upgrade requests by proxying to backend
+func (h *Handler) serveWebSocket(w http.ResponseWriter, r *http.Request, targetURL *url.URL, route *Route, hostname string, startTime time.Time) {
+	// Build WebSocket URL for backend
+	wsScheme := "ws"
+	backendURL := &url.URL{
+		Scheme:   wsScheme,
+		Host:     targetURL.Host,
+		Path:     r.URL.Path,
+		RawQuery: r.URL.RawQuery,
+	}
+
+	// Strip path prefix if configured
+	if route.PathPrefix != "" {
+		backendURL.Path = strings.TrimPrefix(backendURL.Path, route.PathPrefix)
+		if backendURL.Path == "" {
+			backendURL.Path = "/"
+		}
+	}
+
+	// Prepare headers for backend connection
+	requestHeader := http.Header{}
+	// Forward relevant headers
+	if origin := r.Header.Get("Origin"); origin != "" {
+		requestHeader.Set("Origin", origin)
+	}
+	// Forward subprotocols if present
+	if protocols := r.Header.Get("Sec-WebSocket-Protocol"); protocols != "" {
+		requestHeader.Set("Sec-WebSocket-Protocol", protocols)
+	}
+	// Set X-Forwarded headers
+	requestHeader.Set("X-Forwarded-Host", r.Host)
+	requestHeader.Set("X-Forwarded-Proto", "https")
+	if r.RemoteAddr != "" {
+		if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
+			requestHeader.Set("X-Forwarded-For", r.RemoteAddr[:idx])
+		}
+	}
+
+	// Connect to backend WebSocket
+	slog.Debug("websocket connecting to backend", "url", backendURL.String())
+	backendConn, resp, err := websocket.DefaultDialer.Dial(backendURL.String(), requestHeader)
+	if err != nil {
+		slog.Error("websocket backend connection failed",
+			"hostname", hostname,
+			"path", r.URL.Path,
+			"target", backendURL.String(),
+			"error", err)
+		if resp != nil {
+			http.Error(w, fmt.Sprintf("WebSocket backend error: %s", resp.Status), resp.StatusCode)
+		} else {
+			http.Error(w, "WebSocket backend connection failed", http.StatusBadGateway)
+		}
+		return
+	}
+	defer backendConn.Close()
+
+	// Get response headers from backend for client upgrade
+	responseHeader := http.Header{}
+	if protocols := resp.Header.Get("Sec-WebSocket-Protocol"); protocols != "" {
+		responseHeader.Set("Sec-WebSocket-Protocol", protocols)
+	}
+
+	// Upgrade client connection to WebSocket
+	clientConn, err := wsUpgrader.Upgrade(w, r, responseHeader)
+	if err != nil {
+		slog.Error("websocket client upgrade failed",
+			"hostname", hostname,
+			"path", r.URL.Path,
+			"error", err)
+		return
+	}
+	defer clientConn.Close()
+
+	slog.Info("websocket connected",
+		"host", hostname,
+		"path", r.URL.Path,
+		"target", route.Backend.ServiceName)
+
+	// Log the WebSocket connection
+	h.logBuffer.Add(RequestLog{
+		Timestamp: startTime,
+		Method:    "WS",
+		Host:      hostname,
+		Path:      r.URL.Path,
+		Status:    101, // Switching Protocols
+		Duration:  time.Since(startTime).Milliseconds(),
+		Service:   route.Backend.ServiceName,
+	})
+
+	// Create channels to signal completion
+	done := make(chan struct{})
+
+	// Proxy messages: client -> backend
+	go func() {
+		defer close(done)
+		for {
+			messageType, message, err := clientConn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
+					slog.Debug("websocket client read error", "error", err)
+				}
+				return
+			}
+			slog.Debug("websocket proxy: client -> backend", "type", messageType, "len", len(message))
+			if err := backendConn.WriteMessage(messageType, message); err != nil {
+				slog.Debug("websocket backend write error", "error", err)
+				return
+			}
+		}
+	}()
+
+	// Proxy messages: backend -> client
+	go func() {
+		slog.Debug("websocket backend reader goroutine started")
+		for {
+			messageType, message, err := backendConn.ReadMessage()
+			if err != nil {
+				slog.Debug("websocket backend read error", "error", err)
+				clientConn.WriteMessage(websocket.CloseMessage,
+					websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				return
+			}
+			slog.Debug("websocket proxy: backend -> client", "type", messageType, "len", len(message))
+			if err := clientConn.WriteMessage(messageType, message); err != nil {
+				slog.Debug("websocket client write error", "error", err)
+				return
+			}
+		}
+	}()
+
+	// Wait for either direction to close
+	<-done
+
+	slog.Info("websocket disconnected",
+		"host", hostname,
+		"path", r.URL.Path,
+		"duration", time.Since(startTime).Round(time.Millisecond),
+		"target", route.Backend.ServiceName)
 }

@@ -106,6 +106,7 @@ roji/
 - ホスト名/パスベースルーティング
 - TLS証明書の自動生成（CA + ワイルドカード）
 - HTTP → HTTPS リダイレクト
+- WebSocketプロキシ（`Upgrade: websocket`ヘッダー検出、双方向通信）
 
 ### ダッシュボード
 - リアルタイム更新（SSE + Petite Vue）
@@ -162,7 +163,7 @@ roji/
 
 ### v0.7.0: プロトコル拡張
 
-- [ ] **WebSocket対応**
+- [x] **WebSocket対応**
   - WebSocket接続のプロキシ（`Upgrade: websocket`）
   - フロントエンド開発での必須機能
   - 既存のReverseProxyにWebSocketハンドラー追加

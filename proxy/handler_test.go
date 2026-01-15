@@ -4,10 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/kan/roji/docker"
 )
 
@@ -498,5 +501,202 @@ func TestHandler_DashboardHostNoRedirect(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "roji") {
 		t.Errorf("dashboard should contain 'roji'")
+	}
+}
+
+func TestIsWebSocketRequest(t *testing.T) {
+	tests := []struct {
+		name       string
+		headers    map[string]string
+		wantResult bool
+	}{
+		{
+			name: "valid websocket request",
+			headers: map[string]string{
+				"Upgrade":    "websocket",
+				"Connection": "Upgrade",
+			},
+			wantResult: true,
+		},
+		{
+			name: "valid websocket request (case insensitive)",
+			headers: map[string]string{
+				"Upgrade":    "WebSocket",
+				"Connection": "upgrade",
+			},
+			wantResult: true,
+		},
+		{
+			name: "connection with multiple values",
+			headers: map[string]string{
+				"Upgrade":    "websocket",
+				"Connection": "keep-alive, Upgrade",
+			},
+			wantResult: true,
+		},
+		{
+			name: "missing upgrade header",
+			headers: map[string]string{
+				"Connection": "Upgrade",
+			},
+			wantResult: false,
+		},
+		{
+			name: "missing connection header",
+			headers: map[string]string{
+				"Upgrade": "websocket",
+			},
+			wantResult: false,
+		},
+		{
+			name: "wrong upgrade value",
+			headers: map[string]string{
+				"Upgrade":    "h2c",
+				"Connection": "Upgrade",
+			},
+			wantResult: false,
+		},
+		{
+			name:       "no headers",
+			headers:    map[string]string{},
+			wantResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/ws", nil)
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+
+			got := isWebSocketRequest(req)
+			if got != tt.wantResult {
+				t.Errorf("isWebSocketRequest() = %v, want %v", got, tt.wantResult)
+			}
+		})
+	}
+}
+
+func TestHandler_WebSocketProxy(t *testing.T) {
+	// Create a test WebSocket backend server
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Logf("backend upgrade error: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		// Echo messages back
+		for {
+			messageType, message, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+			if err := conn.WriteMessage(messageType, message); err != nil {
+				break
+			}
+		}
+	}))
+	defer backendServer.Close()
+
+	// Parse backend URL
+	backendURL, _ := url.Parse(backendServer.URL)
+
+	// Setup router with route to backend
+	router := NewRouter()
+	backend := &docker.Backend{
+		ContainerID:   "ws-test",
+		ContainerName: "ws-test",
+		ServiceName:   "ws-test",
+		Host:          backendURL.Hostname(),
+		Port:          8080, // Will be overridden
+		Hostname:      "ws.localhost",
+	}
+	// Parse port from backend URL
+	if port := backendURL.Port(); port != "" {
+		p, _ := strconv.Atoi(port)
+		backend.Port = p
+	}
+	router.AddBackend(backend)
+
+	// Create handler
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	// Create test server with our handler
+	proxyServer := httptest.NewServer(handler)
+	defer proxyServer.Close()
+
+	// Connect to proxy via WebSocket
+	proxyURL, _ := url.Parse(proxyServer.URL)
+	wsURL := "ws://" + proxyURL.Host + "/ws"
+
+	// Create custom dialer with Host header
+	dialer := websocket.Dialer{}
+	header := http.Header{}
+	header.Set("Host", "ws.localhost")
+
+	conn, resp, err := dialer.Dial(wsURL, header)
+	if err != nil {
+		t.Fatalf("WebSocket dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusSwitchingProtocols)
+	}
+
+	// Test echo
+	testMessage := []byte("hello websocket")
+	if err := conn.WriteMessage(websocket.TextMessage, testMessage); err != nil {
+		t.Fatalf("WriteMessage failed: %v", err)
+	}
+
+	messageType, message, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("ReadMessage failed: %v", err)
+	}
+
+	if messageType != websocket.TextMessage {
+		t.Errorf("messageType = %d, want %d", messageType, websocket.TextMessage)
+	}
+	if string(message) != string(testMessage) {
+		t.Errorf("message = %q, want %q", string(message), string(testMessage))
+	}
+}
+
+func TestHandler_WebSocketProxy_BackendUnavailable(t *testing.T) {
+	// Setup router with route to non-existent backend
+	router := NewRouter()
+	backend := &docker.Backend{
+		ContainerID:   "ws-test",
+		ContainerName: "ws-test",
+		ServiceName:   "ws-test",
+		Host:          "127.0.0.1",
+		Port:          59999, // Non-existent port
+		Hostname:      "ws.localhost",
+	}
+	router.AddBackend(backend)
+
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	// Create WebSocket upgrade request
+	req := httptest.NewRequest("GET", "https://ws.localhost/ws", nil)
+	req.Host = "ws.localhost"
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// Should return Bad Gateway when backend is unavailable
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
 	}
 }
