@@ -95,11 +95,12 @@ roji/
 | `/_api/projects` | プロジェクト一覧 |
 | `/_api/events` | SSEストリーム（ルート更新） |
 | `/_api/logs` | SSEストリーム（リクエストログ） |
+| `/_api/logs/export` | ログエクスポート（JSON/CSV） |
 | `/_api/health` | ヘルスチェック |
 | `/_api/status` | 詳細ステータス（証明書期限等） |
 | `/_api/containers/{id}/restart` | コンテナ再起動 |
 
-## 実装済み機能（v0.1.0 → v0.6.0）
+## 実装済み機能（v0.1.0 → v0.7.0）
 
 ### コア機能
 - ネットワークベースの自動検出（Docker Events監視）
@@ -107,11 +108,13 @@ roji/
 - TLS証明書の自動生成（CA + ワイルドカード）
 - HTTP → HTTPS リダイレクト
 - WebSocketプロキシ（`Upgrade: websocket`ヘッダー検出、双方向通信）
+- gRPCプロキシ（HTTP/2、`Content-Type: application/grpc`で自動検出）
 
 ### ダッシュボード
 - リアルタイム更新（SSE + Petite Vue）
 - プロジェクト履歴・クイックアクセス
 - リクエストログビューア（フィルタリング対応）
+- ログエクスポート（JSON/CSV形式）
 - コンテナ再起動ボタン
 - ダークモード（システム設定連動）
 - 設定ミス警告表示
