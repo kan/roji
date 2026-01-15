@@ -23,7 +23,9 @@ A simple reverse proxy for local development environments. Automatically discove
 - **Live Dashboard**: Real-time route updates via Server-Sent Events with optional browser notifications
 - **Project History**: Tracks active and recent Docker Compose projects with quick restart commands
 - **Dark Mode**: Automatic theme switching based on system preferences with manual toggle
-- **Request Logging**: Real-time request log viewer with filtering by host and path
+- **Request Logging**: Real-time request log viewer with filtering and JSON/CSV export
+- **WebSocket Support**: Full bidirectional WebSocket proxying
+- **gRPC Support**: HTTP/2 based gRPC proxying with streaming support
 - **Multiple Networks**: Monitor multiple Docker networks simultaneously
 - **Container Management**: Restart containers directly from the dashboard
 - **Request Mocking**: Define mock responses via labels for frontend development
@@ -36,7 +38,7 @@ A simple reverse proxy for local development environments. Automatically discove
 Install and start roji with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.7.0/install.sh | bash
 ```
 
 This will:
@@ -50,7 +52,7 @@ This will:
 **Custom installation directory:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.1/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.7.0/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
 ```
 
 ### Upgrading
@@ -58,7 +60,7 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.1/install.sh | ROJI_I
 The install script automatically detects existing installations and offers to upgrade:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.7.0/install.sh | bash
 ```
 
 When an existing installation is detected:
@@ -70,7 +72,7 @@ The script backs up your configuration before upgrading and provides rollback in
 **Force upgrade (skip prompts):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.6.1/install.sh | bash -s -- --upgrade
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.7.0/install.sh | bash -s -- --upgrade
 ```
 
 ### Manual Installation

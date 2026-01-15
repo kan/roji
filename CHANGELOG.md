@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-01-15
+
+### Added
+
+- **WebSocket Proxy Support**: Full bidirectional WebSocket proxying
+  - Automatic detection via `Upgrade: websocket` header
+  - Bidirectional message forwarding between client and backend
+  - Support for text and binary messages
+  - Proper connection cleanup on disconnect
+- **gRPC Proxy Support**: HTTP/2 based gRPC proxying
+  - Automatic detection via `Content-Type: application/grpc`
+  - HTTP/2 transport for backend connections (h2c)
+  - gRPC-compatible error responses with `Grpc-Status` header
+  - Streaming support with immediate flush
+- **Log Export**: Export request logs from dashboard
+  - JSON and CSV download formats
+  - Filter by host, service, method, and time range
+  - Export buttons added to dashboard UI
+  - `/_api/logs/export` endpoint
+
+### Changed
+
+- HTTPS server now explicitly configured with HTTP/2 support (required for gRPC)
+- Request log panel now includes JSON/CSV export buttons
+
+### Technical Details
+
+- WebSocket proxy using `gorilla/websocket` library
+- HTTP/2 transport via `golang.org/x/net/http2` package
+- LogFilter type for flexible log querying
+- CSV escaping for safe export of paths with special characters
+
 ## [0.6.1] - 2026-01-10
 
 ### Fixed
