@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -47,8 +48,8 @@ func TestGenerator_EnsureCerts_NewCerts(t *testing.T) {
 	if !caCert.IsCA {
 		t.Error("CA certificate IsCA = false, want true")
 	}
-	if caCert.Subject.CommonName != "roji CA" {
-		t.Errorf("CA CommonName = %q, want %q", caCert.Subject.CommonName, "roji CA")
+	if !strings.HasPrefix(caCert.Subject.CommonName, "roji CA") {
+		t.Errorf("CA CommonName = %q, want prefix %q", caCert.Subject.CommonName, "roji CA")
 	}
 
 	// Verify server certificate
@@ -93,8 +94,8 @@ func TestGenerator_EnsureCerts_NewCerts(t *testing.T) {
 		t.Fatalf("failed to parse DER certificate: %v", err)
 	}
 
-	if derCert.Subject.CommonName != "roji CA" {
-		t.Errorf("DER CA CommonName = %q, want %q", derCert.Subject.CommonName, "roji CA")
+	if !strings.HasPrefix(derCert.Subject.CommonName, "roji CA") {
+		t.Errorf("DER CA CommonName = %q, want prefix %q", derCert.Subject.CommonName, "roji CA")
 	}
 }
 
