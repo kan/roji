@@ -130,11 +130,19 @@ func (g *Generator) generateCA() (*x509.Certificate, *ecdsa.PrivateKey, error) {
 		return nil, nil, fmt.Errorf("failed to generate serial number: %w", err)
 	}
 
+	// Include first 8 chars of serial number in CN to make it unique
+	// This allows distinguishing different CA certificates
+	serialHex := fmt.Sprintf("%x", serialNumber)
+	if len(serialHex) > 8 {
+		serialHex = serialHex[:8]
+	}
+	commonName := fmt.Sprintf("roji CA [%s]", serialHex)
+
 	template := &x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			Organization: []string{"roji Dev CA"},
-			CommonName:   "roji CA",
+			CommonName:   commonName,
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().AddDate(10, 0, 0), // 10 years

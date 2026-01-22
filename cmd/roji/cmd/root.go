@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
+	"github.com/kan/roji/config"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
-	// Config flags
+	// Config flags (values from CLI)
 	networkName   string
 	baseDomain    string
 	httpPort      int
@@ -22,6 +23,7 @@ var (
 	dashboardHost string
 	logLevel      string
 	dataDir       string
+	configFile    string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -40,72 +42,79 @@ func Execute() error {
 }
 
 func init() {
-	// Server flags
-	rootCmd.Flags().StringVarP(&networkName, "network", "n", getEnv("ROJI_NETWORK", "roji"),
+	// Server flags - defaults are empty/zero, actual defaults come from config.Load()
+	rootCmd.Flags().StringVarP(&networkName, "network", "n", "",
 		"Docker network name(s) to watch (comma-separated for multiple)")
-	rootCmd.Flags().StringVarP(&baseDomain, "domain", "d", getEnv("ROJI_DOMAIN", "dev.localhost"),
+	rootCmd.Flags().StringVarP(&baseDomain, "domain", "d", "",
 		"Base domain for auto-generated hostnames")
-	rootCmd.Flags().IntVar(&httpPort, "http-port", 80,
+	rootCmd.Flags().IntVar(&httpPort, "http-port", 0,
 		"HTTP port (for redirect)")
-	rootCmd.Flags().IntVar(&httpsPort, "https-port", 443,
+	rootCmd.Flags().IntVar(&httpsPort, "https-port", 0,
 		"HTTPS port")
-	rootCmd.Flags().StringVar(&certsDir, "certs-dir", getEnv("ROJI_CERTS_DIR", "/certs"),
+	rootCmd.Flags().StringVar(&certsDir, "certs-dir", "",
 		"Directory for TLS certificates")
 	rootCmd.Flags().BoolVar(&autoCert, "auto-cert", true,
 		"Auto-generate certificates if not present")
-	rootCmd.Flags().StringVar(&dashboardHost, "dashboard", getEnv("ROJI_DASHBOARD", ""),
+	rootCmd.Flags().StringVar(&dashboardHost, "dashboard", "",
 		"Dashboard hostname (e.g., dev.localhost)")
-	rootCmd.Flags().StringVar(&logLevel, "log-level", getEnv("ROJI_LOG_LEVEL", "info"),
+	rootCmd.Flags().StringVar(&logLevel, "log-level", "",
 		"Log level (debug, info, warn, error)")
-	rootCmd.Flags().StringVar(&dataDir, "data-dir", getEnv("ROJI_DATA_DIR", "/data"),
+	rootCmd.Flags().StringVar(&dataDir, "data-dir", "",
 		"Directory for persistent data (project history)")
+	rootCmd.PersistentFlags().StringVar(&configFile, "config", "",
+		"Config file path (default: ~/.config/roji/config.yaml)")
 }
 
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
+// collectCLIOverrides collects flags that were explicitly set on the command line
+func collectCLIOverrides(cmd *cobra.Command) map[string]any {
+	overrides := make(map[string]any)
 
-// parseNetworks parses comma-separated network names and trims whitespace
-func parseNetworks(networkStr string) []string {
-	var networks []string
-	for _, n := range strings.Split(networkStr, ",") {
-		n = strings.TrimSpace(n)
-		if n != "" {
-			networks = append(networks, n)
+	cmd.Flags().Visit(func(f *pflag.Flag) {
+		switch f.Name {
+		case "network":
+			overrides["network"] = networkName
+		case "domain":
+			overrides["domain"] = baseDomain
+		case "http-port":
+			overrides["http_port"] = httpPort
+		case "https-port":
+			overrides["https_port"] = httpsPort
+		case "certs-dir":
+			overrides["certs_dir"] = certsDir
+		case "auto-cert":
+			overrides["auto_cert"] = autoCert
+		case "dashboard":
+			overrides["dashboard"] = dashboardHost
+		case "log-level":
+			overrides["log_level"] = logLevel
+		case "data-dir":
+			overrides["data_dir"] = dataDir
 		}
-	}
-	if len(networks) == 0 {
-		networks = []string{"roji"} // Default network
-	}
-	return networks
+	})
+
+	return overrides
 }
 
 func runServer(cmd *cobra.Command, args []string) error {
-	// Import here to avoid circular dependencies
-	setupLogging(logLevel)
-
-	// Default dashboard hostname
-	if dashboardHost == "" {
-		// Use the base domain itself as dashboard
-		dashboardHost = baseDomain
+	// Load configuration with priority: CLI > Env > File > Defaults
+	overrides := collectCLIOverrides(cmd)
+	settings, err := config.Load(configFile, overrides)
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Parse comma-separated network names
-	networks := parseNetworks(networkName)
+	setupLogging(settings.LogLevel)
 
 	cfg := Config{
-		Networks:      networks,
-		BaseDomain:    baseDomain,
-		HTTPPort:      httpPort,
-		HTTPSPort:     httpsPort,
-		CertsDir:      certsDir,
-		AutoCert:      autoCert,
-		DashboardHost: dashboardHost,
-		LogLevel:      logLevel,
-		DataDir:       dataDir,
+		Networks:      settings.Networks(),
+		BaseDomain:    settings.Domain,
+		HTTPPort:      settings.HTTPPort,
+		HTTPSPort:     settings.HTTPSPort,
+		CertsDir:      settings.CertsDir,
+		AutoCert:      settings.AutoCert,
+		DashboardHost: settings.Dashboard,
+		LogLevel:      settings.LogLevel,
+		DataDir:       settings.DataDir,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -115,10 +124,18 @@ func runServer(cmd *cobra.Command, args []string) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sigCh
+		sig := <-sigCh
 		fmt.Println() // Print newline after ^C
+		fmt.Printf("Received %v, shutting down...\n", sig)
 		cancel()
+
+		// Wait for second signal to force exit
+		sig = <-sigCh
+		fmt.Printf("\nReceived %v again, forcing exit\n", sig)
+		os.Exit(1)
 	}()
 
-	return run(ctx, cfg)
+	err = run(ctx, cfg)
+	signal.Stop(sigCh)
+	return err
 }

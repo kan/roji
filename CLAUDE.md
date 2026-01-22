@@ -47,7 +47,7 @@
 roji/
 ├── cmd/roji/
 │   ├── main.go              # エントリーポイント
-│   └── cmd/                  # Cobraコマンド（root, routes, version, health, server）
+│   └── cmd/                  # Cobraコマンド（root, routes, version, health, server, config, doctor, ca）
 ├── docker/
 │   ├── client.go            # Docker API ラッパー
 │   └── watcher.go           # Events 監視
@@ -55,8 +55,20 @@ roji/
 │   ├── handler.go           # ReverseProxy 実装
 │   ├── router.go            # ルーティング + SSE Pub/Sub
 │   └── templates/           # HTML/CSS/JS（embed.FS）
-├── certgen/generator.go     # TLS証明書生成
-├── config/labels.go         # ラベルパーサー
+├── certgen/
+│   ├── generator.go         # TLS証明書生成
+│   ├── installer.go         # CAInstaller インターフェース
+│   ├── installer_darwin.go  # macOS Keychain対応
+│   ├── installer_linux.go   # Linux (Debian/RHEL) 対応
+│   ├── installer_windows.go # Windows certutil対応
+│   └── installer_wsl.go     # WSL→Windows対応
+├── config/
+│   ├── labels.go            # ラベルパーサー
+│   ├── paths.go             # XDGパスユーティリティ
+│   └── settings.go          # 設定ファイル読み込み
+├── doctor/
+│   ├── check.go             # Doctor インターフェース
+│   └── checks/              # 各チェック実装
 ├── test/                    # インテグレーション/E2Eテスト
 ├── Dockerfile               # マルチステージビルド
 ├── docker-compose.yml       # 本番用
@@ -78,14 +90,17 @@ roji/
 
 ### 環境変数
 
-| 環境変数 | 説明 | デフォルト |
+| 環境変数 | 説明 | デフォルト (Native Mode) |
 |----------|------|-----------|
 | `ROJI_NETWORK` | 監視するDockerネットワーク（カンマ区切り） | `roji` |
-| `ROJI_DOMAIN` | ベースドメイン | `localhost` |
-| `ROJI_CERTS_DIR` | 証明書ディレクトリ | `/certs` |
-| `ROJI_DATA_DIR` | データディレクトリ | `/data` |
-| `ROJI_DASHBOARD` | ダッシュボードホスト名 | `roji.localhost` |
+| `ROJI_DOMAIN` | ベースドメイン | `dev.localhost` |
+| `ROJI_CERTS_DIR` | 証明書ディレクトリ | `~/.local/share/roji/certs` |
+| `ROJI_DATA_DIR` | データディレクトリ | `~/.local/share/roji` |
+| `ROJI_DASHBOARD` | ダッシュボードホスト名 | `{domain}` |
 | `ROJI_LOG_LEVEL` | ログレベル | `info` |
+| `ROJI_HTTP_PORT` | HTTPポート | `80` |
+| `ROJI_HTTPS_PORT` | HTTPSポート | `443` |
+| `ROJI_AUTO_CERT` | 証明書自動生成 | `true` |
 
 ### API エンドポイント
 
@@ -100,7 +115,7 @@ roji/
 | `/_api/status` | 詳細ステータス（証明書期限等） |
 | `/_api/containers/{id}/restart` | コンテナ再起動 |
 
-## 実装済み機能（v0.1.0 → v0.7.0）
+## 実装済み機能（v0.1.0 → v0.8.0）
 
 ### コア機能
 - ネットワークベースの自動検出（Docker Events監視）
@@ -123,6 +138,15 @@ roji/
 - リクエストモック（ラベルでレスポンス定義）
 - 複数ネットワーク対応
 - ブラウザ通知
+
+### Native Mode (v0.8.0)
+- 設定ファイル対応（`~/.config/roji/config.yaml`）
+- XDG Base Directory準拠のパス管理
+- `roji config` コマンド（show/path/init/edit）
+- `roji doctor` コマンド（環境診断 + 自動修復）
+- `roji ca` コマンド（install/uninstall/export/status）
+- CA証明書のシステムインストール（macOS/Linux/Windows対応）
+- 設定の優先順位: CLI > 環境変数 > 設定ファイル > デフォルト
 
 ### 配布・品質
 - ワンライナーインストール（アップグレード対応）
@@ -183,7 +207,7 @@ roji/
 
 ---
 
-### v0.8.0: Native Mode（単体バイナリ化）
+### v0.8.0: Native Mode（単体バイナリ化）✅
 
 v0.8.0以降は**Native Mode**を主とする。Docker Modeは1.0.0で廃止予定。
 
@@ -213,7 +237,7 @@ v0.8.0 Architecture (Native Mode)
 
 #### 設定の優先順位
 
-設定は以下の優先順位で適用（後が優先）：
+- [x] 設定は以下の優先順位で適用（後が優先）：
 
 1. デフォルト値
 2. 設定ファイル（`~/.config/roji/config.yaml`）
@@ -222,50 +246,81 @@ v0.8.0 Architecture (Native Mode)
 
 #### 設定ファイル仕様
 
+- [x] **設定ファイル対応**
+
 ```yaml
 # ~/.config/roji/config.yaml
 network: roji
 domain: dev.localhost
 certs_dir: ~/.local/share/roji/certs
-data_dir: ~/.local/share/roji/data
-dashboard: roji.dev.localhost
+data_dir: ~/.local/share/roji
+dashboard: dev.localhost
 log_level: info
 http_port: 80
 https_port: 443
+auto_cert: true
 ```
 
+- [x] **config コマンド**
+  - `roji config show` - 現在の設定を表示
+  - `roji config path` - 設定ファイルパスを表示
+  - `roji config init` - デフォルト設定ファイルを作成
+  - `roji config edit` - エディタで設定を編集
+
 #### roji doctor コマンド
+
+- [x] **doctor コマンド**
 
 ```
 $ roji doctor
 
-✓ Docker daemon is running
-✓ Docker socket is accessible (/var/run/docker.sock)
-✓ Network 'roji' exists
-✓ Ports 80, 443 are available
-✓ CA certificate is installed (macOS Keychain)
-✓ Server certificate is valid (expires in 364 days)
-✗ Firefox certificate not installed (manual step required)
+✓ Docker daemon is running [pass]
+  Docker daemon is running
 
-Issues found: 1
+✓ Docker socket is accessible [pass]
+  /var/run/docker.sock
+
+✗ Docker network [fail]
+  Network(s) not found: roji
+  Run 'docker network create roji' or use 'roji doctor --fix'
+
+✓ Port availability [pass]
+  Ports 80, 443 are available
+
+...
+
 Run 'roji doctor --fix' to auto-fix where possible
 ```
 
 **チェック項目:**
 - Docker daemon稼働
 - Docker socketアクセス権
-- 指定ネットワークの存在
+- 指定ネットワークの存在（修復可能）
 - ポート80/443の利用可能性
-- CA証明書のインストール状態
-- サーバー証明書の有効期限
+- CA証明書の存在（修復可能）
+- CA証明書のシステムインストール状態（修復可能、WSLではWindows側も確認）
+- サーバー証明書の有効期限（修復可能）
 - DNS解決（*.localhost）
+
+**フラグ:**
+- `--fix` - 修復可能な問題を自動修復
+- `--json` - JSON形式で出力
 
 #### CA証明書の自動インストール
 
+- [x] **ca コマンド**
+
 **新コマンド:**
+- `roji ca status` - CA証明書のインストール状態を確認
 - `roji ca install` - CA証明書をシステムにインストール
 - `roji ca uninstall` - CA証明書を削除
-- `roji ca export` - CA証明書をエクスポート（他デバイス用）
+- `roji ca export [path]` - CA証明書をエクスポート（PEM/DER形式）
+
+**フラグ:**
+- `--user` - ユーザーストアにインストール（macOS/Windows、sudo不要）
+- `--firefox` - Firefoxにもインストール（Linux、nss-tools必要）
+- `--windows` - WSLからWindows証明書ストアにインストール（常にユーザーストア）
+- `--force` - 同名の証明書が存在しても強制インストール
 
 **プラットフォーム別実装:**
 
@@ -275,6 +330,7 @@ Run 'roji doctor --fix' to auto-fix where possible
 | Linux (Debian系) | update-ca-certificates | `/usr/local/share/ca-certificates/` |
 | Linux (RHEL系) | update-ca-trust | `/etc/pki/ca-trust/source/anchors/` |
 | Windows | certutil | `certutil -addstore -f "ROOT"` |
+| WSL → Windows | certutil.exe | ユーザーストア（CurrentUser\ROOT）に登録 |
 
 ---
 
