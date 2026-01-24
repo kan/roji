@@ -96,7 +96,7 @@ roji/
 | `ROJI_DOMAIN` | ベースドメイン | `dev.localhost` |
 | `ROJI_CERTS_DIR` | 証明書ディレクトリ | `~/.local/share/roji/certs` |
 | `ROJI_DATA_DIR` | データディレクトリ | `~/.local/share/roji` |
-| `ROJI_DASHBOARD` | ダッシュボードホスト名 | `{domain}` |
+| `ROJI_DASHBOARD` | ダッシュボードホスト名 | `roji.{domain}` |
 | `ROJI_LOG_LEVEL` | ログレベル | `info` |
 | `ROJI_HTTP_PORT` | HTTPポート | `80` |
 | `ROJI_HTTPS_PORT` | HTTPSポート | `443` |

@@ -196,7 +196,7 @@ Configure via `.env` file (gitignored) or directly in shell:
 | `ROJI_HTTP_PORT` | HTTP port | `80` |
 | `ROJI_HTTPS_PORT` | HTTPS port | `443` |
 | `ROJI_CERTS_DIR` | Certificate directory | `/certs` |
-| `ROJI_DASHBOARD` | Dashboard hostname | `dev.localhost` |
+| `ROJI_DASHBOARD` | Dashboard hostname | `roji.{domain}` |
 | `ROJI_LOG_LEVEL` | Log level (debug/info/warn/error) | `debug` |
 
 ## Project Structure

@@ -64,7 +64,7 @@ func Load(configPath string, cliOverrides map[string]any) (*Settings, error) {
 
 	// Set dashboard default if not specified
 	if settings.Dashboard == "" {
-		settings.Dashboard = settings.Domain
+		settings.Dashboard = "roji." + settings.Domain
 	}
 
 	return settings, nil

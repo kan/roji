@@ -42,9 +42,10 @@ func TestLoadWithDefaults(t *testing.T) {
 	if settings.Domain != "dev.localhost" {
 		t.Errorf("expected Domain 'dev.localhost', got '%s'", settings.Domain)
 	}
-	// Dashboard should default to Domain
-	if settings.Dashboard != settings.Domain {
-		t.Errorf("expected Dashboard '%s', got '%s'", settings.Domain, settings.Dashboard)
+	// Dashboard should default to "roji." + Domain
+	expectedDashboard := "roji." + settings.Domain
+	if settings.Dashboard != expectedDashboard {
+		t.Errorf("expected Dashboard '%s', got '%s'", expectedDashboard, settings.Dashboard)
 	}
 }
 
