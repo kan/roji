@@ -16,6 +16,7 @@ A simple reverse proxy for local development environments. Automatically discove
 
 ## Features
 
+- **Native Mode**: Run as a standalone binary without Docker (v0.8.0+)
 - **Auto-discovery**: Automatically detects and routes containers on the shared network
 - **TLS Support**: Auto-generates certificates (no mkcert required) or use your own
 - **Label-based Configuration**: Customize hostnames and ports via container labels
@@ -29,6 +30,7 @@ A simple reverse proxy for local development environments. Automatically discove
 - **Multiple Networks**: Monitor multiple Docker networks simultaneously
 - **Container Management**: Restart containers directly from the dashboard
 - **Request Mocking**: Define mock responses via labels for frontend development
+- **Environment Diagnostics**: `roji doctor` checks and fixes common issues
 - **Simple**: Minimal implementation focused on local development
 
 ## Installation
@@ -38,7 +40,7 @@ A simple reverse proxy for local development environments. Automatically discove
 Install and start roji with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.7.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | bash
 ```
 
 This will:
@@ -52,7 +54,7 @@ This will:
 **Custom installation directory:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.7.0/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
 ```
 
 ### Upgrading
@@ -60,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.7.0/install.sh | ROJI_I
 The install script automatically detects existing installations and offers to upgrade:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.7.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | bash
 ```
 
 When an existing installation is detected:
@@ -72,10 +74,35 @@ The script backs up your configuration before upgrading and provides rollback in
 **Force upgrade (skip prompts):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.7.0/install.sh | bash -s -- --upgrade
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | bash -s -- --upgrade
 ```
 
-### Manual Installation
+### Native Mode (v0.8.0+)
+
+Run roji as a standalone binary without Docker:
+
+```bash
+# Download from GitHub Releases
+# https://github.com/kan/roji/releases
+
+# Or build from source
+git clone https://github.com/kan/roji.git
+cd roji
+make build
+
+# Run diagnostics and fix issues
+sudo ./bin/roji doctor --fix
+
+# Install CA certificate to system trust store
+sudo ./bin/roji ca install
+
+# Start the server (requires sudo for ports 80/443)
+sudo ./bin/roji
+```
+
+Configuration is stored in `~/.config/roji/config.yaml`. See [CLI Commands](#cli-commands) for more details.
+
+### Docker Mode (Legacy)
 
 If you prefer manual setup or want to contribute to development:
 
@@ -269,15 +296,17 @@ services:
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ROJI_NETWORK` | Docker network(s) to watch (comma-separated) | `roji` |
-| `ROJI_DOMAIN` | Base domain | `dev.localhost` |
-| `ROJI_CERTS_DIR` | Certificate directory | `/certs` |
-| `ROJI_DATA_DIR` | Data directory (project history) | `/data` |
-| `ROJI_DASHBOARD` | Dashboard hostname | `roji.{domain}` |
-| `ROJI_LOG_LEVEL` | Log level | `info` |
-| `ROJI_AUTO_CERT` | Auto-generate certificates | `true` |
+| Variable | Description | Default (Native) | Default (Docker) |
+|----------|-------------|------------------|------------------|
+| `ROJI_NETWORK` | Docker network(s) to watch (comma-separated) | `roji` | `roji` |
+| `ROJI_DOMAIN` | Base domain | `dev.localhost` | `dev.localhost` |
+| `ROJI_CERTS_DIR` | Certificate directory | `~/.local/share/roji/certs` | `/certs` |
+| `ROJI_DATA_DIR` | Data directory (project history) | `~/.local/share/roji` | `/data` |
+| `ROJI_DASHBOARD` | Dashboard hostname | `roji.{domain}` | `roji.{domain}` |
+| `ROJI_LOG_LEVEL` | Log level | `info` | `info` |
+| `ROJI_AUTO_CERT` | Auto-generate certificates | `true` | `true` |
+
+Settings priority (highest to lowest): CLI flags > Environment variables > Config file > Defaults
 
 ### Custom Domain Example
 
@@ -305,6 +334,52 @@ The dashboard provides:
 - **System Status**: Build version, uptime, connection status
 
 The dashboard automatically updates without page refresh.
+
+## CLI Commands
+
+### `roji doctor`
+
+Check environment and fix common issues:
+
+```bash
+roji doctor          # Run all checks
+roji doctor --fix    # Auto-fix issues where possible
+roji doctor --json   # Output as JSON
+```
+
+Checks include:
+- Docker daemon and socket accessibility
+- Network existence
+- Port availability (80, 443)
+- CA certificate existence and installation
+- Server certificate validity and domain matching
+- DNS resolution
+
+### `roji config`
+
+Manage configuration:
+
+```bash
+roji config show     # Display current settings
+roji config path     # Show config file locations
+roji config init     # Create default config file
+roji config edit     # Open in $EDITOR
+```
+
+Configuration file location: `~/.config/roji/config.yaml`
+
+### `roji ca`
+
+Manage CA certificate:
+
+```bash
+roji ca status              # Check installation status
+roji ca install             # Install to system trust store
+roji ca install --user      # Install to user store (no sudo)
+roji ca install --windows   # Install to Windows (from WSL)
+roji ca uninstall           # Remove from trust store
+roji ca export [path]       # Export CA certificate
+```
 
 ## Health Check
 

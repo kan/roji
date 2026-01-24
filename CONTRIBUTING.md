@@ -203,35 +203,47 @@ Configure via `.env` file (gitignored) or directly in shell:
 
 ```
 roji/
-├── cmd/
-│   └── roji/
-│       ├── main.go         # Entry point
-│       └── cmd/            # Cobra commands
-│           ├── root.go     # Root command (server)
-│           ├── routes.go   # Routes list command
-│           ├── version.go  # Version command
-│           └── server.go   # Server implementation
+├── cmd/roji/
+│   ├── main.go              # Entry point
+│   └── cmd/                 # Cobra commands
+│       ├── root.go          # Root command (server)
+│       ├── server.go        # Server implementation
+│       ├── routes.go        # Routes list command
+│       ├── version.go       # Version command
+│       ├── health.go        # Health check command
+│       ├── config.go        # Config management command
+│       ├── doctor.go        # Environment diagnostics command
+│       └── ca.go            # CA certificate management command
 ├── docker/
-│   ├── client.go           # Docker API wrapper
-│   └── watcher.go          # Events watcher
+│   ├── client.go            # Docker API wrapper
+│   └── watcher.go           # Events watcher
 ├── proxy/
-│   ├── handler.go          # ReverseProxy implementation
-│   ├── router.go           # Routing
-│   └── templates/          # HTML templates
-│       ├── dashboard.html
-│       └── notfound.html
+│   ├── handler.go           # ReverseProxy implementation
+│   ├── router.go            # Routing + SSE Pub/Sub
+│   └── templates/           # HTML/CSS/JS (embed.FS)
 ├── certgen/
-│   └── generator.go        # TLS certificate generator
+│   ├── generator.go         # TLS certificate generator
+│   ├── installer.go         # CAInstaller interface
+│   ├── installer_darwin.go  # macOS Keychain
+│   ├── installer_linux.go   # Linux (Debian/RHEL)
+│   ├── installer_windows.go # Windows certutil
+│   └── installer_wsl.go     # WSL→Windows
 ├── config/
-│   └── labels.go           # Label parser
-├── certs/                  # Generated certificates (gitignored)
-├── examples/
-│   └── docker-compose.yml  # Example for users
-├── test/                   # Test services (gitignored)
-├── Dockerfile              # Multi-stage (development + production)
-├── docker-compose.yml      # Development setup
-├── .air.toml               # Hot reload configuration
-├── .env.example            # Environment template
+│   ├── labels.go            # Label parser
+│   ├── paths.go             # XDG path utilities
+│   └── settings.go          # Configuration loading
+├── doctor/
+│   ├── check.go             # Doctor interface
+│   └── checks/              # Individual checks
+├── project/
+│   └── store.go             # Project history storage
+├── test/                    # Integration/E2E tests
+├── Dockerfile               # Multi-stage build
+├── docker-compose.yml       # Production (Docker Mode)
+├── docker-compose.dev.yml   # Development (Air hot reload)
+├── Makefile                 # Build shortcuts
+├── .air.toml                # Hot reload configuration
+├── .env.example             # Environment template
 ├── go.mod
 └── go.sum
 ```

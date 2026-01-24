@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-01-24
+
+### Added
+
+- **Native Mode**: Run roji as a standalone binary without Docker
+  - Single binary execution on host system
+  - Direct access to Docker socket from host
+  - Simplified deployment for local development
+- **Configuration File**: YAML-based configuration support
+  - Default location: `~/.config/roji/config.yaml`
+  - XDG Base Directory compliant paths
+  - Settings priority: CLI > Environment > Config file > Defaults
+- **`roji config` Command**: Manage configuration files
+  - `roji config show` - Display current configuration
+  - `roji config path` - Show configuration file paths
+  - `roji config init` - Create default configuration file
+  - `roji config edit` - Open configuration in editor
+- **`roji doctor` Command**: Environment diagnostics with auto-fix
+  - Docker daemon and socket checks
+  - Network existence verification
+  - Port availability checks
+  - CA certificate existence and installation status
+  - Server certificate validity and domain matching
+  - DNS resolution checks
+  - `--fix` flag for automatic remediation
+  - `--json` flag for machine-readable output
+- **`roji ca` Command**: CA certificate management
+  - `roji ca status` - Check installation status
+  - `roji ca install` - Install CA to system trust store
+  - `roji ca uninstall` - Remove CA from trust store
+  - `roji ca export` - Export CA certificate (PEM/DER)
+  - Platform support: macOS (Keychain), Linux (system CA store), Windows (certutil), WSL (Windows user store)
+  - `--user` flag for user-level installation (no sudo)
+  - `--windows` flag for WSL to Windows installation
+- **Makefile**: Common development tasks
+  - `make build` - Build binary to ./bin/roji
+  - `make test` - Run all tests
+  - `make doctor` - Build and run doctor
+
+### Changed
+
+- Dashboard host default corrected to `roji.{domain}` (was incorrectly `{domain}`)
+- `*.localhost` DNS resolution failure now passes in doctor (Chrome auto-resolves per RFC 6761)
+- CA certificate names now include unique identifier for easier management
+
+### Fixed
+
+- Certificate domain mismatch detection in `roji doctor`
+- Auto-regeneration of server certificate when domain changes
+- Server startup now detects domain mismatch and regenerates certificate with helpful message
+
+### Technical Details
+
+- XDG paths: config in `~/.config/roji/`, data in `~/.local/share/roji/`
+- CA installer interface with platform-specific implementations
+- Doctor check interface for extensible diagnostics
+- Certificate domain validation using x509 DNSNames
+
 ## [0.7.0] - 2026-01-15
 
 ### Added
@@ -246,6 +304,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path-based routing support
 - Cobra-based CLI structure
 
+[0.8.0]: https://github.com/kan/roji/releases/tag/v0.8.0
+[0.7.0]: https://github.com/kan/roji/releases/tag/v0.7.0
 [0.6.1]: https://github.com/kan/roji/releases/tag/v0.6.1
 [0.6.0]: https://github.com/kan/roji/releases/tag/v0.6.0
 [0.5.0]: https://github.com/kan/roji/releases/tag/v0.5.0
