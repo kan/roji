@@ -55,6 +55,35 @@ func run(ctx context.Context, cfg Config) error {
 	// Auto-generate certificates if enabled
 	if cfg.AutoCert {
 		certGen := certgen.NewGenerator(cfg.CertsDir, cfg.BaseDomain)
+
+		// Check if existing certificate matches configured domain
+		matches, certDNSNames, err := certGen.CheckCertDomain()
+		if err != nil {
+			return fmt.Errorf("failed to check certificate domain: %w", err)
+		}
+
+		if !matches {
+			fmt.Println()
+			fmt.Println("⚠️  Certificate domain mismatch detected!")
+			fmt.Printf("   Current cert: %v\n", certDNSNames)
+			fmt.Printf("   Expected:     *.%s\n", cfg.BaseDomain)
+			fmt.Println()
+			fmt.Println("   Regenerating server certificate...")
+
+			if err := certGen.RegenerateCerts(); err != nil {
+				return fmt.Errorf("failed to regenerate certificates: %w", err)
+			}
+
+			fmt.Println("   ✓ Server certificate regenerated")
+			fmt.Println()
+			fmt.Println("   The CA certificate remains unchanged.")
+			fmt.Println("   If you haven't installed the CA yet, run:")
+			fmt.Println()
+			fmt.Printf("     roji ca install\n")
+			fmt.Println()
+			return fmt.Errorf("certificate regenerated for new domain - please restart roji")
+		}
+
 		if err := certGen.EnsureCerts(); err != nil {
 			return fmt.Errorf("failed to ensure certificates: %w", err)
 		}

@@ -312,3 +312,61 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// CheckCertDomain checks if the existing server certificate matches the configured domain.
+// Returns (matches, certDNSNames, error).
+// If certificate doesn't exist, returns (true, nil, nil) to indicate no mismatch.
+func (g *Generator) CheckCertDomain() (bool, []string, error) {
+	_, _, serverCertPath, _ := g.CertPaths()
+
+	if !fileExists(serverCertPath) {
+		return true, nil, nil // No cert yet, no mismatch
+	}
+
+	certPEM, err := os.ReadFile(serverCertPath)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to read certificate: %w", err)
+	}
+
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return false, nil, fmt.Errorf("invalid certificate PEM")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	expectedWildcard := "*." + g.baseDomain
+	for _, dnsName := range cert.DNSNames {
+		if dnsName == expectedWildcard || dnsName == g.baseDomain {
+			return true, cert.DNSNames, nil
+		}
+	}
+
+	return false, cert.DNSNames, nil
+}
+
+// RegenerateCerts forces regeneration of server certificates (keeping CA).
+func (g *Generator) RegenerateCerts() error {
+	_, _, serverCertPath, serverKeyPath := g.CertPaths()
+	caCertPath, caKeyPath, _, _ := g.CertPaths()
+
+	// Remove existing server certs
+	os.Remove(serverCertPath)
+	os.Remove(serverKeyPath)
+
+	// Load CA
+	caCert, caKey, err := loadCA(caCertPath, caKeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to load CA: %w", err)
+	}
+
+	// Generate new server cert
+	if err := g.generateServerCert(caCert, caKey, serverCertPath, serverKeyPath); err != nil {
+		return fmt.Errorf("failed to generate server certificate: %w", err)
+	}
+
+	return nil
+}

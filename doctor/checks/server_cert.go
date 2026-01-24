@@ -93,6 +93,31 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 		}
 	}
 
+	// Check if certificate matches configured domain
+	domain := "dev.localhost"
+	if cfg.Settings != nil {
+		domain = cfg.Settings.Domain
+	}
+	expectedWildcard := "*." + domain
+
+	domainMatches := false
+	for _, dnsName := range cert.DNSNames {
+		if dnsName == expectedWildcard || dnsName == domain {
+			domainMatches = true
+			break
+		}
+	}
+
+	if !domainMatches {
+		return doctor.CheckResult{
+			Name:    c.Name(),
+			Status:  doctor.Fail,
+			Message: "Certificate domain mismatch",
+			Details: fmt.Sprintf("Expected: %s\nCertificate has: %v\nRun 'roji doctor --fix' to regenerate", expectedWildcard, cert.DNSNames),
+			Fixable: true,
+		}
+	}
+
 	// Check expiration
 	now := time.Now()
 	if now.After(cert.NotAfter) {
