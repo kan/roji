@@ -4,13 +4,16 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/kan/roji/certgen"
+	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
 	"github.com/kan/roji/project"
 	"github.com/kan/roji/proxy"
@@ -30,7 +33,14 @@ type Config struct {
 	DataDir       string // Directory for persistent data (project history)
 }
 
-func setupLogging(level string) {
+const (
+	// MaxLogFileSize is the maximum size of log file before rotation (10MB)
+	MaxLogFileSize = 10 * 1024 * 1024
+)
+
+// setupLogging configures logging to stdout and optionally to a file.
+// Returns the log file handle (caller should close it) or nil if file logging failed.
+func setupLogging(level string, enableFileLogging bool) *os.File {
 	var logLevel slog.Level
 	switch level {
 	case "debug":
@@ -43,10 +53,49 @@ func setupLogging(level string) {
 		logLevel = slog.LevelInfo
 	}
 
-	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	var writer io.Writer = os.Stdout
+	var logFile *os.File
+
+	if enableFileLogging {
+		logPath := config.LogFilePath()
+
+		// Ensure log directory exists
+		if err := config.EnsureDir(filepath.Dir(logPath)); err == nil {
+			// Rotate log file if too large
+			rotateLogFile(logPath)
+
+			// Open log file for appending
+			f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			if err == nil {
+				logFile = f
+				writer = io.MultiWriter(os.Stdout, f)
+			}
+		}
+	}
+
+	handler := slog.NewTextHandler(writer, &slog.HandlerOptions{
 		Level: logLevel,
 	})
 	slog.SetDefault(slog.New(handler))
+
+	return logFile
+}
+
+// rotateLogFile rotates the log file if it exceeds MaxLogFileSize
+func rotateLogFile(logPath string) {
+	info, err := os.Stat(logPath)
+	if err != nil {
+		return // File doesn't exist, no rotation needed
+	}
+
+	if info.Size() < MaxLogFileSize {
+		return // File is small enough
+	}
+
+	// Rename current log to .old (overwrite any existing .old file)
+	oldPath := logPath + ".old"
+	os.Remove(oldPath)
+	os.Rename(logPath, oldPath)
 }
 
 func run(ctx context.Context, cfg Config) error {

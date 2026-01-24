@@ -80,6 +80,11 @@ func ConfigFilePath() string {
 	return filepath.Join(ConfigDir(), "config.yaml")
 }
 
+// LogFilePath returns the path to the log file
+func LogFilePath() string {
+	return filepath.Join(DataDir(), "roji.log")
+}
+
 // EnsureDir creates a directory if it doesn't exist
 func EnsureDir(path string) error {
 	return os.MkdirAll(path, 0755)

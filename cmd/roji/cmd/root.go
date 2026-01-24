@@ -103,7 +103,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	setupLogging(settings.LogLevel)
+	// Enable file logging for Native Mode
+	logFile := setupLogging(settings.LogLevel, true)
+	if logFile != nil {
+		defer logFile.Close()
+	}
 
 	cfg := Config{
 		Networks:      settings.Networks(),
