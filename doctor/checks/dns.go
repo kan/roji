@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/kan/roji/doctor"
 )
@@ -26,13 +27,25 @@ func (c *DNS) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
 
 	addrs, err := net.LookupHost(testHost)
 	if err != nil {
-		// .localhost domains should resolve to 127.0.0.1 on most systems
-		// If they don't, it might still work if we're using /etc/hosts
+		// Check if this is a .localhost domain
+		if strings.HasSuffix(domain, ".localhost") || domain == "localhost" {
+			// .localhost domains are automatically resolved to 127.0.0.1 by Chrome-based browsers
+			// (Chrome, Edge, Brave, etc.) per RFC 6761, so DNS resolution failure is OK
+			return doctor.CheckResult{
+				Name:    c.Name(),
+				Status:  doctor.Pass,
+				Message: fmt.Sprintf("*.%s (browser auto-resolve)", domain),
+				Details: "Chrome-based browsers automatically resolve *.localhost to 127.0.0.1.\nNote: curl and other CLI tools may require /etc/hosts entry.",
+				Fixable: false,
+			}
+		}
+
+		// Non-.localhost domains require proper DNS configuration
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Warn,
 			Message: fmt.Sprintf("Cannot resolve %s", testHost),
-			Details: "*.localhost domains should resolve to 127.0.0.1.\nThis is usually automatic on modern systems.\nIf using a custom domain, ensure DNS is configured.",
+			Details: "Custom domains require DNS configuration.\nAdd entries to /etc/hosts or configure a local DNS server.",
 			Fixable: false,
 		}
 	}
