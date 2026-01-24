@@ -57,7 +57,7 @@ func NewManagerWithOptions(opts Options) (Manager, error) {
 	case "darwin":
 		return newLaunchdManagerWithOptions(LaunchdOptions{User: opts.User})
 	case "windows":
-		return nil, fmt.Errorf("Windows service management not yet implemented")
+		return newWindowsManagerWithOptions(WindowsOptions{User: opts.User})
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}

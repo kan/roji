@@ -18,10 +18,11 @@ var serviceCmd = &cobra.Command{
 Supported platforms:
   - Linux: systemd (/etc/systemd/system/roji.service)
   - macOS: launchd (~/Library/LaunchAgents/com.roji.agent.plist)
-  - Windows: Windows Service (coming soon)
+  - Windows: NSSM (requires NSSM from https://nssm.cc/)
 
 Linux requires root privileges (use sudo).
-macOS runs as a user-level service (no sudo required).`,
+macOS runs as a user-level service (no sudo required).
+Windows requires Administrator privileges.`,
 }
 
 var serviceInstallCmd = &cobra.Command{
@@ -103,6 +104,8 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 		fmt.Println("  sudo roji service start")
 	case "darwin":
 		fmt.Println("  roji service start")
+	case "windows":
+		fmt.Println("  roji service start  (run as Administrator)")
 	default:
 		fmt.Println("  roji service start")
 	}
@@ -113,6 +116,8 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 		fmt.Println("  sudo journalctl -u roji -f")
 	case "darwin":
 		fmt.Println("  tail -f ~/Library/Logs/roji.log")
+	case "windows":
+		fmt.Printf("  type %%USERPROFILE%%\\.local\\share\\roji\\roji.log\n")
 	}
 	fmt.Println("  roji log")
 

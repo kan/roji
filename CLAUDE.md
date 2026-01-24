@@ -364,7 +364,12 @@ Run 'roji doctor --fix' to auto-fix where possible
 |------------------|--------------|----------|------|
 | Linux | systemd | `/etc/systemd/system/roji.service` | ✅ 実装済み |
 | macOS | launchd | `~/Library/LaunchAgents/com.roji.agent.plist` | ✅ 実装済み |
-| Windows | Windows Service | NSSM または sc.exe | 未実装 |
+| Windows | NSSM | Windows Service経由 | ✅ 実装済み |
+
+**Windows版の注意:**
+- [NSSM](https://nssm.cc/)のインストールが必要
+- 管理者権限で実行する必要あり
+- ログは `%USERPROFILE%\.local\share\roji\roji.log` に出力
 
 #### Docker Compose操作
 
