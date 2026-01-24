@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/kan/roji/service"
 	"github.com/spf13/cobra"
@@ -16,10 +17,11 @@ var serviceCmd = &cobra.Command{
 
 Supported platforms:
   - Linux: systemd (/etc/systemd/system/roji.service)
-  - macOS: launchd (coming soon)
+  - macOS: launchd (~/Library/LaunchAgents/com.roji.agent.plist)
   - Windows: Windows Service (coming soon)
 
-Most commands require root/administrator privileges.`,
+Linux requires root privileges (use sudo).
+macOS runs as a user-level service (no sudo required).`,
 }
 
 var serviceInstallCmd = &cobra.Command{
@@ -96,10 +98,22 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 	fmt.Println("✓ Service installed successfully")
 	fmt.Println()
 	fmt.Println("To start the service:")
-	fmt.Println("  sudo roji service start")
+	switch runtime.GOOS {
+	case "linux":
+		fmt.Println("  sudo roji service start")
+	case "darwin":
+		fmt.Println("  roji service start")
+	default:
+		fmt.Println("  roji service start")
+	}
 	fmt.Println()
 	fmt.Println("To view logs:")
-	fmt.Println("  sudo journalctl -u roji -f")
+	switch runtime.GOOS {
+	case "linux":
+		fmt.Println("  sudo journalctl -u roji -f")
+	case "darwin":
+		fmt.Println("  tail -f ~/Library/Logs/roji.log")
+	}
 	fmt.Println("  roji log")
 
 	return nil

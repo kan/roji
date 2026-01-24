@@ -55,7 +55,7 @@ func NewManagerWithOptions(opts Options) (Manager, error) {
 	case "linux":
 		return newSystemdManagerWithOptions(ServiceOptions{User: opts.User})
 	case "darwin":
-		return nil, fmt.Errorf("macOS service management not yet implemented")
+		return newLaunchdManagerWithOptions(LaunchdOptions{User: opts.User})
 	case "windows":
 		return nil, fmt.Errorf("Windows service management not yet implemented")
 	default:

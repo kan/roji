@@ -340,8 +340,10 @@ Run 'roji doctor --fix' to auto-fix where possible
 
 **ログファイル:**
 - サービスモード時はログをファイルにも出力
-- 場所: `~/.local/share/roji/roji.log`
-- ログローテーション: 日次または10MB超過時
+- 場所:
+  - Linux/WSL: `~/.local/share/roji/roji.log`
+  - macOS: `~/Library/Logs/roji.log`（launchd経由の場合）
+- ログローテーション: 10MB超過時に自動ローテート
 
 **新コマンド:**
 - `roji log` - ログをリアルタイム表示（`tail -f`相当）
@@ -358,11 +360,11 @@ Run 'roji doctor --fix' to auto-fix where possible
 
 **プラットフォーム別:**
 
-| プラットフォーム | サービス管理 | 設定場所 |
-|------------------|--------------|----------|
-| Linux | systemd | `/etc/systemd/system/roji.service` |
-| macOS | launchd | `~/Library/LaunchAgents/com.roji.plist` |
-| Windows | Windows Service | NSSM または sc.exe |
+| プラットフォーム | サービス管理 | 設定場所 | 状態 |
+|------------------|--------------|----------|------|
+| Linux | systemd | `/etc/systemd/system/roji.service` | ✅ 実装済み |
+| macOS | launchd | `~/Library/LaunchAgents/com.roji.agent.plist` | ✅ 実装済み |
+| Windows | Windows Service | NSSM または sc.exe | 未実装 |
 
 #### Docker Compose操作
 
