@@ -158,9 +158,16 @@ roji/
 ### 運用強化 (v0.9.0)
 - `roji service` コマンド（install/uninstall/start/stop/restart/status）
 - サービス登録（Linux systemd / macOS launchd / Windows NSSM）
+- ワンライナーインストーラー刷新（Native Mode対応）
+  - GitHub Releasesからバイナリダウンロード
+  - 対話式インストール先選択（`~/.local/bin` / `/usr/local/bin`）
+  - Docker Mode検出 → 移行フロー
+  - 自動セットアップ（doctor --fix, ca install, service install）
+  - 旧Docker版は `install-docker.sh` として維持
+- 設定ファイルバリデーション（不明キー警告、型チェック）
 
 ### 配布・品質
-- ワンライナーインストール（アップグレード対応）
+- ワンライナーインストール（Native Mode / アップグレード対応）
 - GoReleaser v2（マルチプラットフォーム）
 - Distrolessイメージ
 - セキュリティスキャン（Trivy, govulncheck）
@@ -462,6 +469,49 @@ static_sites:
 - パスワードは平文（ローカル開発用途のため）
 - 401レスポンス時に`WWW-Authenticate`ヘッダー付与
 
+#### ワンライナーインストーラー刷新 ✅
+
+**新 install.sh（Native Mode対応）:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
+```
+
+**処理フロー:**
+1. OS/Arch検出（Linux/macOS, x86_64/arm64）
+2. 既存インストール検出
+   - Docker Mode → 移行を促す（コンテナ停止、証明書バックアップ）
+   - Native Mode → バージョン比較してアップグレード
+3. 対話式インストール先選択
+   - `~/.local/bin`（デフォルト、sudo不要でインストール）
+   - `/usr/local/bin`（グローバル、sudoでインストール）
+4. GitHub Releasesからバイナリダウンロード
+5. `sudo roji doctor --fix`
+6. `sudo roji ca install`（WSLでは`--windows`も）
+7. `sudo roji service install && start`
+
+**オプション:**
+- `--local` / `--global` - インストール先指定
+- `--upgrade` - アップグレード確認スキップ
+- `--migrate` - Docker Mode移行確認スキップ
+- `--no-service` - サービス登録スキップ
+
+**旧版:**
+- `install-docker.sh` として維持（Docker Mode用）
+
+#### 設定ファイルバリデーション ✅
+
+設定読み込み時およびdoctorコマンドで包括的なバリデーションを実行。
+
+**チェック内容:**
+- 不明なキーの検出（タイポ検出）
+- 値の型チェック（string/int/bool/array/object）
+- 必須フィールドの欠落（static_sitesのhost/root等）
+
+**表示:**
+- 設定読み込み時: `slog.Warn`で警告出力
+- `roji doctor`: Config file validationチェックとして表示
+
 ---
 
 ### v1.0.0: 安定版リリース
@@ -470,11 +520,20 @@ static_sites:
   - Native Modeへの完全移行
   - Dockerfile、docker-compose.yml は開発・テスト用に維持
 
-- [ ] **インストール方法の刷新**
-  - install.shの全面書き換え
-  - バイナリダウンロード + サービス登録の自動化
+- [x] **インストール方法の刷新** （v0.9.0で実装済み）
+  - install.shの全面書き換え → ✅ Native Mode対応版に刷新
+  - バイナリダウンロード + サービス登録の自動化 → ✅ 実装済み
+
+- [ ] **パッケージマネージャー対応**
   - Homebrew対応（macOS）
   - APT/RPMパッケージ検討
+
+- [ ] **多言語対応 (i18n)**
+  - ダッシュボード等のWeb UIメッセージ
+  - CLIコマンドのメッセージ・ヘルプ
+  - ワンライナーインストーラーのメッセージ
+  - 日本語リソースの追加
+  - 言語自動検出（`LANG`環境変数 / ブラウザ設定）
 
 - [ ] **ドキュメント整備**
   - README.mdの全面改訂
