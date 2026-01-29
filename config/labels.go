@@ -24,6 +24,11 @@ const (
 	// Mock labels prefix
 	LabelMockPrefix       = LabelPrefix + "mock."        // roji.mock.GET./path = response body
 	LabelMockStatusPrefix = LabelMockPrefix + "status."  // roji.mock.status.GET./path = status code
+
+	// Basic auth labels
+	LabelAuthBasicUser  = LabelPrefix + "auth.basic.user"  // Basic auth username
+	LabelAuthBasicPass  = LabelPrefix + "auth.basic.pass"  // Basic auth password
+	LabelAuthBasicRealm = LabelPrefix + "auth.basic.realm" // Basic auth realm (optional)
 )
 
 // MockRoute defines a mock response for a specific method and path
@@ -34,12 +39,20 @@ type MockRoute struct {
 	StatusCode int    // HTTP status code (default: 200)
 }
 
+// BasicAuth holds basic authentication credentials
+type BasicAuth struct {
+	User  string // Username
+	Pass  string // Password
+	Realm string // Authentication realm (optional, default: "Restricted")
+}
+
 // RouteConfig holds the configuration for a single route
 type RouteConfig struct {
 	Host       string       // e.g., "myapp.localhost"
 	Port       int          // Target port
 	PathPrefix string       // e.g., "/api" (optional)
 	MockRoutes []*MockRoute // Mock responses for this container
+	BasicAuth  *BasicAuth   // Basic authentication (optional)
 }
 
 // ParseLabels extracts roji configuration from container labels
@@ -70,7 +83,45 @@ func ParseLabels(labels map[string]string) *RouteConfig {
 	// Parse mock labels
 	cfg.MockRoutes = parseMockLabels(labels)
 
+	// Parse basic auth labels
+	cfg.BasicAuth = parseBasicAuthLabels(labels)
+
 	return cfg
+}
+
+// parseBasicAuthLabels extracts basic authentication configuration from labels
+func parseBasicAuthLabels(labels map[string]string) *BasicAuth {
+	user, hasUser := labels[LabelAuthBasicUser]
+	pass, hasPass := labels[LabelAuthBasicPass]
+
+	// Both user and pass are required
+	if !hasUser || !hasPass {
+		return nil
+	}
+
+	user = strings.TrimSpace(user)
+	pass = strings.TrimSpace(pass)
+
+	// Both must be non-empty
+	if user == "" || pass == "" {
+		return nil
+	}
+
+	auth := &BasicAuth{
+		User:  user,
+		Pass:  pass,
+		Realm: "Restricted", // Default realm
+	}
+
+	// Optional realm
+	if realm, ok := labels[LabelAuthBasicRealm]; ok {
+		realm = strings.TrimSpace(realm)
+		if realm != "" {
+			auth.Realm = realm
+		}
+	}
+
+	return auth
 }
 
 // parseMockLabels extracts mock route configurations from labels

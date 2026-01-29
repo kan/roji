@@ -480,6 +480,7 @@ func reloadStaticSites(configPath, baseDomain, dashboardHost string, router *pro
 			Root:          root,
 			Index:         site.IndexEnabled(),
 			DashboardHost: dashboardHost,
+			BasicAuth:     site.GetBasicAuth(),
 		})
 	}
 
@@ -529,6 +530,7 @@ func registerStaticSites(cfg Config, router *proxy.Router) {
 			Root:          root,
 			Index:         site.IndexEnabled(),
 			DashboardHost: cfg.DashboardHost,
+			BasicAuth:     site.GetBasicAuth(),
 		})
 	}
 }

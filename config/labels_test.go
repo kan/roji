@@ -283,3 +283,125 @@ func TestParseMethodPath(t *testing.T) {
 		})
 	}
 }
+
+func TestParseBasicAuthLabels(t *testing.T) {
+	tests := []struct {
+		name     string
+		labels   map[string]string
+		expected *BasicAuth
+	}{
+		{
+			name:     "no auth labels",
+			labels:   map[string]string{},
+			expected: nil,
+		},
+		{
+			name: "user only (incomplete)",
+			labels: map[string]string{
+				"roji.auth.basic.user": "admin",
+			},
+			expected: nil,
+		},
+		{
+			name: "pass only (incomplete)",
+			labels: map[string]string{
+				"roji.auth.basic.pass": "secret",
+			},
+			expected: nil,
+		},
+		{
+			name: "user and pass",
+			labels: map[string]string{
+				"roji.auth.basic.user": "admin",
+				"roji.auth.basic.pass": "secret",
+			},
+			expected: &BasicAuth{
+				User:  "admin",
+				Pass:  "secret",
+				Realm: "Restricted",
+			},
+		},
+		{
+			name: "user, pass, and realm",
+			labels: map[string]string{
+				"roji.auth.basic.user":  "admin",
+				"roji.auth.basic.pass":  "secret123",
+				"roji.auth.basic.realm": "Admin Area",
+			},
+			expected: &BasicAuth{
+				User:  "admin",
+				Pass:  "secret123",
+				Realm: "Admin Area",
+			},
+		},
+		{
+			name: "with whitespace",
+			labels: map[string]string{
+				"roji.auth.basic.user":  "  admin  ",
+				"roji.auth.basic.pass":  "  secret  ",
+				"roji.auth.basic.realm": "  My Realm  ",
+			},
+			expected: &BasicAuth{
+				User:  "admin",
+				Pass:  "secret",
+				Realm: "My Realm",
+			},
+		},
+		{
+			name: "empty user",
+			labels: map[string]string{
+				"roji.auth.basic.user": "",
+				"roji.auth.basic.pass": "secret",
+			},
+			expected: nil,
+		},
+		{
+			name: "empty pass",
+			labels: map[string]string{
+				"roji.auth.basic.user": "admin",
+				"roji.auth.basic.pass": "",
+			},
+			expected: nil,
+		},
+		{
+			name: "empty realm uses default",
+			labels: map[string]string{
+				"roji.auth.basic.user":  "admin",
+				"roji.auth.basic.pass":  "secret",
+				"roji.auth.basic.realm": "",
+			},
+			expected: &BasicAuth{
+				User:  "admin",
+				Pass:  "secret",
+				Realm: "Restricted",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := ParseLabels(tt.labels)
+
+			if tt.expected == nil {
+				if cfg.BasicAuth != nil {
+					t.Errorf("BasicAuth = %+v, want nil", cfg.BasicAuth)
+				}
+				return
+			}
+
+			if cfg.BasicAuth == nil {
+				t.Fatal("BasicAuth = nil, want non-nil")
+			}
+
+			if cfg.BasicAuth.User != tt.expected.User {
+				t.Errorf("User = %q, want %q", cfg.BasicAuth.User, tt.expected.User)
+			}
+			if cfg.BasicAuth.Pass != tt.expected.Pass {
+				t.Errorf("Pass = %q, want %q", cfg.BasicAuth.Pass, tt.expected.Pass)
+			}
+			if cfg.BasicAuth.Realm != tt.expected.Realm {
+				t.Errorf("Realm = %q, want %q", cfg.BasicAuth.Realm, tt.expected.Realm)
+			}
+		})
+	}
+}

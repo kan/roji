@@ -288,3 +288,116 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+func TestStaticSiteAuth(t *testing.T) {
+	// Test GetBasicAuth
+	tests := []struct {
+		name     string
+		site     StaticSite
+		hasAuth  bool
+		user     string
+		pass     string
+		realm    string
+	}{
+		{
+			name:    "no auth",
+			site:    StaticSite{Host: "test", Root: "/tmp"},
+			hasAuth: false,
+		},
+		{
+			name: "with basic auth",
+			site: StaticSite{
+				Host: "test",
+				Root: "/tmp",
+				Auth: &StaticSiteAuth{
+					Basic: &BasicAuth{
+						User:  "admin",
+						Pass:  "secret",
+						Realm: "Test Realm",
+					},
+				},
+			},
+			hasAuth: true,
+			user:    "admin",
+			pass:    "secret",
+			realm:   "Test Realm",
+		},
+		{
+			name: "auth without basic",
+			site: StaticSite{
+				Host: "test",
+				Root: "/tmp",
+				Auth: &StaticSiteAuth{},
+			},
+			hasAuth: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			auth := tt.site.GetBasicAuth()
+
+			if tt.hasAuth {
+				if auth == nil {
+					t.Fatal("expected BasicAuth, got nil")
+				}
+				if auth.User != tt.user {
+					t.Errorf("User = %q, want %q", auth.User, tt.user)
+				}
+				if auth.Pass != tt.pass {
+					t.Errorf("Pass = %q, want %q", auth.Pass, tt.pass)
+				}
+				if auth.Realm != tt.realm {
+					t.Errorf("Realm = %q, want %q", auth.Realm, tt.realm)
+				}
+			} else {
+				if auth != nil {
+					t.Errorf("expected nil BasicAuth, got %+v", auth)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadStaticSiteWithAuth(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `static_sites:
+  - host: docs
+    root: /tmp/docs
+    auth:
+      basic:
+        user: admin
+        pass: secret123
+        realm: Documentation
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	settings, err := Load(configPath, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(settings.StaticSites) != 1 {
+		t.Fatalf("expected 1 static site, got %d", len(settings.StaticSites))
+	}
+
+	site := settings.StaticSites[0]
+	auth := site.GetBasicAuth()
+
+	if auth == nil {
+		t.Fatal("expected BasicAuth, got nil")
+	}
+	if auth.User != "admin" {
+		t.Errorf("User = %q, want %q", auth.User, "admin")
+	}
+	if auth.Pass != "secret123" {
+		t.Errorf("Pass = %q, want %q", auth.Pass, "secret123")
+	}
+	if auth.Realm != "Documentation" {
+		t.Errorf("Realm = %q, want %q", auth.Realm, "Documentation")
+	}
+}

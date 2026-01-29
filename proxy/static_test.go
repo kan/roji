@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kan/roji/config"
 )
 
 func TestServeStaticFile(t *testing.T) {
@@ -319,5 +321,91 @@ func TestRouter_StaticRoutes(t *testing.T) {
 	route = router.LookupStatic("docs.dev.localhost")
 	if route != nil {
 		t.Error("Expected static route to be removed")
+	}
+}
+
+func TestHandler_BasicAuth_StaticRoute(t *testing.T) {
+	// Create a temporary directory with test files
+	tmpDir, err := os.MkdirTemp("", "roji-static-auth-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create test file
+	if err := os.WriteFile(filepath.Join(tmpDir, "index.html"), []byte("<html>Protected</html>"), 0644); err != nil {
+		t.Fatalf("Failed to write index.html: %v", err)
+	}
+
+	router := NewRouter()
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	// Add static site with basic auth
+	router.AddStaticSite(&StaticBackend{
+		Hostname:      "protected.dev.localhost",
+		Root:          tmpDir,
+		Index:         true,
+		DashboardHost: "roji.dev.localhost",
+		BasicAuth: &config.BasicAuth{
+			User:  "admin",
+			Pass:  "secret",
+			Realm: "Protected Docs",
+		},
+	})
+
+	tests := []struct {
+		name         string
+		user         string
+		pass         string
+		expectStatus int
+		expectBody   string
+	}{
+		{
+			name:         "no credentials",
+			user:         "",
+			pass:         "",
+			expectStatus: http.StatusUnauthorized,
+		},
+		{
+			name:         "wrong credentials",
+			user:         "wrong",
+			pass:         "wrong",
+			expectStatus: http.StatusUnauthorized,
+		},
+		{
+			name:         "correct credentials",
+			user:         "admin",
+			pass:         "secret",
+			expectStatus: http.StatusOK,
+			expectBody:   "Protected",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "https://protected.dev.localhost/", nil)
+			req.Host = "protected.dev.localhost"
+			if tt.user != "" || tt.pass != "" {
+				req.SetBasicAuth(tt.user, tt.pass)
+			}
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			if w.Code != tt.expectStatus {
+				t.Errorf("status = %d, want %d", w.Code, tt.expectStatus)
+			}
+
+			if tt.expectStatus == http.StatusUnauthorized {
+				header := w.Header().Get("WWW-Authenticate")
+				if header != `Basic realm="Protected Docs"` {
+					t.Errorf("WWW-Authenticate = %q, want %q", header, `Basic realm="Protected Docs"`)
+				}
+			}
+
+			if tt.expectBody != "" && !strings.Contains(w.Body.String(), tt.expectBody) {
+				t.Errorf("body should contain %q, got %q", tt.expectBody, w.Body.String())
+			}
+		})
 	}
 }

@@ -112,6 +112,16 @@
             font-size: 0.75rem;
             font-family: monospace;
         }
+        .auth-badge {
+            background: var(--warning-bg);
+            color: var(--warning-text);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
         .empty {
             padding: 40px;
             text-align: center;
@@ -772,6 +782,9 @@
                         <span v-if="restartingContainer === route.containerId">&#x21BB; Restarting...</span>
                         <span v-else>&#x21BB; Restart</span>
                     </button>
+                    <span v-if="route.hasBasicAuth" class="auth-badge" title="Basic authentication required">
+                        &#x1F512; auth
+                    </span>
                     <span v-if="route.isStatic" :class="['static-badge', route.indexEnabled ? 'index-on' : 'index-off']" :title="route.indexEnabled ? 'Directory listing enabled' : 'Directory listing disabled'">
                         &#x1F4C1; static
                         <span v-if="route.indexEnabled" class="index-indicator">&#x1F4CB;</span>

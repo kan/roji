@@ -294,6 +294,7 @@ func (r *Router) ListRoutes() []RouteInfo {
 			ServiceName:   route.Backend.ServiceName,
 			Warning:       route.Backend.Warning,
 			Network:       route.Backend.Network,
+			HasBasicAuth:  route.Backend.BasicAuth != nil,
 		})
 	}
 
@@ -312,6 +313,7 @@ func (r *Router) ListRoutes() []RouteInfo {
 				ServiceName:   route.Backend.ServiceName,
 				Warning:       route.Backend.Warning,
 				Network:       route.Backend.Network,
+				HasBasicAuth:  route.Backend.BasicAuth != nil,
 			})
 		}
 	}
@@ -324,6 +326,7 @@ func (r *Router) ListRoutes() []RouteInfo {
 			ServiceName:  "static",
 			IsStatic:     true,
 			IndexEnabled: route.StaticBackend.Index,
+			HasBasicAuth: route.StaticBackend.BasicAuth != nil,
 		})
 	}
 
@@ -350,6 +353,7 @@ type RouteInfo struct {
 	Network       string `json:"network,omitempty"`
 	IsStatic      bool   `json:"isStatic,omitempty"`
 	IndexEnabled  bool   `json:"indexEnabled,omitempty"` // For static sites: directory listing enabled
+	HasBasicAuth  bool   `json:"hasBasicAuth,omitempty"` // Whether basic auth is enabled
 }
 
 func (ri RouteInfo) String() string {

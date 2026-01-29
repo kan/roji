@@ -66,6 +66,39 @@ func isWebSocketRequest(r *http.Request) bool {
 		strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
 }
 
+// checkBasicAuth validates basic authentication credentials.
+// Returns true if authentication is successful or not required.
+// If authentication fails, it writes the 401 response and returns false.
+func checkBasicAuth(w http.ResponseWriter, r *http.Request, auth *config.BasicAuth) bool {
+	if auth == nil {
+		return true // No authentication required
+	}
+
+	// Skip authentication for CORS preflight requests (OPTIONS)
+	// Browsers send OPTIONS without credentials before the actual request
+	if r.Method == http.MethodOptions {
+		slog.Debug("skipping auth for CORS preflight", "path", r.URL.Path)
+		return true
+	}
+
+	user, pass, ok := r.BasicAuth()
+	if !ok || user != auth.User || pass != auth.Pass {
+		realm := auth.Realm
+		if realm == "" {
+			realm = "Restricted"
+		}
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, realm))
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		slog.Debug("basic auth failed",
+			"path", r.URL.Path,
+			"has_credentials", ok,
+			"realm", realm)
+		return false
+	}
+
+	return true
+}
+
 //go:embed templates/*.html templates/*.js templates/*.svg templates/*.css
 var templateFS embed.FS
 
@@ -208,6 +241,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check for static site route first
 	staticRoute := h.router.LookupStatic(hostname)
 	if staticRoute != nil {
+		// Check basic auth if configured
+		if staticRoute.StaticBackend != nil && !checkBasicAuth(w, r, staticRoute.StaticBackend.BasicAuth) {
+			return
+		}
 		h.serveStaticSite(w, r, staticRoute, hostname, startTime)
 		return
 	}
@@ -216,6 +253,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	route := h.router.Lookup(hostname, r.URL.Path)
 	if route == nil {
 		h.handleNotFound(w, r, hostname)
+		return
+	}
+
+	// Check basic auth if configured
+	if route.Backend != nil && !checkBasicAuth(w, r, route.Backend.BasicAuth) {
 		return
 	}
 

@@ -56,6 +56,7 @@ type Backend struct {
 	Warning       string              // Warning message (e.g., "no port exposed")
 	Network       string              // Docker network name this container was found on
 	MockRoutes    []*config.MockRoute // Mock responses defined via labels
+	BasicAuth     *config.BasicAuth   // Basic authentication (optional)
 }
 
 // ProjectInfo contains docker-compose project metadata
@@ -316,6 +317,7 @@ func (c *Client) inspectToBackend(info types.ContainerJSON, networkName string, 
 		Warning:       warning,
 		Network:       networkName,
 		MockRoutes:    labelCfg.MockRoutes,
+		BasicAuth:     labelCfg.BasicAuth,
 	}, nil
 }
 

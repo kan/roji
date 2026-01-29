@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,11 +11,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// StaticSiteAuth holds authentication configuration for a static site
+type StaticSiteAuth struct {
+	Basic *BasicAuth `yaml:"basic,omitempty"` // Basic authentication
+}
+
 // StaticSite represents a static file hosting configuration
 type StaticSite struct {
-	Host  string `yaml:"host"`            // Hostname or subdomain (e.g., "docs" or "docs.example.com")
-	Root  string `yaml:"root"`            // Root directory path (supports ~ expansion)
-	Index *bool  `yaml:"index,omitempty"` // Enable directory listing (default: true, set false to disable)
+	Host  string          `yaml:"host"`            // Hostname or subdomain (e.g., "docs" or "docs.example.com")
+	Root  string          `yaml:"root"`            // Root directory path (supports ~ expansion)
+	Index *bool           `yaml:"index,omitempty"` // Enable directory listing (default: true, set false to disable)
+	Auth  *StaticSiteAuth `yaml:"auth,omitempty"`  // Authentication configuration
 }
 
 // IndexEnabled returns whether directory listing is enabled (default: true)
@@ -23,6 +30,14 @@ func (s *StaticSite) IndexEnabled() bool {
 		return true // default is enabled
 	}
 	return *s.Index
+}
+
+// GetBasicAuth returns the basic auth configuration if set
+func (s *StaticSite) GetBasicAuth() *BasicAuth {
+	if s.Auth == nil {
+		return nil
+	}
+	return s.Auth.Basic
 }
 
 // Settings holds all configuration settings for roji
@@ -133,15 +148,78 @@ func (s *Settings) loadFromFile(path string) error {
 	if _, ok := rawMap["auto_cert"]; ok {
 		s.AutoCert = fileSettings.AutoCert
 	}
-	if _, ok := rawMap["static_sites"]; ok {
+	if staticSites, ok := rawMap["static_sites"]; ok {
 		// Expand paths for static sites
 		for i := range fileSettings.StaticSites {
 			fileSettings.StaticSites[i].Root = ExpandPath(fileSettings.StaticSites[i].Root)
 		}
 		s.StaticSites = fileSettings.StaticSites
+
+		// Validate static_sites auth configuration
+		if sites, ok := staticSites.([]any); ok {
+			validateStaticSitesAuth(sites)
+		}
 	}
 
 	return nil
+}
+
+// validateStaticSitesAuth validates auth configuration in static_sites and logs warnings for unknown keys
+func validateStaticSitesAuth(sites []any) {
+	validAuthKeys := map[string]bool{"basic": true}
+	validBasicKeys := map[string]bool{"user": true, "pass": true, "realm": true}
+
+	for i, site := range sites {
+		siteMap, ok := site.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		host, _ := siteMap["host"].(string)
+		if host == "" {
+			host = fmt.Sprintf("static_sites[%d]", i)
+		}
+
+		auth, ok := siteMap["auth"]
+		if !ok {
+			continue
+		}
+
+		authMap, ok := auth.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// Check for unknown keys under auth
+		for key := range authMap {
+			if !validAuthKeys[key] {
+				slog.Warn("unknown auth type in config",
+					"host", host,
+					"key", key,
+					"valid_keys", "basic")
+			}
+		}
+
+		// Check for unknown keys under auth.basic
+		basic, ok := authMap["basic"]
+		if !ok {
+			continue
+		}
+
+		basicMap, ok := basic.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		for key := range basicMap {
+			if !validBasicKeys[key] {
+				slog.Warn("unknown key in auth.basic config",
+					"host", host,
+					"key", key,
+					"valid_keys", "user, pass, realm")
+			}
+		}
+	}
 }
 
 // applyEnvVars applies environment variables to settings

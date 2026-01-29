@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
 )
 
@@ -794,5 +795,183 @@ func TestHandler_GRPCProxy_BackendUnavailable(t *testing.T) {
 	}
 	if status := w.Header().Get("Grpc-Status"); status != "14" {
 		t.Errorf("Grpc-Status = %q, want %q", status, "14")
+	}
+}
+
+func TestCheckBasicAuth(t *testing.T) {
+	tests := []struct {
+		name           string
+		auth           *config.BasicAuth
+		reqUser        string
+		reqPass        string
+		expectSuccess  bool
+		expectStatus   int
+		expectHeader   string
+	}{
+		{
+			name:          "no auth required",
+			auth:          nil,
+			reqUser:       "",
+			reqPass:       "",
+			expectSuccess: true,
+		},
+		{
+			name: "correct credentials",
+			auth: &config.BasicAuth{
+				User:  "admin",
+				Pass:  "secret",
+				Realm: "Test Realm",
+			},
+			reqUser:       "admin",
+			reqPass:       "secret",
+			expectSuccess: true,
+		},
+		{
+			name: "wrong username",
+			auth: &config.BasicAuth{
+				User:  "admin",
+				Pass:  "secret",
+				Realm: "Test Realm",
+			},
+			reqUser:       "wronguser",
+			reqPass:       "secret",
+			expectSuccess: false,
+			expectStatus:  http.StatusUnauthorized,
+			expectHeader:  `Basic realm="Test Realm"`,
+		},
+		{
+			name: "wrong password",
+			auth: &config.BasicAuth{
+				User:  "admin",
+				Pass:  "secret",
+				Realm: "Test Realm",
+			},
+			reqUser:       "admin",
+			reqPass:       "wrongpass",
+			expectSuccess: false,
+			expectStatus:  http.StatusUnauthorized,
+			expectHeader:  `Basic realm="Test Realm"`,
+		},
+		{
+			name: "no credentials provided",
+			auth: &config.BasicAuth{
+				User:  "admin",
+				Pass:  "secret",
+				Realm: "Test Realm",
+			},
+			reqUser:       "",
+			reqPass:       "",
+			expectSuccess: false,
+			expectStatus:  http.StatusUnauthorized,
+			expectHeader:  `Basic realm="Test Realm"`,
+		},
+		{
+			name: "default realm",
+			auth: &config.BasicAuth{
+				User:  "admin",
+				Pass:  "secret",
+				Realm: "",
+			},
+			reqUser:       "wronguser",
+			reqPass:       "wrongpass",
+			expectSuccess: false,
+			expectStatus:  http.StatusUnauthorized,
+			expectHeader:  `Basic realm="Restricted"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			if tt.reqUser != "" || tt.reqPass != "" {
+				req.SetBasicAuth(tt.reqUser, tt.reqPass)
+			}
+			w := httptest.NewRecorder()
+
+			result := checkBasicAuth(w, req, tt.auth)
+
+			if result != tt.expectSuccess {
+				t.Errorf("checkBasicAuth() = %v, want %v", result, tt.expectSuccess)
+			}
+
+			if !tt.expectSuccess {
+				if w.Code != tt.expectStatus {
+					t.Errorf("status = %d, want %d", w.Code, tt.expectStatus)
+				}
+				if header := w.Header().Get("WWW-Authenticate"); header != tt.expectHeader {
+					t.Errorf("WWW-Authenticate = %q, want %q", header, tt.expectHeader)
+				}
+			}
+		})
+	}
+}
+
+func TestHandler_BasicAuth_DockerRoute(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	// Add a route with basic auth
+	backend := &docker.Backend{
+		ContainerID:   "auth-test",
+		ContainerName: "auth-test",
+		ServiceName:   "auth-test",
+		Host:          "127.0.0.1",
+		Port:          59997, // Non-existent port (for testing auth only)
+		Hostname:      "auth.localhost",
+		BasicAuth: &config.BasicAuth{
+			User:  "admin",
+			Pass:  "secret",
+			Realm: "Admin Area",
+		},
+	}
+	router.AddBackend(backend)
+
+	tests := []struct {
+		name         string
+		user         string
+		pass         string
+		expectStatus int
+	}{
+		{
+			name:         "no credentials",
+			user:         "",
+			pass:         "",
+			expectStatus: http.StatusUnauthorized,
+		},
+		{
+			name:         "wrong credentials",
+			user:         "wrong",
+			pass:         "wrong",
+			expectStatus: http.StatusUnauthorized,
+		},
+		{
+			name:         "correct credentials (backend unavailable)",
+			user:         "admin",
+			pass:         "secret",
+			expectStatus: http.StatusBadGateway, // Auth passes, but backend is unavailable
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "https://auth.localhost/", nil)
+			req.Host = "auth.localhost"
+			if tt.user != "" || tt.pass != "" {
+				req.SetBasicAuth(tt.user, tt.pass)
+			}
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			if w.Code != tt.expectStatus {
+				t.Errorf("status = %d, want %d", w.Code, tt.expectStatus)
+			}
+
+			if tt.expectStatus == http.StatusUnauthorized {
+				if header := w.Header().Get("WWW-Authenticate"); header != `Basic realm="Admin Area"` {
+					t.Errorf("WWW-Authenticate = %q, want %q", header, `Basic realm="Admin Area"`)
+				}
+			}
+		})
 	}
 }

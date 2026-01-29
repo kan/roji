@@ -10,14 +10,17 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/kan/roji/config"
 )
 
 // StaticBackend represents a static file hosting configuration
 type StaticBackend struct {
-	Hostname      string // Full hostname (e.g., "docs.dev.localhost")
-	Root          string // Absolute path to root directory
-	Index         bool   // Enable directory listing
-	DashboardHost string // Dashboard hostname for footer link
+	Hostname      string            // Full hostname (e.g., "docs.dev.localhost")
+	Root          string            // Absolute path to root directory
+	Index         bool              // Enable directory listing
+	DashboardHost string            // Dashboard hostname for footer link
+	BasicAuth     *config.BasicAuth // Basic authentication (optional)
 }
 
 // ServeStaticFile serves a static file from the given root directory
