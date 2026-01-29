@@ -88,6 +88,9 @@ type StatusConfig struct {
 	HTTPSPort     int
 }
 
+// ConfigReloadFunc is a callback function to reload configuration
+type ConfigReloadFunc func() error
+
 // Handler is the main HTTP handler for the reverse proxy
 type Handler struct {
 	router        *Router
@@ -97,6 +100,7 @@ type Handler struct {
 	baseDomain    string // base domain (e.g., "dev.localhost")
 	statusConfig  *StatusConfig
 	projectStore  *project.Store
+	reloadConfig  ConfigReloadFunc // callback to reload config
 }
 
 // NewHandler creates a new proxy handler
@@ -110,6 +114,11 @@ func NewHandler(router *Router, dockerClient *docker.Client, dashboardHost strin
 		statusConfig:  statusConfig,
 		projectStore:  projectStore,
 	}
+}
+
+// SetConfigReloader sets the callback function for reloading configuration
+func (h *Handler) SetConfigReloader(fn ConfigReloadFunc) {
+	h.reloadConfig = fn
 }
 
 // ServeHTTP implements http.Handler
@@ -182,6 +191,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.serveLogsExport(w, r)
 			return
 		}
+		// Config reload endpoint
+		if r.URL.Path == "/_api/config/reload" {
+			h.serveConfigReload(w, r)
+			return
+		}
 		// Static assets (petite-vue.min.js, etc.)
 		if strings.HasPrefix(r.URL.Path, "/_assets/") {
 			h.serveAsset(w, r)
@@ -191,7 +205,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up route
+	// Check for static site route first
+	staticRoute := h.router.LookupStatic(hostname)
+	if staticRoute != nil {
+		h.serveStaticSite(w, r, staticRoute, hostname, startTime)
+		return
+	}
+
+	// Look up Docker route
 	route := h.router.Lookup(hostname, r.URL.Path)
 	if route == nil {
 		h.handleNotFound(w, r, hostname)
@@ -622,6 +643,39 @@ func (h *Handler) serveLogsExport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) serveConfigReload(w http.ResponseWriter, r *http.Request) {
+	// Only allow POST method
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check if reload function is set
+	if h.reloadConfig == nil {
+		http.Error(w, "Config reload not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Reload configuration
+	if err := h.reloadConfig(); err != nil {
+		slog.Error("failed to reload config", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	slog.Info("configuration reloaded")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "reloaded",
+	})
+}
+
 func (h *Handler) writeLogsCSV(w http.ResponseWriter, logs []RequestLog) {
 	// Write CSV header
 	fmt.Fprintln(w, "id,timestamp,method,host,path,status,duration_ms,service,is_mock")
@@ -834,6 +888,47 @@ func (h *Handler) serveMockResponse(w http.ResponseWriter, r *http.Request, mock
 		Service:   route.Backend.ServiceName,
 		IsMock:    true,
 	})
+}
+
+// serveStaticSite serves static files from a configured directory
+func (h *Handler) serveStaticSite(w http.ResponseWriter, r *http.Request, route *Route, hostname string, startTime time.Time) {
+	// Create a response recorder to capture the status code
+	rw := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+
+	// Serve the static file
+	ServeStaticFile(rw, r, route.StaticBackend.Root, route.StaticBackend.Index, h.dashboardHost)
+
+	// Log the request
+	duration := time.Since(startTime)
+	slog.Info("request",
+		"method", r.Method,
+		"host", hostname,
+		"path", r.URL.Path,
+		"status", rw.statusCode,
+		"duration", duration.Round(time.Millisecond),
+		"target", "static")
+
+	// Add to log buffer
+	h.logBuffer.Add(RequestLog{
+		Timestamp: startTime,
+		Method:    r.Method,
+		Host:      hostname,
+		Path:      r.URL.Path,
+		Status:    rw.statusCode,
+		Duration:  duration.Milliseconds(),
+		Service:   "static",
+	})
+}
+
+// statusRecorder wraps http.ResponseWriter to capture the status code
+type statusRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.statusCode = code
+	sr.ResponseWriter.WriteHeader(code)
 }
 
 // RedirectHandler redirects HTTP to HTTPS

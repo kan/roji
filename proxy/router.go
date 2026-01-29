@@ -26,9 +26,10 @@ type Subscriber struct {
 
 // Route represents a single route configuration
 type Route struct {
-	Hostname   string
-	PathPrefix string
-	Backend    *docker.Backend
+	Hostname      string
+	PathPrefix    string
+	Backend       *docker.Backend
+	StaticBackend *StaticBackend // For static file hosting (mutually exclusive with Backend)
 }
 
 // Router manages routes and provides thread-safe access
@@ -39,6 +40,9 @@ type Router struct {
 	// For path-based routing: hostname -> []*Route (sorted by path length desc)
 	pathRoutes map[string][]*Route
 
+	// Static file hosting routes
+	staticRoutes map[string]*Route // key: hostname (lowercase)
+
 	// Pub/Sub for SSE subscribers
 	subMu       sync.RWMutex
 	subscribers map[*Subscriber]struct{}
@@ -47,9 +51,10 @@ type Router struct {
 // NewRouter creates a new route manager
 func NewRouter() *Router {
 	return &Router{
-		routes:      make(map[string]*Route),
-		pathRoutes:  make(map[string][]*Route),
-		subscribers: make(map[*Subscriber]struct{}),
+		routes:       make(map[string]*Route),
+		pathRoutes:   make(map[string][]*Route),
+		staticRoutes: make(map[string]*Route),
+		subscribers:  make(map[*Subscriber]struct{}),
 	}
 }
 
@@ -180,6 +185,74 @@ func (r *Router) RemoveProject(projectName string) {
 	go r.notifySubscribers()
 }
 
+// AddStaticSite adds a static file hosting route
+func (r *Router) AddStaticSite(site *StaticBackend) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	hostname := strings.ToLower(site.Hostname)
+
+	// Check for conflict with Docker routes
+	if existing, ok := r.routes[hostname]; ok {
+		slog.Warn("static site conflicts with Docker route, Docker route takes priority",
+			"hostname", hostname,
+			"docker_service", existing.Backend.ServiceName,
+			"static_root", site.Root)
+		return
+	}
+
+	route := &Route{
+		Hostname:      hostname,
+		StaticBackend: site,
+	}
+
+	r.staticRoutes[hostname] = route
+
+	slog.Info("static site added",
+		"hostname", site.Hostname,
+		"root", site.Root)
+
+	// Notify SSE subscribers
+	go r.notifySubscribers()
+}
+
+// RemoveStaticSite removes a static file hosting route
+func (r *Router) RemoveStaticSite(hostname string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	hostname = strings.ToLower(hostname)
+	if route, ok := r.staticRoutes[hostname]; ok {
+		delete(r.staticRoutes, hostname)
+		slog.Info("static site removed",
+			"hostname", route.Hostname)
+
+		// Notify SSE subscribers
+		go r.notifySubscribers()
+	}
+}
+
+// LookupStatic finds a static route for a given hostname
+func (r *Router) LookupStatic(hostname string) *Route {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	hostname = strings.ToLower(hostname)
+	return r.staticRoutes[hostname]
+}
+
+// ClearStaticSites removes all static site routes
+func (r *Router) ClearStaticSites() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.staticRoutes = make(map[string]*Route)
+	slog.Info("all static sites cleared")
+
+	// Notify SSE subscribers
+	go r.notifySubscribers()
+}
+
 // Lookup finds a route for a given hostname and path
 func (r *Router) Lookup(hostname, path string) *Route {
 	r.mu.RLock()
@@ -243,6 +316,17 @@ func (r *Router) ListRoutes() []RouteInfo {
 		}
 	}
 
+	// Add static routes
+	for _, route := range r.staticRoutes {
+		infos = append(infos, RouteInfo{
+			Hostname:     route.Hostname,
+			Target:       route.StaticBackend.Root,
+			ServiceName:  "static",
+			IsStatic:     true,
+			IndexEnabled: route.StaticBackend.Index,
+		})
+	}
+
 	// Sort by hostname for consistent output
 	sort.Slice(infos, func(i, j int) bool {
 		if infos[i].Hostname != infos[j].Hostname {
@@ -259,11 +343,13 @@ type RouteInfo struct {
 	Hostname      string `json:"hostname"`
 	PathPrefix    string `json:"pathPrefix,omitempty"`
 	Target        string `json:"target"`
-	ContainerID   string `json:"containerId"`
-	ContainerName string `json:"containerName"`
+	ContainerID   string `json:"containerId,omitempty"`
+	ContainerName string `json:"containerName,omitempty"`
 	ServiceName   string `json:"serviceName"`
 	Warning       string `json:"warning,omitempty"`
 	Network       string `json:"network,omitempty"`
+	IsStatic      bool   `json:"isStatic,omitempty"`
+	IndexEnabled  bool   `json:"indexEnabled,omitempty"` // For static sites: directory listing enabled
 }
 
 func (ri RouteInfo) String() string {

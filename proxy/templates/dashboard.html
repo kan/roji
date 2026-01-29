@@ -82,6 +82,28 @@
             border-radius: 4px;
             font-size: 0.8rem;
         }
+        .service-name.static {
+            background: var(--bg-badge);
+            color: var(--link-color);
+        }
+        .static-badge {
+            background: var(--bg-input);
+            color: var(--link-color);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .static-badge .index-indicator {
+            font-size: 0.7rem;
+            opacity: 0.8;
+        }
+        .static-badge.index-off {
+            background: var(--bg-badge);
+            color: var(--text-tertiary);
+        }
         .network-name {
             background: var(--bg-badge);
             color: var(--text-secondary);
@@ -389,6 +411,33 @@
             border-color: var(--warning-border);
             color: var(--warning-text);
         }
+        /* Reload config button */
+        .reload-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .reload-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--link-color);
+            color: var(--link-color);
+        }
+        .reload-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .reload-btn.reloading {
+            border-color: var(--link-color);
+            color: var(--link-color);
+        }
         /* Confirm dialog */
         .confirm-overlay {
             position: fixed;
@@ -680,6 +729,16 @@
                 <input type="checkbox" v-model="notificationsEnabled" @change="toggleNotifications">
                 Notifications
             </label>
+            <button
+                class="reload-btn"
+                :class="{ reloading: reloadingConfig }"
+                :disabled="reloadingConfig"
+                @click="reloadConfig"
+                title="Reload configuration from file"
+            >
+                <span v-if="reloadingConfig">&#x21BB; Reloading...</span>
+                <span v-else>&#x21BB; Reload Config</span>
+            </button>
         </p>
 
         <div class="routes">
@@ -695,11 +754,15 @@
                             {{route.hostname}}{{route.pathPrefix || ''}}
                         </a>
                     </div>
-                    <div v-if="route.target" class="route-target">&#x2192; {{route.target}}</div>
+                    <div v-if="route.target" class="route-target">
+                        <span v-if="route.isStatic">&#x1F4C1;</span>
+                        &#x2192; {{route.target}}
+                    </div>
                     <div v-if="route.warning" class="warning-badge">&#x26A0;&#xFE0F; {{route.warning}}</div>
                 </div>
                 <div class="route-info">
                     <button
+                        v-if="!route.isStatic"
                         class="restart-btn"
                         :class="{ restarting: restartingContainer === route.containerId }"
                         :disabled="restartingContainer === route.containerId"
@@ -709,8 +772,13 @@
                         <span v-if="restartingContainer === route.containerId">&#x21BB; Restarting...</span>
                         <span v-else>&#x21BB; Restart</span>
                     </button>
+                    <span v-if="route.isStatic" :class="['static-badge', route.indexEnabled ? 'index-on' : 'index-off']" :title="route.indexEnabled ? 'Directory listing enabled' : 'Directory listing disabled'">
+                        &#x1F4C1; static
+                        <span v-if="route.indexEnabled" class="index-indicator">&#x1F4CB;</span>
+                        <span v-else class="index-indicator">&#x1F512;</span>
+                    </span>
                     <span v-if="route.network" class="network-name">{{route.network}}</span>
-                    <span class="service-name">{{route.serviceName}}</span>
+                    <span :class="['service-name', route.isStatic ? 'static' : '']">{{route.serviceName}}</span>
                 </div>
             </div>
         </div>
@@ -850,6 +918,7 @@
             logsPaused: false,
             logFilter: { host: '', path: '', status: '' },
             logsEventSource: null,
+            reloadingConfig: false,
 
             init() {
                 // Initialize theme
@@ -1104,6 +1173,54 @@
                         this.restartingContainer = null;
                     }, 1000);
                 }
+            },
+
+            async reloadConfig() {
+                this.reloadingConfig = true;
+
+                try {
+                    const resp = await fetch('/_api/config/reload', {
+                        method: 'POST'
+                    });
+
+                    if (!resp.ok) {
+                        const error = await resp.text();
+                        throw new Error(error);
+                    }
+
+                    // Refresh routes and projects immediately
+                    await this.refreshDashboard();
+
+                    // Show success notification
+                    if (this.notificationsEnabled && Notification.permission === 'granted') {
+                        this.notify('Config reloaded', 'Static sites configuration has been updated');
+                    }
+                } catch (e) {
+                    console.error('Failed to reload config:', e);
+                    alert(`Failed to reload config: ${e.message}`);
+                } finally {
+                    setTimeout(() => {
+                        this.reloadingConfig = false;
+                    }, 500);
+                }
+            },
+
+            async refreshDashboard() {
+                // Fetch routes
+                try {
+                    const routesResp = await fetch('/_api/routes');
+                    if (routesResp.ok) {
+                        this.routes = await routesResp.json();
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch routes:', e);
+                }
+
+                // Fetch projects
+                await this.fetchProjects();
+
+                // Fetch build info (for networks)
+                await this.fetchBuildInfo();
             },
 
             // Logs functionality

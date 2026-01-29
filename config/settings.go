@@ -10,17 +10,33 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// StaticSite represents a static file hosting configuration
+type StaticSite struct {
+	Host  string `yaml:"host"`            // Hostname or subdomain (e.g., "docs" or "docs.example.com")
+	Root  string `yaml:"root"`            // Root directory path (supports ~ expansion)
+	Index *bool  `yaml:"index,omitempty"` // Enable directory listing (default: true, set false to disable)
+}
+
+// IndexEnabled returns whether directory listing is enabled (default: true)
+func (s *StaticSite) IndexEnabled() bool {
+	if s.Index == nil {
+		return true // default is enabled
+	}
+	return *s.Index
+}
+
 // Settings holds all configuration settings for roji
 type Settings struct {
-	Network   string `yaml:"network"`    // Docker network name(s) (comma-separated)
-	Domain    string `yaml:"domain"`     // Base domain (e.g., dev.localhost)
-	HTTPPort  int    `yaml:"http_port"`  // HTTP port (for redirect)
-	HTTPSPort int    `yaml:"https_port"` // HTTPS port
-	CertsDir  string `yaml:"certs_dir"`  // Directory for TLS certificates
-	DataDir   string `yaml:"data_dir"`   // Directory for persistent data
-	Dashboard string `yaml:"dashboard"`  // Dashboard hostname
-	LogLevel  string `yaml:"log_level"`  // Log level (debug, info, warn, error)
-	AutoCert  bool   `yaml:"auto_cert"`  // Auto-generate certificates
+	Network     string       `yaml:"network"`               // Docker network name(s) (comma-separated)
+	Domain      string       `yaml:"domain"`                // Base domain (e.g., dev.localhost)
+	HTTPPort    int          `yaml:"http_port"`             // HTTP port (for redirect)
+	HTTPSPort   int          `yaml:"https_port"`            // HTTPS port
+	CertsDir    string       `yaml:"certs_dir"`             // Directory for TLS certificates
+	DataDir     string       `yaml:"data_dir"`              // Directory for persistent data
+	Dashboard   string       `yaml:"dashboard"`             // Dashboard hostname
+	LogLevel    string       `yaml:"log_level"`             // Log level (debug, info, warn, error)
+	AutoCert    bool         `yaml:"auto_cert"`             // Auto-generate certificates
+	StaticSites []StaticSite `yaml:"static_sites,omitempty"` // Static file hosting sites
 }
 
 // Defaults returns settings with default values
@@ -103,10 +119,10 @@ func (s *Settings) loadFromFile(path string) error {
 		s.HTTPSPort = fileSettings.HTTPSPort
 	}
 	if _, ok := rawMap["certs_dir"]; ok {
-		s.CertsDir = expandPath(fileSettings.CertsDir)
+		s.CertsDir = ExpandPath(fileSettings.CertsDir)
 	}
 	if _, ok := rawMap["data_dir"]; ok {
-		s.DataDir = expandPath(fileSettings.DataDir)
+		s.DataDir = ExpandPath(fileSettings.DataDir)
 	}
 	if _, ok := rawMap["dashboard"]; ok {
 		s.Dashboard = fileSettings.Dashboard
@@ -116,6 +132,13 @@ func (s *Settings) loadFromFile(path string) error {
 	}
 	if _, ok := rawMap["auto_cert"]; ok {
 		s.AutoCert = fileSettings.AutoCert
+	}
+	if _, ok := rawMap["static_sites"]; ok {
+		// Expand paths for static sites
+		for i := range fileSettings.StaticSites {
+			fileSettings.StaticSites[i].Root = ExpandPath(fileSettings.StaticSites[i].Root)
+		}
+		s.StaticSites = fileSettings.StaticSites
 	}
 
 	return nil
@@ -140,10 +163,10 @@ func (s *Settings) applyEnvVars() {
 		}
 	}
 	if v := os.Getenv("ROJI_CERTS_DIR"); v != "" {
-		s.CertsDir = expandPath(v)
+		s.CertsDir = ExpandPath(v)
 	}
 	if v := os.Getenv("ROJI_DATA_DIR"); v != "" {
-		s.DataDir = expandPath(v)
+		s.DataDir = ExpandPath(v)
 	}
 	if v := os.Getenv("ROJI_DASHBOARD"); v != "" {
 		s.Dashboard = v
@@ -175,10 +198,10 @@ func (s *Settings) applyOverrides(overrides map[string]any) {
 		s.HTTPSPort = v
 	}
 	if v, ok := overrides["certs_dir"].(string); ok {
-		s.CertsDir = expandPath(v)
+		s.CertsDir = ExpandPath(v)
 	}
 	if v, ok := overrides["data_dir"].(string); ok {
-		s.DataDir = expandPath(v)
+		s.DataDir = ExpandPath(v)
 	}
 	if v, ok := overrides["dashboard"].(string); ok {
 		s.Dashboard = v
@@ -239,8 +262,8 @@ func (s *Settings) SaveToFile(path string) error {
 	return nil
 }
 
-// expandPath expands ~ to home directory
-func expandPath(path string) string {
+// ExpandPath expands ~ to home directory
+func ExpandPath(path string) string {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err == nil {

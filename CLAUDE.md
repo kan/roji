@@ -114,6 +114,7 @@ roji/
 | `/_api/health` | ヘルスチェック |
 | `/_api/status` | 詳細ステータス（証明書期限等） |
 | `/_api/containers/{id}/restart` | コンテナ再起動 |
+| `/_api/config/reload` | 設定ファイル再読み込み（静的サイト更新） |
 
 ## 実装済み機能（v0.1.0 → v0.8.0）
 
@@ -386,25 +387,35 @@ Run 'roji doctor --fix' to auto-fix where possible
 - `project.Store`に保存済みの`working_dir`と`config_files`を使用
 - `docker compose -f <files> -p <project> <command>` を実行
 
-#### 静的ファイルホスティング（httpd機能）
+#### 静的ファイルホスティング（httpd機能）✅
 
 **設定ファイルで定義:**
 
 ```yaml
 # ~/.config/roji/config.yaml
 static_sites:
-  - host: docs.dev.localhost
+  - host: docs                    # -> docs.{ROJI_DOMAIN} (例: docs.dev.localhost)
     root: ~/projects/docs/build
-  - host: assets.dev.localhost
-    root: /var/www/assets
+    # index: true                 # デフォルト: ディレクトリ一覧有効
+  - host: private.example.com     # ドットを含む場合はFQDNとして使用
+    root: /var/www/private
+    index: false                  # ディレクトリ一覧を無効化
 ```
 
-**または新コマンド:**
+**機能:**
+- ホスト名解決: ドット(`.`)なし → `{host}.{ROJI_DOMAIN}` に展開
+- ディレクトリ一覧: `index: true`（デフォルト）で有効、Apache/nginx風の一覧表示
+- index.html自動配信: ディレクトリアクセス時
+- ディレクトリトラバーサル防止: `path.Clean()` + root内チェック
+- ダークモード対応: システム設定連動
+- ダッシュボード連携: 設定再読み込み、index状態表示
 
-```bash
-# 一時的にホスト（rojiサーバーに登録）
-roji serve ~/projects/docs --host docs.dev.localhost
-```
+**ダッシュボード機能:**
+- 「Reload Config」ボタンで設定ファイルを再読み込み（`/_api/config/reload`）
+- 静的サイトのindex状態を📋（有効）/🔒（無効）で表示
+
+**未実装（後続で検討）:**
+- `roji serve` コマンド（一時的なホスティング）
 
 #### BASIC認証
 

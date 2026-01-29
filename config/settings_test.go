@@ -220,9 +220,9 @@ func TestExpandPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := expandPath(tt.input)
+		got := ExpandPath(tt.input)
 		if got != tt.expected {
-			t.Errorf("expandPath(%q): expected %q, got %q", tt.input, tt.expected, got)
+			t.Errorf("ExpandPath(%q): expected %q, got %q", tt.input, tt.expected, got)
 		}
 	}
 }

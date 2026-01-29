@@ -109,6 +109,12 @@ func runServer(cmd *cobra.Command, args []string) error {
 		defer logFile.Close()
 	}
 
+	// Determine actual config path
+	actualConfigPath := configFile
+	if actualConfigPath == "" {
+		actualConfigPath = config.ConfigFilePath()
+	}
+
 	cfg := Config{
 		Networks:      settings.Networks(),
 		BaseDomain:    settings.Domain,
@@ -119,6 +125,8 @@ func runServer(cmd *cobra.Command, args []string) error {
 		DashboardHost: settings.Dashboard,
 		LogLevel:      settings.LogLevel,
 		DataDir:       settings.DataDir,
+		StaticSites:   settings.StaticSites,
+		ConfigPath:    actualConfigPath,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
