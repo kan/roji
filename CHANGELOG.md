@@ -31,11 +31,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Linux/WSL: `~/.local/share/roji/roji.log`
   - macOS: `~/Library/Logs/roji.log`
   - Auto-rotation at 10MB
+- **Config File Validation**: Comprehensive validation on load and in doctor
+  - Unknown keys warning (typo detection)
+  - Type validation for all fields
+  - Missing required fields check
+  - `roji doctor` shows config validation results
+- **New Native Mode Installer**: `install.sh` now installs native binary
+  - Downloads pre-built binary from GitHub Releases
+  - Interactive install location selection (`~/.local/bin` or `/usr/local/bin`)
+  - Auto-detects and migrates from Docker Mode
+  - Runs `doctor --fix`, `ca install`, and `service install` automatically
+  - Legacy Docker installer available as `install-docker.sh`
 
 ### Changed
 
 - Dashboard now displays authentication status for each route
 - Static site index status shown in dashboard (📋 enabled / 🔒 disabled)
+- `roji doctor` port check now detects if roji itself is using the ports
 
 ## [0.8.0] - 2026-01-24
 

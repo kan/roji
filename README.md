@@ -47,32 +47,36 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | bash
 ```
 
 This will:
-- Check Docker and Docker Compose prerequisites
-- Create the `roji` network
-- Install roji to `~/.roji` (customize with `ROJI_INSTALL_DIR`)
-- Start roji with default settings
-- Generate TLS certificates automatically
-- Display CA certificate installation instructions
+- Download the roji binary for your platform (Linux/macOS, x86_64/arm64)
+- Install to `~/.local/bin` by default (interactive prompt for location)
+- Run `roji doctor --fix` to set up the environment
+- Install CA certificate to system trust store
+- Register and start roji as a system service
 
-**Custom installation directory:**
+**Installation options:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | ROJI_INSTALL_DIR=/opt/roji bash
+# Install to /usr/local/bin (system-wide)
+curl -fsSL ... | bash -s -- --global
+
+# Install to ~/.local/bin (default, no sudo for install)
+curl -fsSL ... | bash -s -- --local
+
+# Skip service installation (manual start with `sudo roji`)
+curl -fsSL ... | bash -s -- --no-service
 ```
 
 ### Upgrading
 
-The install script automatically detects existing installations and offers to upgrade:
+The install script automatically detects existing installations:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | bash
 ```
 
-When an existing installation is detected:
-- **Interactive mode**: Choose to upgrade, keep current version, or reinstall
-- **Piped mode** (`curl | bash`): Automatically upgrades to the latest version
-
-The script backs up your configuration before upgrading and provides rollback instructions.
+- **Same version**: Shows "already up to date" and exits
+- **Newer available**: Prompts to upgrade (auto-upgrades in piped mode)
+- **Docker Mode detected**: Offers migration to Native Mode
 
 **Force upgrade (skip prompts):**
 
@@ -80,15 +84,12 @@ The script backs up your configuration before upgrading and provides rollback in
 curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | bash -s -- --upgrade
 ```
 
-### Native Mode (v0.8.0+)
+### Manual Installation
 
-Run roji as a standalone binary without Docker:
+Download from [GitHub Releases](https://github.com/kan/roji/releases) or build from source:
 
 ```bash
-# Download from GitHub Releases
-# https://github.com/kan/roji/releases
-
-# Or build from source
+# Build from source
 git clone https://github.com/kan/roji.git
 cd roji
 make build
@@ -99,7 +100,11 @@ sudo ./bin/roji doctor --fix
 # Install CA certificate to system trust store
 sudo ./bin/roji ca install
 
-# Start the server (requires sudo for ports 80/443)
+# Option 1: Run as service (recommended)
+sudo ./bin/roji service install
+sudo ./bin/roji service start
+
+# Option 2: Run in foreground
 sudo ./bin/roji
 ```
 
@@ -107,35 +112,25 @@ Configuration is stored in `~/.config/roji/config.yaml`. See [CLI Commands](#cli
 
 ### Docker Mode (Legacy)
 
-If you prefer manual setup or want to contribute to development:
-
-#### 1. Clone the repository
+For Docker-based installation, use the legacy installer:
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install-docker.sh | bash
+```
+
+This installs roji as a Docker container with docker-compose. Note that Native Mode (above) is now the recommended approach.
+
+**Manual Docker setup:**
+
+```bash
+# Clone repository
 git clone https://github.com/kan/roji.git
 cd roji
-```
 
-#### 2. Create the shared network
-
-```bash
+# Create network and start
 docker network create roji
-```
-
-#### 3. Copy environment file (optional)
-
-```bash
-cp .env.example .env
-# Edit .env to customize settings if needed
-```
-
-#### 4. Start roji
-
-```bash
 docker compose up -d
 ```
-
-The repository includes a production-ready `docker-compose.yml` that uses the latest published image.
 
 **For development**: Use `docker compose -f docker-compose.dev.yml up` for hot-reloading with [Air](https://github.com/cosmtrek/air).
 

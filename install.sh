@@ -1,12 +1,15 @@
 #!/bin/bash
 set -e
 
-# roji installation script
+# roji installation script (Native Mode)
 # Usage: curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
 #
 # Options:
-#   --upgrade    Force upgrade mode (skip version check prompt)
-#   --reinstall  Force fresh installation (removes existing installation)
+#   --upgrade       Force upgrade mode
+#   --local         Install to ~/.local/bin (default)
+#   --global        Install to /usr/local/bin
+#   --no-service    Skip service installation
+#   --migrate       Migrate from Docker Mode
 
 # Color codes for output
 RED='\033[0;31m'
@@ -17,22 +20,34 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-INSTALL_DIR="${ROJI_INSTALL_DIR:-$HOME/.roji}"
-NETWORK_NAME="roji"
-DOMAIN="dev.localhost"
-DASHBOARD_HOST="roji.dev.localhost"
 GITHUB_REPO="kan/roji"
+LOCAL_BIN="$HOME/.local/bin"
+GLOBAL_BIN="/usr/local/bin"
+DOCKER_INSTALL_DIR="$HOME/.roji"
+
+# Default options
+INSTALL_MODE=""  # Will be set interactively or via flags
+FORCE_UPGRADE=false
+SKIP_SERVICE=false
+MIGRATE_DOCKER=false
 
 # Parse command line arguments
-FORCE_UPGRADE=false
-FORCE_REINSTALL=false
 for arg in "$@"; do
     case $arg in
         --upgrade)
             FORCE_UPGRADE=true
             ;;
-        --reinstall)
-            FORCE_REINSTALL=true
+        --local)
+            INSTALL_MODE="local"
+            ;;
+        --global)
+            INSTALL_MODE="global"
+            ;;
+        --no-service)
+            SKIP_SERVICE=true
+            ;;
+        --migrate)
+            MIGRATE_DOCKER=true
             ;;
     esac
 done
@@ -59,26 +74,67 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}  🛤️  ${BLUE}roji${NC} - Reverse proxy for local development           ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}      Native Mode Installation                               ${CYAN}║${NC}"
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
 
-# Check if Docker is installed and running
-check_docker() {
-    print_info "Checking Docker installation..."
+# Detect OS and architecture
+# Returns format matching GoReleaser output: Linux_x86_64, Darwin_arm64, etc.
+detect_platform() {
+    local os=""
+    local arch=""
 
+    case "$(uname -s)" in
+        Darwin*)
+            os="Darwin"
+            ;;
+        Linux*)
+            os="Linux"
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            os="Windows"
+            ;;
+        *)
+            print_error "Unsupported operating system: $(uname -s)"
+            exit 1
+            ;;
+    esac
+
+    case "$(uname -m)" in
+        x86_64|amd64)
+            arch="x86_64"
+            ;;
+        arm64|aarch64)
+            arch="arm64"
+            ;;
+        *)
+            print_error "Unsupported architecture: $(uname -m)"
+            exit 1
+            ;;
+    esac
+
+    echo "${os}_${arch}"
+}
+
+# Check if running in WSL
+is_wsl() {
+    if grep -qEi "(Microsoft|WSL)" /proc/version 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+# Check if Docker is installed
+check_docker() {
     if ! command -v docker &> /dev/null; then
         print_error "Docker is not installed"
         echo ""
-        echo "Please install Docker first:"
-        echo "  https://docs.docker.com/get-docker/"
+        echo "roji requires Docker to discover containers."
+        echo "Please install Docker first: https://docs.docker.com/get-docker/"
         echo ""
         exit 1
     fi
-
-    print_success "Docker is installed"
-
-    print_info "Checking if Docker daemon is running..."
 
     if ! docker info &> /dev/null; then
         print_error "Docker daemon is not running"
@@ -88,467 +144,318 @@ check_docker() {
         exit 1
     fi
 
-    print_success "Docker daemon is running"
+    print_success "Docker is available"
 }
 
-# Check if Docker Compose is installed
-check_docker_compose() {
-    print_info "Checking Docker Compose installation..."
-
-    if ! docker compose version &> /dev/null; then
-        print_error "Docker Compose is not installed"
-        echo ""
-        echo "Please install Docker Compose first:"
-        echo "  https://docs.docker.com/compose/install/"
-        echo ""
-        exit 1
+# Check for existing Docker Mode installation
+check_docker_mode() {
+    if [ -f "${DOCKER_INSTALL_DIR}/docker-compose.yml" ]; then
+        return 0
     fi
-
-    print_success "Docker Compose is installed"
+    if docker ps --filter "name=roji" --format "{{.ID}}" 2>/dev/null | grep -q .; then
+        return 0
+    fi
+    return 1
 }
 
-# Check if roji is already installed
-check_existing_installation() {
-    if [ -f "${INSTALL_DIR}/docker-compose.yml" ]; then
-        return 0  # Installation exists
+# Check for existing Native Mode installation
+check_native_mode() {
+    if command -v roji &> /dev/null; then
+        return 0
     fi
-    return 1  # No installation
+    if [ -f "${LOCAL_BIN}/roji" ] || [ -f "${GLOBAL_BIN}/roji" ]; then
+        return 0
+    fi
+    return 1
 }
 
-# Get current installed version
-get_current_version() {
-    local version=""
-
-    # Try to get version from running container
-    if docker ps --filter "name=roji" --format "{{.ID}}" | grep -q .; then
-        version=$(docker inspect roji --format '{{.Config.Image}}' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
+# Get current native version
+get_native_version() {
+    if command -v roji &> /dev/null; then
+        roji version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown"
+    else
+        echo "not installed"
     fi
-
-    # If not running, try to get from docker-compose.yml
-    if [ -z "$version" ] && [ -f "${INSTALL_DIR}/docker-compose.yml" ]; then
-        version=$(grep -oE 'ghcr\.io/kan/roji:[0-9]+\.[0-9]+\.[0-9]+' "${INSTALL_DIR}/docker-compose.yml" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
-    fi
-
-    # Default to "latest" if we can't determine version
-    if [ -z "$version" ]; then
-        version="latest"
-    fi
-
-    echo "$version"
 }
 
 # Get latest version from GitHub
 get_latest_version() {
     local version=""
-
-    # Try to get latest release from GitHub API
     if command -v curl &> /dev/null; then
         version=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep -oE '"tag_name":\s*"v?[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
     fi
-
-    # If can't get from API, use "latest"
     if [ -z "$version" ]; then
         version="latest"
     fi
-
     echo "$version"
 }
 
-# Compare versions (returns 0 if v1 < v2, 1 otherwise)
-version_lt() {
-    local v1="$1"
-    local v2="$2"
-
-    # Handle "latest" specially
-    if [ "$v1" = "latest" ] || [ "$v2" = "latest" ]; then
-        return 1  # Can't compare, assume no upgrade needed
-    fi
-
-    # Compare versions
-    if [ "$v1" = "$v2" ]; then
-        return 1  # Same version
-    fi
-
-    # Use sort -V for version comparison
-    local smaller=$(echo -e "$v1\n$v2" | sort -V | head -n1)
-    if [ "$smaller" = "$v1" ]; then
-        return 0  # v1 < v2
-    fi
-    return 1
-}
-
-# Backup current configuration
-backup_config() {
-    local backup_dir="${INSTALL_DIR}/backups/$(date +%Y%m%d_%H%M%S)"
-
-    print_info "Backing up current configuration..."
-    mkdir -p "$backup_dir"
-
-    if [ -f "${INSTALL_DIR}/docker-compose.yml" ]; then
-        cp "${INSTALL_DIR}/docker-compose.yml" "$backup_dir/"
-    fi
-    if [ -f "${INSTALL_DIR}/.env" ]; then
-        cp "${INSTALL_DIR}/.env" "$backup_dir/"
-    fi
-
-    print_success "Configuration backed up to $backup_dir"
-    echo "$backup_dir"
-}
-
-# Migrate configuration if needed
-migrate_config() {
-    local compose_file="${INSTALL_DIR}/docker-compose.yml"
-    local needs_migration=false
-    local migration_notes=""
-
-    print_info "Checking for configuration updates..."
-
-    # Check for missing data volume
-    if ! grep -q "./data:/data" "$compose_file" 2>/dev/null; then
-        needs_migration=true
-        migration_notes="${migration_notes}\n  - Added data volume for project history"
-    fi
-
-    # Check for missing ROJI_DATA_DIR environment variable
-    if ! grep -q "ROJI_DATA_DIR" "$compose_file" 2>/dev/null; then
-        needs_migration=true
-        migration_notes="${migration_notes}\n  - Added ROJI_DATA_DIR environment variable"
-    fi
-
-    if [ "$needs_migration" = true ]; then
-        print_warning "Configuration migration needed"
-        echo -e "The following changes will be applied:${migration_notes}"
-        echo ""
-
-        # Create data directory
-        mkdir -p "${INSTALL_DIR}/data"
-
-        # Regenerate docker-compose.yml with new settings
-        create_compose_file
-
-        print_success "Configuration migrated successfully"
-    else
-        print_success "Configuration is up to date"
-    fi
-}
-
-# Update image tag in docker-compose.yml
-update_image_tag() {
-    local new_version="$1"
-    local compose_file="${INSTALL_DIR}/docker-compose.yml"
-
-    print_info "Updating image tag to ${new_version}..."
-
-    # Update the image tag
-    if [ "$new_version" = "latest" ]; then
-        sed -i.bak "s|ghcr\.io/kan/roji:[^ ]*|ghcr.io/kan/roji:latest|g" "$compose_file"
-    else
-        sed -i.bak "s|ghcr\.io/kan/roji:[^ ]*|ghcr.io/kan/roji:${new_version}|g" "$compose_file"
-    fi
-    rm -f "${compose_file}.bak"
-
-    print_success "Image tag updated"
-}
-
-# Perform upgrade
-perform_upgrade() {
-    local current_version="$1"
-    local latest_version="$2"
-
+# Migrate from Docker Mode
+migrate_from_docker() {
     echo ""
-    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}  🔄 ${BLUE}Upgrading roji${NC}                                         ${CYAN}║${NC}"
-    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${YELLOW}║${NC}  Docker Mode installation detected                           ${YELLOW}║${NC}"
+    echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "roji now runs as a native binary instead of a Docker container."
+    echo "This provides better performance and easier management."
     echo ""
 
-    echo -e "  Current version: ${YELLOW}${current_version}${NC}"
-    echo -e "  Latest version:  ${GREEN}${latest_version}${NC}"
-    echo ""
-
-    # Backup configuration
-    local backup_dir=$(backup_config)
-
-    # Migrate configuration if needed
-    migrate_config
-
-    # Update image tag
-    update_image_tag "$latest_version"
-
-    # Pull new image
-    print_info "Pulling new image..."
-    cd "${INSTALL_DIR}"
-    docker compose pull
-    print_success "New image pulled"
-
-    # Restart with new image
-    print_info "Restarting roji..."
-    docker compose up -d
-    print_success "roji restarted"
-
-    # Wait for roji to be ready
-    print_info "Waiting for roji to be ready..."
-    sleep 3
-
-    # Check if roji is running
-    if docker ps --filter "name=roji" --filter "status=running" --format "{{.ID}}" | grep -q .; then
+    if [ -t 0 ] && [ "$MIGRATE_DOCKER" != true ]; then
+        echo -e "${CYAN}Options:${NC}"
+        echo "  1. Migrate to Native Mode (recommended)"
+        echo "  2. Keep Docker Mode (exit)"
         echo ""
-        echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║${NC}  🎉 ${BLUE}Upgrade completed successfully!${NC}                        ${GREEN}║${NC}"
-        echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
-        echo ""
-        echo -e "  roji has been upgraded from ${YELLOW}${current_version}${NC} to ${GREEN}${latest_version}${NC}"
-        echo ""
-        echo -e "${CYAN}Dashboard:${NC}"
-        echo -e "  https://${DASHBOARD_HOST}"
-        echo ""
-        echo -e "${CYAN}Rollback instructions:${NC}"
-        echo "  If you encounter issues, you can rollback to the previous version:"
-        echo ""
-        echo "    cd ${INSTALL_DIR}"
-        echo "    cp ${backup_dir}/docker-compose.yml ."
-        echo "    docker compose pull"
-        echo "    docker compose up -d"
-        echo ""
-    else
-        print_error "roji failed to start after upgrade"
-        echo ""
-        echo -e "${YELLOW}Rollback instructions:${NC}"
-        echo "  To restore the previous version:"
-        echo ""
-        echo "    cd ${INSTALL_DIR}"
-        echo "    cp ${backup_dir}/docker-compose.yml ."
-        echo "    docker compose pull"
-        echo "    docker compose up -d"
-        echo ""
-        exit 1
-    fi
-}
+        read -p "Choose an option [1]: " choice
+        choice=${choice:-1}
 
-# Handle existing installation
-handle_existing_installation() {
-    local current_version=$(get_current_version)
-    local latest_version=$(get_latest_version)
-
-    echo ""
-    echo -e "${YELLOW}Existing roji installation detected at ${INSTALL_DIR}${NC}"
-    echo ""
-    echo -e "  Current version: ${YELLOW}${current_version}${NC}"
-    echo -e "  Latest version:  ${GREEN}${latest_version}${NC}"
-    echo ""
-
-    # Check if force reinstall requested
-    if [ "$FORCE_REINSTALL" = true ]; then
-        print_warning "Force reinstall requested"
-        echo ""
-        print_info "Stopping and removing existing installation..."
-        cd "${INSTALL_DIR}"
-        docker compose down 2>/dev/null || true
-        rm -f docker-compose.yml .env
-        return 1  # Proceed with fresh installation
-    fi
-
-    # Check if upgrade is needed
-    if version_lt "$current_version" "$latest_version"; then
-        if [ "$FORCE_UPGRADE" = true ]; then
-            perform_upgrade "$current_version" "$latest_version"
-            exit 0
-        else
-            echo "A newer version is available!"
+        if [ "$choice" != "1" ]; then
             echo ""
-            echo -e "${CYAN}Options:${NC}"
-            echo "  1. Upgrade to latest version"
-            echo "  2. Keep current version"
-            echo "  3. Reinstall from scratch"
+            print_info "Keeping Docker Mode. No changes made."
             echo ""
-
-            # Check if running interactively
-            if [ -t 0 ]; then
-                read -p "Choose an option [1]: " choice
-                choice=${choice:-1}
-
-                case $choice in
-                    1)
-                        perform_upgrade "$current_version" "$latest_version"
-                        exit 0
-                        ;;
-                    2)
-                        echo ""
-                        print_success "Keeping current version"
-                        echo -e "  roji is running at https://${DASHBOARD_HOST}"
-                        echo ""
-                        exit 0
-                        ;;
-                    3)
-                        print_warning "Reinstalling from scratch..."
-                        echo ""
-                        print_info "Stopping and removing existing installation..."
-                        cd "${INSTALL_DIR}"
-                        docker compose down 2>/dev/null || true
-                        rm -f docker-compose.yml .env
-                        return 1  # Proceed with fresh installation
-                        ;;
-                    *)
-                        print_error "Invalid option"
-                        exit 1
-                        ;;
-                esac
-            else
-                # Non-interactive mode: just upgrade
-                perform_upgrade "$current_version" "$latest_version"
-                exit 0
-            fi
-        fi
-    else
-        echo "roji is already up to date."
-        echo ""
-
-        # Check if container is running
-        if docker ps --filter "name=roji" --filter "status=running" --format "{{.ID}}" | grep -q .; then
-            print_success "roji is running at https://${DASHBOARD_HOST}"
-        else
-            print_warning "roji is not running"
-            echo ""
-            echo "To start roji:"
-            echo "  cd ${INSTALL_DIR}"
+            echo "To manage your Docker Mode installation:"
+            echo "  cd ${DOCKER_INSTALL_DIR}"
             echo "  docker compose up -d"
-        fi
-        echo ""
-
-        if [ "$FORCE_REINSTALL" != true ]; then
+            echo ""
             exit 0
         fi
     fi
-}
 
-# Create installation directory
-create_install_dir() {
-    print_info "Creating installation directory at ${INSTALL_DIR}..."
+    print_info "Migrating from Docker Mode to Native Mode..."
 
-    mkdir -p "${INSTALL_DIR}"
-    cd "${INSTALL_DIR}"
-
-    print_success "Installation directory created"
-}
-
-# Create roji network
-create_network() {
-    print_info "Creating Docker network '${NETWORK_NAME}'..."
-
-    if docker network inspect "${NETWORK_NAME}" &> /dev/null; then
-        print_warning "Network '${NETWORK_NAME}' already exists, skipping"
+    # Stop Docker container
+    print_info "Stopping Docker container..."
+    if [ -f "${DOCKER_INSTALL_DIR}/docker-compose.yml" ]; then
+        cd "${DOCKER_INSTALL_DIR}"
+        docker compose down 2>/dev/null || true
     else
-        docker network create "${NETWORK_NAME}" > /dev/null
-        print_success "Network '${NETWORK_NAME}' created"
+        docker stop roji 2>/dev/null || true
+        docker rm roji 2>/dev/null || true
     fi
+    print_success "Docker container stopped"
+
+    # Backup certs if they exist
+    if [ -d "${DOCKER_INSTALL_DIR}/certs" ]; then
+        print_info "Backing up certificates..."
+        mkdir -p "$HOME/.local/share/roji"
+        cp -r "${DOCKER_INSTALL_DIR}/certs" "$HOME/.local/share/roji/" 2>/dev/null || true
+        print_success "Certificates backed up to ~/.local/share/roji/certs"
+    fi
+
+    # Rename old directory as backup
+    if [ -d "${DOCKER_INSTALL_DIR}" ]; then
+        local backup_dir="${DOCKER_INSTALL_DIR}.backup.$(date +%Y%m%d_%H%M%S)"
+        print_info "Moving old installation to ${backup_dir}..."
+        mv "${DOCKER_INSTALL_DIR}" "${backup_dir}"
+        print_success "Old installation backed up"
+        echo ""
+        echo "  You can delete it later with: rm -rf ${backup_dir}"
+    fi
+
+    echo ""
+    print_success "Migration preparation complete"
+    echo ""
 }
 
-# Create docker-compose.yml
-create_compose_file() {
-    print_info "Creating docker-compose.yml..."
-
-    # Create directories
-    mkdir -p "${INSTALL_DIR}/certs"
-    mkdir -p "${INSTALL_DIR}/data"
-
-    cat > docker-compose.yml <<'EOF'
-services:
-  roji:
-    image: ghcr.io/kan/roji:latest
-    container_name: roji
-    restart: unless-stopped
-    user: root  # Run as root to access Docker socket and write certificates
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./certs:/certs
-      - ./data:/data
-    environment:
-      - ROJI_NETWORK=roji
-      - ROJI_DOMAIN=dev.localhost
-      - ROJI_CERTS_DIR=/certs
-      - ROJI_DATA_DIR=/data
-      - ROJI_AUTO_CERT=true
-      - ROJI_DASHBOARD=roji.dev.localhost
-      - ROJI_LOG_LEVEL=info
-    networks:
-      - roji
-    labels:
-      - "roji.self=true"
-    healthcheck:
-      test: ["CMD", "/roji", "health"]
-      interval: 30s
-      timeout: 3s
-      start_period: 10s
-      retries: 3
-
-networks:
-  roji:
-    external: true
-EOF
-
-    print_success "docker-compose.yml created"
-}
-
-# Create .env file
-create_env_file() {
-    if [ -f .env ]; then
-        print_warning ".env file already exists, skipping"
+# Select installation directory
+select_install_dir() {
+    # Already set (upgrade or flag)
+    if [ -n "$INSTALL_DIR" ]; then
         return
     fi
 
-    print_info "Creating .env file with default settings..."
+    if [ -n "$INSTALL_MODE" ]; then
+        # Set via flag
+        if [ "$INSTALL_MODE" = "global" ]; then
+            INSTALL_DIR="$GLOBAL_BIN"
+        else
+            INSTALL_DIR="$LOCAL_BIN"
+        fi
+        return
+    fi
 
-    cat > .env <<'EOF'
-# roji Configuration
-ROJI_NETWORK=roji
-ROJI_DOMAIN=dev.localhost
-ROJI_CERTS_DIR=/certs
-ROJI_AUTO_CERT=true
-ROJI_DASHBOARD=dev.localhost
-ROJI_LOG_LEVEL=info
-EOF
+    # Interactive selection
+    if [ -t 0 ]; then
+        echo ""
+        echo -e "${CYAN}Installation location:${NC}"
+        echo ""
+        echo "  1. ~/.local/bin (recommended, no sudo for install)"
+        echo "  2. /usr/local/bin (system-wide, requires sudo)"
+        echo ""
+        read -p "Choose an option [1]: " choice
+        choice=${choice:-1}
 
-    print_success ".env file created"
+        case $choice in
+            2)
+                INSTALL_DIR="$GLOBAL_BIN"
+                INSTALL_MODE="global"
+                ;;
+            *)
+                INSTALL_DIR="$LOCAL_BIN"
+                INSTALL_MODE="local"
+                ;;
+        esac
+    else
+        # Non-interactive: default to local
+        INSTALL_DIR="$LOCAL_BIN"
+        INSTALL_MODE="local"
+    fi
+
+    echo ""
+    print_info "Installing to: ${INSTALL_DIR}"
 }
 
-# Start roji
-start_roji() {
-    print_info "Starting roji..."
+# Download and install binary
+install_binary() {
+    local platform=$(detect_platform)
+    local version=$(get_latest_version)
+    local download_url=""
+    local archive_ext="tar.gz"
+    local tmp_dir=$(mktemp -d)
 
-    # Start the containers (root user will handle permissions)
-    docker compose up -d
+    # Windows uses zip format
+    if [[ "$platform" == Windows* ]]; then
+        archive_ext="zip"
+    fi
 
-    print_success "roji started"
+    print_info "Downloading roji ${version} for ${platform}..."
 
-    # Give roji a moment to generate certificates
-    print_info "Initializing certificates..."
-    sleep 2
+    # Construct download URL
+    if [ "$version" = "latest" ]; then
+        download_url="https://github.com/${GITHUB_REPO}/releases/latest/download/roji_${platform}.${archive_ext}"
+    else
+        download_url="https://github.com/${GITHUB_REPO}/releases/download/v${version}/roji_${platform}.${archive_ext}"
+    fi
+
+    # Download
+    if ! curl -fsSL "$download_url" -o "${tmp_dir}/roji.${archive_ext}"; then
+        print_error "Failed to download roji"
+        echo ""
+        echo "URL: ${download_url}"
+        echo ""
+        rm -rf "$tmp_dir"
+        exit 1
+    fi
+
+    # Extract
+    if [ "$archive_ext" = "zip" ]; then
+        unzip -q "${tmp_dir}/roji.${archive_ext}" -d "$tmp_dir"
+    else
+        tar -xzf "${tmp_dir}/roji.${archive_ext}" -C "$tmp_dir"
+    fi
+
+    # Create install directory if needed
+    if [ ! -d "$INSTALL_DIR" ]; then
+        if [ "$INSTALL_MODE" = "global" ]; then
+            sudo mkdir -p "$INSTALL_DIR"
+        else
+            mkdir -p "$INSTALL_DIR"
+        fi
+    fi
+
+    # Install binary
+    if [ "$INSTALL_MODE" = "global" ]; then
+        sudo mv "${tmp_dir}/roji" "${INSTALL_DIR}/roji"
+        sudo chmod +x "${INSTALL_DIR}/roji"
+    else
+        mv "${tmp_dir}/roji" "${INSTALL_DIR}/roji"
+        chmod +x "${INSTALL_DIR}/roji"
+    fi
+
+    rm -rf "$tmp_dir"
+
+    print_success "roji installed to ${INSTALL_DIR}/roji"
+
+    # Check if INSTALL_DIR is in PATH
+    if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
+        echo ""
+        print_warning "${INSTALL_DIR} is not in your PATH"
+        echo ""
+        echo "  Add it to your shell configuration:"
+        echo ""
+        if [ -f "$HOME/.zshrc" ]; then
+            echo "    echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.zshrc"
+            echo "    source ~/.zshrc"
+        elif [ -f "$HOME/.bashrc" ]; then
+            echo "    echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.bashrc"
+            echo "    source ~/.bashrc"
+        else
+            echo "    export PATH=\"${INSTALL_DIR}:\$PATH\""
+        fi
+        echo ""
+
+        # Add to PATH for this session
+        export PATH="${INSTALL_DIR}:$PATH"
+    fi
 }
 
+# Run doctor to set up environment
+run_doctor() {
+    print_info "Running diagnostics and setup..."
+    echo ""
 
-# Detect OS for CA installation instructions
-detect_os() {
-    case "$(uname -s)" in
-        Darwin*)
-            echo "macos"
-            ;;
-        Linux*)
-            echo "linux"
-            ;;
-        MINGW*|MSYS*|CYGWIN*)
-            echo "windows"
-            ;;
-        *)
-            echo "unknown"
-            ;;
-    esac
+    if ! sudo "${INSTALL_DIR}/roji" doctor --fix; then
+        print_warning "Some issues could not be auto-fixed"
+        echo ""
+        echo "  Run 'sudo roji doctor' to see details"
+        echo ""
+    else
+        print_success "Environment configured"
+    fi
 }
 
-# Show CA installation instructions
-show_ca_instructions() {
-    local os=$(detect_os)
+# Install CA certificate
+install_ca() {
+    print_info "Installing CA certificate to system trust store..."
+
+    local ca_args=""
+    if is_wsl; then
+        ca_args="--windows"
+        print_info "WSL detected - installing to both Linux and Windows"
+    fi
+
+    if ! sudo "${INSTALL_DIR}/roji" ca install $ca_args; then
+        print_warning "CA certificate installation may require manual steps"
+        echo ""
+        echo "  Run 'sudo roji ca install' to retry"
+        echo "  Or see 'roji ca status' for current state"
+        echo ""
+    else
+        print_success "CA certificate installed"
+    fi
+}
+
+# Install and start service
+install_service() {
+    if [ "$SKIP_SERVICE" = true ]; then
+        print_info "Skipping service installation (--no-service)"
+        return
+    fi
+
+    print_info "Installing and starting roji service..."
+
+    if ! sudo "${INSTALL_DIR}/roji" service install; then
+        print_warning "Service installation failed"
+        echo ""
+        echo "  You can start roji manually with: sudo roji"
+        echo ""
+        return
+    fi
+
+    if ! sudo "${INSTALL_DIR}/roji" service start; then
+        print_warning "Service failed to start"
+        echo ""
+        echo "  Check status with: sudo roji service status"
+        echo ""
+        return
+    fi
+
+    print_success "roji service is running"
+}
+
+# Show completion message
+show_completion() {
+    local version=$(get_latest_version)
 
     echo ""
     echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
@@ -556,88 +463,16 @@ show_ca_instructions() {
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
-    echo -e "${CYAN}Dashboard:${NC}"
-    echo -e "  https://${DASHBOARD_HOST}"
-    echo ""
-
-    echo -e "${CYAN}Installation directory:${NC}"
-    echo -e "  ${INSTALL_DIR}"
-    echo ""
-
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}IMPORTANT: Trust the CA certificate to enable HTTPS${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-
-    echo -e "${CYAN}CA Certificate location:${NC}"
-
-    case "$os" in
-        macos)
-            echo -e "  ${INSTALL_DIR}/certs/ca.pem"
-            echo ""
-            echo -e "${CYAN}Installation (macOS):${NC}"
-            echo ""
-            echo "  Option 1 - Using terminal (requires password):"
-            echo -e "    ${GREEN}sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${INSTALL_DIR}/certs/ca.pem${NC}"
-            echo ""
-            echo "  Option 2 - Using Keychain Access:"
-            echo "    1. Double-click: ${INSTALL_DIR}/certs/ca.pem"
-            echo "    2. Select 'System' keychain"
-            echo "    3. Right-click the certificate → 'Get Info'"
-            echo "    4. Expand 'Trust' → Select 'Always Trust' for SSL"
-            ;;
-
-        linux)
-            echo -e "  ${INSTALL_DIR}/certs/ca.pem"
-            echo ""
-            echo -e "${CYAN}Installation (Linux - Chrome/Chromium):${NC}"
-            echo ""
-            echo "  1. Install certutil if needed:"
-            echo "     Debian/Ubuntu: sudo apt install libnss3-tools"
-            echo "     Fedora: sudo dnf install nss-tools"
-            echo ""
-            echo "  2. Add to certificate store:"
-            echo -e "     ${GREEN}certutil -d sql:\$HOME/.pki/nssdb -A -t \"C,,\" -n \"roji CA\" -i ${INSTALL_DIR}/certs/ca.pem${NC}"
-            ;;
-
-        windows)
-            echo -e "  ${INSTALL_DIR}/certs/ca.crt"
-            echo ""
-            echo -e "${CYAN}Installation (Windows):${NC}"
-            echo ""
-            echo "  1. Double-click: ${INSTALL_DIR}\\certs\\ca.crt"
-            echo "  2. Click 'Install Certificate'"
-            echo "  3. Select 'Local Machine' (requires admin) or 'Current User'"
-            echo "  4. Select 'Place all certificates in the following store'"
-            echo "  5. Click 'Browse' → Select 'Trusted Root Certification Authorities'"
-            echo "  6. Click 'Next' → 'Finish'"
-            echo "  7. Restart your browser"
-            ;;
-
-        *)
-            echo -e "  ${INSTALL_DIR}/certs/ca.pem"
-            echo ""
-            echo -e "${CYAN}Installation:${NC}"
-            echo "  Please refer to the documentation:"
-            echo "  https://github.com/kan/roji#tls-certificates"
-            ;;
-    esac
-
-    echo ""
-    echo -e "${CYAN}Firefox (all platforms):${NC}"
-    echo "  1. Settings → Privacy & Security → Certificates → View Certificates"
-    echo "  2. Authorities tab → Import"
-    echo "  3. Select ${INSTALL_DIR}/certs/ca.pem"
-    echo "  4. Check 'Trust this CA to identify websites'"
-    echo ""
-
-    echo -e "${YELLOW}After installing the certificate, restart your browser.${NC}"
+    echo -e "${CYAN}Version:${NC}    ${version}"
+    echo -e "${CYAN}Binary:${NC}     ${INSTALL_DIR}/roji"
+    echo -e "${CYAN}Config:${NC}     ~/.config/roji/config.yaml"
+    echo -e "${CYAN}Dashboard:${NC}  https://roji.dev.localhost"
     echo ""
 
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
-    echo -e "${CYAN}Next steps:${NC}"
+    echo -e "${CYAN}Quick Start:${NC}"
     echo ""
     echo "  1. Add your Docker Compose services to the 'roji' network:"
     echo ""
@@ -654,14 +489,17 @@ show_ca_instructions() {
     echo "  2. Access your app at https://myapp.dev.localhost"
     echo ""
 
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
     echo -e "${CYAN}Useful commands:${NC}"
     echo ""
-    echo "  View logs:       docker logs roji -f"
-    echo "  Restart:         docker restart roji"
-    echo "  Stop:            docker stop roji"
-    echo "  Start:           docker start roji"
-    echo "  Upgrade:         curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash"
-    echo "  Uninstall:       cd ${INSTALL_DIR} && docker compose down && rm -rf ${INSTALL_DIR}"
+    echo "  sudo roji                  Start server (foreground)"
+    echo "  sudo roji service status   Check service status"
+    echo "  sudo roji service restart  Restart service"
+    echo "  sudo roji doctor           Run diagnostics"
+    echo "  roji config show           Show current configuration"
+    echo "  roji routes                List active routes"
     echo ""
 
     echo -e "${CYAN}Documentation:${NC}"
@@ -669,25 +507,154 @@ show_ca_instructions() {
     echo ""
 }
 
+# Compare versions (returns 0 if v1 < v2)
+version_lt() {
+    local v1="$1"
+    local v2="$2"
+
+    # Handle special cases
+    if [ "$v1" = "latest" ] || [ "$v2" = "latest" ] || [ "$v1" = "unknown" ] || [ "$v1" = "not installed" ]; then
+        return 1  # Can't compare
+    fi
+    if [ "$v1" = "$v2" ]; then
+        return 1  # Same version
+    fi
+
+    # Use sort -V for version comparison
+    local smaller=$(echo -e "$v1\n$v2" | sort -V | head -n1)
+    if [ "$smaller" = "$v1" ]; then
+        return 0  # v1 < v2
+    fi
+    return 1
+}
+
+# Detect existing roji binary location
+detect_existing_install_dir() {
+    # Check command location first
+    if command -v roji &> /dev/null; then
+        local roji_path=$(command -v roji)
+        dirname "$roji_path"
+        return
+    fi
+    # Check common locations
+    if [ -f "${LOCAL_BIN}/roji" ]; then
+        echo "$LOCAL_BIN"
+        return
+    fi
+    if [ -f "${GLOBAL_BIN}/roji" ]; then
+        echo "$GLOBAL_BIN"
+        return
+    fi
+    echo ""
+}
+
+# Handle existing native installation (upgrade)
+handle_existing_native() {
+    local current=$(get_native_version)
+    local latest=$(get_latest_version)
+    local existing_dir=$(detect_existing_install_dir)
+
+    echo ""
+    echo -e "${CYAN}Existing roji installation detected${NC}"
+    echo ""
+    echo -e "  Current version: ${YELLOW}${current}${NC}"
+    echo -e "  Latest version:  ${GREEN}${latest}${NC}"
+    if [ -n "$existing_dir" ]; then
+        echo -e "  Location:        ${existing_dir}/roji"
+    fi
+    echo ""
+
+    # Check if already up to date
+    if ! version_lt "$current" "$latest"; then
+        print_success "roji is already up to date (${current})"
+        echo ""
+
+        # Check service status
+        if sudo roji service status &>/dev/null; then
+            print_success "roji service is running"
+        else
+            print_warning "roji service is not running"
+            echo ""
+            echo "  Start with: sudo roji service start"
+        fi
+        echo ""
+        exit 0
+    fi
+
+    # Upgrade available
+    echo "A newer version is available!"
+    echo ""
+
+    if [ "$FORCE_UPGRADE" = true ]; then
+        print_info "Upgrading..."
+    elif [ -t 0 ]; then
+        echo -e "${CYAN}Options:${NC}"
+        echo "  1. Upgrade to ${latest}"
+        echo "  2. Keep current version (${current})"
+        echo ""
+        read -p "Choose an option [1]: " choice
+        choice=${choice:-1}
+
+        if [ "$choice" != "1" ]; then
+            echo ""
+            print_success "Keeping current version"
+            echo ""
+            exit 0
+        fi
+    else
+        # Non-interactive mode: auto-upgrade
+        print_info "Auto-upgrading to ${latest}..."
+    fi
+
+    # Use existing install directory
+    if [ -n "$existing_dir" ]; then
+        INSTALL_DIR="$existing_dir"
+        if [ "$existing_dir" = "$GLOBAL_BIN" ]; then
+            INSTALL_MODE="global"
+        else
+            INSTALL_MODE="local"
+        fi
+        print_info "Upgrading in place: ${INSTALL_DIR}"
+    fi
+
+    # Stop service before upgrade
+    print_info "Stopping roji service..."
+    sudo roji service stop 2>/dev/null || true
+
+    return 0  # Proceed with installation
+}
+
 # Main installation flow
 main() {
     print_banner
 
+    # Check Docker first
     check_docker
-    check_docker_compose
 
-    # Check for existing installation
-    if check_existing_installation; then
-        handle_existing_installation
+    # Check for existing installations
+    if check_docker_mode; then
+        migrate_from_docker
+    elif check_native_mode; then
+        handle_existing_native
     fi
 
-    # Fresh installation
-    create_install_dir
-    create_network
-    create_compose_file
-    create_env_file
-    start_roji
-    show_ca_instructions
+    # Select installation directory
+    select_install_dir
+
+    # Download and install binary
+    install_binary
+
+    # Run doctor to set up environment
+    run_doctor
+
+    # Install CA certificate
+    install_ca
+
+    # Install and start service
+    install_service
+
+    # Show completion message
+    show_completion
 }
 
 main "$@"
