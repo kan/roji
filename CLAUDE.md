@@ -87,6 +87,9 @@ roji/
 | `roji.path` | パスプレフィックス | なし |
 | `roji.mock.{METHOD}.{PATH}` | モックレスポンス | なし |
 | `roji.mock.status.{METHOD}.{PATH}` | モックステータスコード | `200` |
+| `roji.auth.basic.user` | BASIC認証ユーザー名 | なし |
+| `roji.auth.basic.pass` | BASIC認証パスワード | なし |
+| `roji.auth.basic.realm` | BASIC認証レルム | `Restricted` |
 
 ### 環境変数
 
@@ -116,7 +119,7 @@ roji/
 | `/_api/containers/{id}/restart` | コンテナ再起動 |
 | `/_api/config/reload` | 設定ファイル再読み込み（静的サイト更新） |
 
-## 実装済み機能（v0.1.0 → v0.8.0）
+## 実装済み機能（v0.1.0 → v0.9.0）
 
 ### コア機能
 - ネットワークベースの自動検出（Docker Events監視）
@@ -125,6 +128,7 @@ roji/
 - HTTP → HTTPS リダイレクト
 - WebSocketプロキシ（`Upgrade: websocket`ヘッダー検出、双方向通信）
 - gRPCプロキシ（HTTP/2、`Content-Type: application/grpc`で自動検出）
+- BASIC認証（Dockerラベル / 設定ファイルで設定）
 
 ### ダッシュボード
 - リアルタイム更新（SSE + Petite Vue）
@@ -134,11 +138,13 @@ roji/
 - コンテナ再起動ボタン
 - ダークモード（システム設定連動）
 - 設定ミス警告表示
+- 認証バッジ表示（🔒 auth）
 
 ### 開発支援
 - リクエストモック（ラベルでレスポンス定義）
 - 複数ネットワーク対応
 - ブラウザ通知
+- 静的ファイルホスティング（httpd機能）
 
 ### Native Mode (v0.8.0)
 - 設定ファイル対応（`~/.config/roji/config.yaml`）
@@ -148,6 +154,10 @@ roji/
 - `roji ca` コマンド（install/uninstall/export/status）
 - CA証明書のシステムインストール（macOS/Linux/Windows対応）
 - 設定の優先順位: CLI > 環境変数 > 設定ファイル > デフォルト
+
+### 運用強化 (v0.9.0)
+- `roji service` コマンド（install/uninstall/start/stop/restart/status）
+- サービス登録（Linux systemd / macOS launchd / Windows NSSM）
 
 ### 配布・品質
 - ワンライナーインストール（アップグレード対応）
@@ -417,7 +427,7 @@ static_sites:
 **未実装（後続で検討）:**
 - `roji serve` コマンド（一時的なホスティング）
 
-#### BASIC認証
+#### BASIC認証 ✅
 
 特定ルートにBASIC認証を設定可能。
 

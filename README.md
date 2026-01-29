@@ -30,6 +30,9 @@ A simple reverse proxy for local development environments. Automatically discove
 - **Multiple Networks**: Monitor multiple Docker networks simultaneously
 - **Container Management**: Restart containers directly from the dashboard
 - **Request Mocking**: Define mock responses via labels for frontend development
+- **Basic Authentication**: Protect routes with username/password via labels or config
+- **Static File Hosting**: Serve static files with directory listing
+- **Service Management**: Run as system service (systemd/launchd/Windows Service)
 - **Environment Diagnostics**: `roji doctor` checks and fixes common issues
 - **Simple**: Minimal implementation focused on local development
 
@@ -246,6 +249,9 @@ roji will use existing certificates and skip auto-generation.
 | `roji.path` | Path prefix | none |
 | `roji.mock.{METHOD}.{PATH}` | Mock response body | none |
 | `roji.mock.status.{METHOD}.{PATH}` | Mock response status code | `200` |
+| `roji.auth.basic.user` | Basic auth username | none |
+| `roji.auth.basic.pass` | Basic auth password | none |
+| `roji.auth.basic.realm` | Basic auth realm | `Restricted` |
 
 #### Examples
 
@@ -292,6 +298,37 @@ services:
       - "roji.mock.status.POST./api/users=201"
     networks:
       - roji
+
+  # Basic authentication
+  # Requires username/password to access
+  admin:
+    image: my-admin-panel
+    labels:
+      - "roji.host=admin.dev.localhost"
+      - "roji.auth.basic.user=admin"
+      - "roji.auth.basic.pass=secret"
+      - "roji.auth.basic.realm=Admin Area"
+    networks:
+      - roji
+```
+
+### Static File Hosting
+
+Host static files directly from roji without Docker containers. Configure in `~/.config/roji/config.yaml`:
+
+```yaml
+static_sites:
+  - host: docs                    # -> docs.dev.localhost
+    root: ~/projects/docs/build
+    # index: true                 # Directory listing (default: enabled)
+  - host: private.example.com     # FQDN (dot in hostname)
+    root: /var/www/private
+    index: false                  # Disable directory listing
+    auth:
+      basic:
+        user: admin
+        pass: secret
+        realm: Private Area       # Optional
 ```
 
 ## Environment Variables

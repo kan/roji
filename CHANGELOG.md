@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - v0.9.0
+
+### Added
+
+- **Basic Authentication**: Protect routes with username/password
+  - Docker labels: `roji.auth.basic.user`, `roji.auth.basic.pass`, `roji.auth.basic.realm`
+  - Config file support for static sites
+  - CORS preflight (OPTIONS) requests bypass authentication
+  - Dashboard shows auth badge (🔒) for protected routes
+  - Config validation warns on unknown auth keys
+- **Static File Hosting**: Serve static files without Docker
+  - Configure via `static_sites` in config.yaml
+  - Directory listing with dark mode support
+  - `index.html` auto-serving
+  - Directory traversal protection
+  - Basic authentication support
+  - Dashboard "Reload Config" button for hot-reload
+- **Service Management**: Run roji as system service
+  - `roji service install/uninstall/start/stop/restart/status`
+  - Linux: systemd service (`/etc/systemd/system/roji.service`)
+  - macOS: launchd agent (`~/Library/LaunchAgents/com.roji.agent.plist`)
+  - Windows: NSSM-based Windows Service
+- **Log File Output**: Service mode logs to file
+  - Linux/WSL: `~/.local/share/roji/roji.log`
+  - macOS: `~/Library/Logs/roji.log`
+  - Auto-rotation at 10MB
+
+### Changed
+
+- Dashboard now displays authentication status for each route
+- Static site index status shown in dashboard (📋 enabled / 🔒 disabled)
+
 ## [0.8.0] - 2026-01-24
 
 ### Added
