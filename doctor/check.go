@@ -47,8 +47,9 @@ type CheckResult struct {
 
 // Config holds configuration for running checks
 type Config struct {
-	Settings *config.Settings
-	CertsDir string
+	Settings   *config.Settings
+	CertsDir   string
+	ConfigPath string // Path to the config file (for validation)
 }
 
 // Check is the interface that all diagnostic checks must implement

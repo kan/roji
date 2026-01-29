@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -108,6 +107,12 @@ func (s *Settings) loadFromFile(path string) error {
 		return err
 	}
 
+	// Run validation and log any warnings
+	validationResult := ValidateConfigYAML(data)
+	if validationResult.HasIssues() {
+		validationResult.LogWarnings()
+	}
+
 	// Parse YAML into a temporary struct to preserve defaults for unset fields
 	var fileSettings Settings
 	if err := yaml.Unmarshal(data, &fileSettings); err != nil {
@@ -148,79 +153,17 @@ func (s *Settings) loadFromFile(path string) error {
 	if _, ok := rawMap["auto_cert"]; ok {
 		s.AutoCert = fileSettings.AutoCert
 	}
-	if staticSites, ok := rawMap["static_sites"]; ok {
+	if _, ok := rawMap["static_sites"]; ok {
 		// Expand paths for static sites
 		for i := range fileSettings.StaticSites {
 			fileSettings.StaticSites[i].Root = ExpandPath(fileSettings.StaticSites[i].Root)
 		}
 		s.StaticSites = fileSettings.StaticSites
-
-		// Validate static_sites auth configuration
-		if sites, ok := staticSites.([]any); ok {
-			validateStaticSitesAuth(sites)
-		}
 	}
 
 	return nil
 }
 
-// validateStaticSitesAuth validates auth configuration in static_sites and logs warnings for unknown keys
-func validateStaticSitesAuth(sites []any) {
-	validAuthKeys := map[string]bool{"basic": true}
-	validBasicKeys := map[string]bool{"user": true, "pass": true, "realm": true}
-
-	for i, site := range sites {
-		siteMap, ok := site.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		host, _ := siteMap["host"].(string)
-		if host == "" {
-			host = fmt.Sprintf("static_sites[%d]", i)
-		}
-
-		auth, ok := siteMap["auth"]
-		if !ok {
-			continue
-		}
-
-		authMap, ok := auth.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		// Check for unknown keys under auth
-		for key := range authMap {
-			if !validAuthKeys[key] {
-				slog.Warn("unknown auth type in config",
-					"host", host,
-					"key", key,
-					"valid_keys", "basic")
-			}
-		}
-
-		// Check for unknown keys under auth.basic
-		basic, ok := authMap["basic"]
-		if !ok {
-			continue
-		}
-
-		basicMap, ok := basic.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		for key := range basicMap {
-			if !validBasicKeys[key] {
-				slog.Warn("unknown key in auth.basic config",
-					"host", host,
-					"key", key,
-					"valid_keys", "user, pass, realm")
-			}
-		}
-	}
-}
 
 // applyEnvVars applies environment variables to settings
 func (s *Settings) applyEnvVars() {

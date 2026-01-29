@@ -52,14 +52,22 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
+	// Determine config file path
+	configPath := configFile
+	if configPath == "" {
+		configPath = config.ConfigFilePath()
+	}
+
 	// Create doctor configuration
 	cfg := &doctor.Config{
-		Settings: settings,
-		CertsDir: settings.CertsDir,
+		Settings:   settings,
+		CertsDir:   settings.CertsDir,
+		ConfigPath: configPath,
 	}
 
 	// Create doctor with all checks
 	d := doctor.New(cfg)
+	d.AddCheck(&checks.Config{})
 	d.AddCheck(&checks.DockerDaemon{})
 	d.AddCheck(&checks.DockerSocket{})
 	d.AddCheck(&checks.Network{})
