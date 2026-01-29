@@ -205,7 +205,7 @@ func (r *Router) ListRoutes() []RouteInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var infos []RouteInfo
+	infos := []RouteInfo{}
 
 	for _, route := range r.routes {
 		target := ""

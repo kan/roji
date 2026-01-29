@@ -919,6 +919,9 @@
             },
 
             handleRouteUpdate(newRoutes) {
+                // Ensure newRoutes is an array (handle null/undefined from API)
+                newRoutes = newRoutes || [];
+
                 // Refresh projects when routes change
                 this.fetchProjects();
 
