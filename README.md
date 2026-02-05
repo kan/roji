@@ -29,6 +29,7 @@ A simple reverse proxy for local development environments. Automatically discove
 - **gRPC Support**: HTTP/2 based gRPC proxying with streaming support
 - **Multiple Networks**: Monitor multiple Docker networks simultaneously
 - **Container Management**: Restart containers directly from the dashboard
+- **Docker Compose Operations**: Start/stop/restart projects from dashboard or API
 - **Request Mocking**: Define mock responses via labels for frontend development
 - **Basic Authentication**: Protect routes with username/password via labels or config
 - **Static File Hosting**: Serve static files with directory listing
@@ -43,7 +44,7 @@ A simple reverse proxy for local development environments. Automatically discove
 Install and start roji with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 ```
 
 This will:
@@ -71,7 +72,7 @@ curl -fsSL ... | bash -s -- --no-service
 The install script automatically detects existing installations:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 ```
 
 - **Same version**: Shows "already up to date" and exits
@@ -81,7 +82,7 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | bash
 **Force upgrade (skip prompts):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install.sh | bash -s -- --upgrade
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash -s -- --upgrade
 ```
 
 ### Manual Installation
@@ -115,7 +116,7 @@ Configuration is stored in `~/.config/roji/config.yaml`. See [CLI Commands](#cli
 For Docker-based installation, use the legacy installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.8.0/install-docker.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install-docker.sh | bash
 ```
 
 This installs roji as a Docker container with docker-compose. Note that Native Mode (above) is now the recommended approach.
@@ -358,10 +359,12 @@ The dashboard provides:
 
 - **Live Route Updates**: Real-time updates via Server-Sent Events when containers start/stop
 - **Browser Notifications**: Optional desktop notifications for route changes
-- **Active Projects**: Currently running Docker Compose projects with service counts
-- **Project History**: Recently stopped projects with one-click copy of restart commands
+- **Active Projects**: Currently running Docker Compose projects with start/stop/restart controls
+- **Project History**: Recently stopped projects with one-click start or copy of restart commands
+- **Project Auto-start**: Not Found page detects inactive projects and offers a start button
 - **Request Log Viewer**: Real-time request logging with filtering by host and path
 - **Container Restart**: Restart containers directly from the dashboard
+- **Route Management**: Stop projects directly from the routes list
 - **Dark Mode**: Toggle between light/dark themes or follow system preferences
 - **System Status**: Build version, uptime, connection status
 
@@ -412,6 +415,24 @@ roji ca install --windows   # Install to Windows (from WSL)
 roji ca uninstall           # Remove from trust store
 roji ca export [path]       # Export CA certificate
 ```
+
+### `roji service`
+
+Manage roji as a system service:
+
+```bash
+roji service install    # Register as system service
+roji service uninstall  # Remove service registration
+roji service start      # Start the service
+roji service stop       # Stop the service
+roji service restart    # Restart the service
+roji service status     # Show service status
+```
+
+Platform support:
+- **Linux**: systemd (`/etc/systemd/system/roji.service`)
+- **macOS**: launchd (`~/Library/LaunchAgents/com.roji.agent.plist`)
+- **Windows**: NSSM-based Windows Service
 
 ## Health Check
 

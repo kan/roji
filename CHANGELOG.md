@@ -5,10 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - v0.9.0
+## [0.9.0] - 2026-02-06
 
 ### Added
 
+- **Docker Compose Operations**: Control projects from dashboard and API
+  - `POST /_api/projects/{name}/up` - Start project (`docker compose up -d`)
+  - `POST /_api/projects/{name}/down` - Stop project (`docker compose down`)
+  - `POST /_api/projects/{name}/restart` - Restart all services
+  - `GET /_api/projects/{name}/logs` - Stream logs via SSE
+  - Dashboard buttons: Start/Stop/Restart on active and inactive projects
+  - Stop button on individual routes in the routes list
+  - Confirmation dialog before destructive operations
+  - CORS support for cross-subdomain API calls
+- **Not Found Page Project Detection**: Auto-start inactive projects
+  - Detects hostname matching an inactive project
+  - Shows "Start" button to bring up the project directly
+  - Supports both `service.domain` and `service-project.domain` hostname patterns
 - **Basic Authentication**: Protect routes with username/password
   - Docker labels: `roji.auth.basic.user`, `roji.auth.basic.pass`, `roji.auth.basic.realm`
   - Config file support for static sites
@@ -46,8 +59,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Dashboard now displays authentication status for each route
+- Dashboard active projects now have Start/Stop/Restart operation buttons
+- Dashboard inactive projects now have a Start button alongside copy command
+- Dashboard routes list now includes Stop button for Docker Compose projects
 - Static site index status shown in dashboard (📋 enabled / 🔒 disabled)
 - `roji doctor` port check now detects if roji itself is using the ports
+- Not Found page and Warning page now use absolute URLs for dashboard assets
+
+### Fixed
+
+- `certutil.exe` not found on some WSL configurations
 
 ## [0.8.0] - 2026-01-24
 
@@ -348,6 +369,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path-based routing support
 - Cobra-based CLI structure
 
+[0.9.0]: https://github.com/kan/roji/releases/tag/v0.9.0
 [0.8.0]: https://github.com/kan/roji/releases/tag/v0.8.0
 [0.7.0]: https://github.com/kan/roji/releases/tag/v0.7.0
 [0.6.1]: https://github.com/kan/roji/releases/tag/v0.6.1
