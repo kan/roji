@@ -72,8 +72,13 @@ func (i *WSLInstaller) Install(caCertPath string) error {
 	// Always use user store since WSL cannot elevate to admin
 	args := []string{"-addstore", "-user", "-f", "ROOT", winPath}
 
-	// Run certutil.exe directly
-	cmd := exec.Command("certutil.exe", args...)
+	// Find certutil.exe
+	certutil, err := findCertutilExe()
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(certutil, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -103,7 +108,12 @@ func (i *WSLInstaller) Uninstall(caCertPath string) error {
 	// Always use user store since WSL cannot elevate to admin
 	args := []string{"-delstore", "-user", "ROOT", subject}
 
-	cmd := exec.Command("certutil.exe", args...)
+	certutil, err := findCertutilExe()
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(certutil, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -130,7 +140,12 @@ func (i *WSLInstaller) IsInstalled(caCertPath string) (bool, error) {
 	// Always use user store since WSL cannot elevate to admin
 	args := []string{"-store", "-user", "ROOT", subject}
 
-	cmd := exec.Command("certutil.exe", args...)
+	certutil, err := findCertutilExe()
+	if err != nil {
+		return false, err
+	}
+
+	cmd := exec.Command(certutil, args...)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
@@ -229,6 +244,27 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
+}
+
+// findCertutilExe returns the path to certutil.exe.
+// It first checks PATH, then falls back to common Windows system directories.
+func findCertutilExe() (string, error) {
+	if p, err := exec.LookPath("certutil.exe"); err == nil {
+		return p, nil
+	}
+
+	// Try common locations when Windows system dirs are not in WSL PATH
+	candidates := []string{
+		"/mnt/c/Windows/System32/certutil.exe",
+		"/mnt/c/WINDOWS/system32/certutil.exe",
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c, nil
+		}
+	}
+
+	return "", fmt.Errorf("certutil.exe not found in PATH or common Windows directories")
 }
 
 // decodeShiftJIS converts Shift-JIS encoded bytes to UTF-8 string
