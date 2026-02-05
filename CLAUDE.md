@@ -211,7 +211,7 @@ roji/
 | **v0.7.0** | プロトコル拡張 | WebSocket対応、gRPC対応、ログエクスポート |
 | **v0.8.0** | Native Mode | 単体バイナリ化、`roji doctor`、CA自動インストール |
 | **v0.9.0** | 運用強化 | サービス登録、Docker Compose操作、httpd機能、BASIC認証 |
-| **v1.0.0** | 安定版 | ドキュメント整備、破壊的変更の整理、Docker Mode廃止 |
+| **v1.0.0** | 安定版 | Docker Mode廃止、Homebrew対応、i18n、ドキュメント整備 |
 
 ---
 
@@ -535,34 +535,71 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 
 ### v1.0.0: 安定版リリース
 
-- [ ] **Docker Mode廃止**
-  - Native Modeへの完全移行
-  - Dockerfile、docker-compose.yml は開発・テスト用に維持
+#### 1. Docker Mode 廃止
 
-- [x] **インストール方法の刷新** （v0.9.0で実装済み）
-  - install.shの全面書き換え → ✅ Native Mode対応版に刷新
-  - バイナリダウンロード + サービス登録の自動化 → ✅ 実装済み
+- [ ] `install-docker.sh` を削除
+- [ ] README.md から「Docker Mode (Legacy)」セクションを削除
+- [ ] `docker-compose.yml` の `ROJI_DOMAIN` デフォルトを `dev.localhost` に統一
+- [ ] Dockerfile、docker-compose.yml、docker-compose.dev.yml は開発・テスト用として維持
+  - docker-compose.yml のコメントに「開発・テスト用」と明記
 
-- [ ] **パッケージマネージャー対応**
-  - Homebrew対応（macOS）
-  - APT/RPMパッケージ検討
+#### 2. ダッシュボード機能強化
 
-- [ ] **多言語対応 (i18n)**
-  - ダッシュボード等のWeb UIメッセージ
-  - CLIコマンドのメッセージ・ヘルプ
-  - ワンライナーインストーラーのメッセージ
-  - 日本語リソースの追加
-  - 言語自動検出（`LANG`環境変数 / ブラウザ設定）
+- [ ] **Recent Projects の管理（削除）機能**
+  - 不要になったプロジェクト履歴をダッシュボードから削除
+  - `DELETE /_api/projects/{name}` エンドポイント追加
+  - ダッシュボードに削除ボタン追加（確認ダイアログ付き）
+  - `project.Store` から該当プロジェクトを削除
 
-- [ ] **ドキュメント整備**
-  - README.mdの全面改訂
-  - Getting Started ガイド
-  - トラブルシューティングガイド
+#### 3. 破壊的変更の整理
 
-- [ ] **破壊的変更の整理**
-  - 環境変数のデフォルト値見直し
-  - 設定ファイルパスの標準化
-  - 廃止予定のAPIの削除
+- [ ] `ROJI_DOMAIN` のデフォルト値を全環境で `dev.localhost` に統一
+  - docker-compose.yml が `localhost` を使用していた不整合を解消
+- [ ] `roji.self` ラベルをドキュメント化（内部使用ラベルとして公式化）
+- [ ] 環境変数・設定パス・APIは現状維持（変更不要と確認済み）
+
+#### 4. パッケージマネージャー対応
+
+- [ ] **Homebrew対応**（macOS）
+  - Formulaの作成（GoReleaserの `brews` セクション利用）
+  - `brew install kan/tap/roji` でインストール可能に
+- [ ] APT/RPMパッケージは検討のみ（v1.x以降）
+
+#### 5. 多言語対応 (i18n)
+
+- [ ] **ダッシュボード (Web UI)**
+  - メッセージの外部化（JSON / 埋め込みリソース）
+  - ブラウザの `navigator.language` で言語自動検出
+  - 日本語リソース追加
+- [ ] **CLIコマンド**
+  - メッセージ・ヘルプテキストの外部化
+  - `LANG` 環境変数で言語自動検出
+  - 日本語リソース追加
+- [ ] **インストーラー (install.sh)**
+  - メッセージの日本語対応
+
+#### 6. ドキュメント整備
+
+- [ ] **README.md 全面改訂**
+  - Docker Mode関連の記述を削除・整理
+  - Native Mode前提の記述に統一
+  - 機能一覧を最新状態に更新
+- [ ] **Getting Started ガイド**（新規作成）
+  - インストールから初めてのサービス公開まで
+  - 設定ファイルの使い方
+  - よくある構成例
+- [ ] **トラブルシューティングガイド**（拡充）
+  - 既存セクションの拡充
+  - プラットフォーム別の注意事項（WSL、macOS、Linux）
+  - `roji doctor` との連携説明
+
+#### 実装順序
+
+1. 破壊的変更の整理 + Docker Mode廃止（影響範囲が広いため最初に）
+2. ダッシュボード機能強化（Recent Projects削除機能）
+3. パッケージマネージャー対応（Homebrew Formula）
+4. 多言語対応 (i18n)
+5. ドキュメント整備（最後にまとめて更新）
 
 ---
 
