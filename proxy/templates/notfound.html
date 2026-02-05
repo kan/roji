@@ -2,7 +2,7 @@
 <html>
 <head>
     <title>No Route Found - roji</title>
-    <link rel="icon" type="image/svg+xml" href="/_assets/favicon.svg">
+    <link rel="icon" type="image/svg+xml" href="https://[[.DashboardHost]]/_assets/favicon.svg">
     <script>
         (function() {
             const saved = localStorage.getItem('roji-theme');
@@ -10,18 +10,102 @@
             document.documentElement.setAttribute('data-theme', theme);
         })();
     </script>
-    <link rel="stylesheet" href="/_assets/theme.css">
+    <link rel="stylesheet" href="https://[[.DashboardHost]]/_assets/theme.css">
     <style>
         /* Page-specific styles */
-        body { max-width: 600px; margin: 50px auto; }
+        body { max-width: 600px; margin: 50px auto; padding: 0 20px; }
         h1 { color: var(--error-text); }
         .routes { background: var(--bg-card); padding: 15px; border-radius: 5px; margin-top: 20px; }
         .route { margin: 5px 0; font-family: monospace; }
+        .project-start {
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            box-shadow: 0 1px 3px var(--shadow-color);
+        }
+        .project-start h3 {
+            margin: 0 0 8px 0;
+            color: var(--text-primary);
+        }
+        .project-start p {
+            margin: 0 0 16px 0;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .project-start code {
+            background: var(--bg-badge);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .start-btn {
+            background: var(--success-text);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 20px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: opacity 0.2s;
+        }
+        .start-btn:hover { opacity: 0.9; }
+        .start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .start-status {
+            margin-top: 12px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        .start-status.error { color: var(--error-text); }
+        .start-status.success { color: var(--success-text); }
     </style>
 </head>
 <body>
     <h1>&#x1F6AB; No Route Found</h1>
     <p>No backend is configured for <code>[[.Hostname]]</code></p>
+    [[if .Project]]
+    <div class="project-start">
+        <h3>&#x1F4C2; Project <code>[[.Project.Name]]</code> found</h3>
+        <p>This hostname belongs to an inactive project. Start it to restore the service.</p>
+        <button class="start-btn" id="start-btn" onclick="startProject()">
+            &#x25B6; Start [[.Project.Name]]
+        </button>
+        <div id="start-status" class="start-status"></div>
+    </div>
+    <script>
+        async function startProject() {
+            const btn = document.getElementById('start-btn');
+            const status = document.getElementById('start-status');
+            btn.disabled = true;
+            btn.innerHTML = '&#x21BB; Starting...';
+            status.textContent = '';
+            status.className = 'start-status';
+
+            try {
+                const resp = await fetch('https://[[.DashboardHost]]/_api/projects/[[.Project.Name]]/up', { method: 'POST' });
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Failed to start project');
+                }
+
+                status.textContent = 'Project started successfully. Reloading...';
+                status.className = 'start-status success';
+
+                // Reload after a delay for containers to become ready
+                setTimeout(() => { location.reload(); }, 5000);
+            } catch (e) {
+                status.textContent = 'Error: ' + e.message;
+                status.className = 'start-status error';
+                btn.disabled = false;
+                btn.innerHTML = '&#x25B6; Start [[.Project.Name]]';
+            }
+        }
+    </script>
+    [[end]]
     [[if .Routes]]
     <div class="routes">
         <h3>Available Routes:</h3>
@@ -30,7 +114,9 @@
         [[end]]
     </div>
     [[else]]
+    [[if not .Project]]
     <p>No routes are currently registered. Start some containers on the roji network!</p>
+    [[end]]
     [[end]]
     [[if .DashboardHost]]
     <p><a href="https://[[.DashboardHost]]">View Dashboard</a></p>

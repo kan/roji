@@ -362,6 +362,59 @@
             border-color: var(--success-text);
             color: var(--success-text);
         }
+        .project-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .project-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .project-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--link-color);
+            color: var(--link-color);
+        }
+        .project-btn.stop:hover {
+            border-color: var(--error-text);
+            color: var(--error-text);
+        }
+        .project-btn.start:hover {
+            border-color: var(--success-text);
+            color: var(--success-text);
+        }
+        .project-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .project-btn.operating {
+            border-color: var(--warning-border);
+            color: var(--warning-text);
+        }
+        .btn-confirm {
+            background: var(--link-color);
+            border: none;
+            color: white;
+        }
+        .btn-confirm:hover {
+            opacity: 0.9;
+        }
+        .btn-confirm.danger {
+            background: var(--error-text);
+        }
+        .btn-confirm.danger:hover {
+            opacity: 0.9;
+        }
         .empty-projects {
             padding: 20px;
             text-align: center;
@@ -420,6 +473,10 @@
         .restart-btn.restarting {
             border-color: var(--warning-border);
             color: var(--warning-text);
+        }
+        .restart-btn.stop:hover {
+            border-color: var(--error-text);
+            color: var(--error-text);
         }
         /* Reload config button */
         .reload-btn {
@@ -772,6 +829,17 @@
                 </div>
                 <div class="route-info">
                     <button
+                        v-if="!route.isStatic && route.projectName"
+                        class="restart-btn stop"
+                        :class="{ restarting: projectOperating === route.projectName && projectOperatingAction === 'down' }"
+                        :disabled="projectOperating === route.projectName"
+                        @click="showProjectConfirm({ name: route.projectName }, 'down')"
+                        title="Stop project"
+                    >
+                        <span v-if="projectOperating === route.projectName && projectOperatingAction === 'down'">&#x23F9; Stopping...</span>
+                        <span v-else>&#x23F9; Stop</span>
+                    </button>
+                    <button
                         v-if="!route.isStatic"
                         class="restart-btn"
                         :class="{ restarting: restartingContainer === route.containerId }"
@@ -811,6 +879,29 @@
             </div>
         </div>
 
+        <!-- Project Operation Confirm Dialog -->
+        <div v-if="confirmProjectOp" class="confirm-overlay" @click.self="confirmProjectOp = null">
+            <div class="confirm-dialog">
+                <h3 v-if="confirmProjectOp.action === 'up'">&#x25B6; Start Project?</h3>
+                <h3 v-else-if="confirmProjectOp.action === 'down'">&#x23F9; Stop Project?</h3>
+                <h3 v-else-if="confirmProjectOp.action === 'restart'">&#x1F504; Restart Project?</h3>
+                <p>
+                    <span v-if="confirmProjectOp.action === 'up'">Start all services in</span>
+                    <span v-else-if="confirmProjectOp.action === 'down'">Stop all services in</span>
+                    <span v-else-if="confirmProjectOp.action === 'restart'">Restart all services in</span>
+                    <code>{{confirmProjectOp.project.name}}</code>?
+                </p>
+                <div class="confirm-buttons">
+                    <button class="btn-cancel" @click="confirmProjectOp = null">Cancel</button>
+                    <button :class="['btn-confirm', confirmProjectOp.action === 'down' ? 'danger' : '']" @click="executeProjectOp(confirmProjectOp)">
+                        <span v-if="confirmProjectOp.action === 'up'">Start</span>
+                        <span v-else-if="confirmProjectOp.action === 'down'">Stop</span>
+                        <span v-else-if="confirmProjectOp.action === 'restart'">Restart</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Active Projects Section -->
         <div v-if="activeProjects.length > 0" class="section-header">
             <h2>&#x1F4C2; Active Projects</h2>
@@ -823,7 +914,29 @@
                         <span class="status-indicator"></span>
                         {{project.name}}
                     </span>
-                    <span class="project-services">{{project.services ? project.services.length : 0}} services</span>
+                    <div class="project-actions">
+                        <span class="project-services">{{project.services ? project.services.length : 0}} services</span>
+                        <button
+                            class="project-btn"
+                            :class="{ operating: projectOperating === project.name && projectOperatingAction === 'restart' }"
+                            :disabled="projectOperating === project.name"
+                            @click="showProjectConfirm(project, 'restart')"
+                            title="Restart all services"
+                        >
+                            <span v-if="projectOperating === project.name && projectOperatingAction === 'restart'">&#x21BB; Restarting...</span>
+                            <span v-else>&#x21BB; Restart</span>
+                        </button>
+                        <button
+                            class="project-btn stop"
+                            :class="{ operating: projectOperating === project.name && projectOperatingAction === 'down' }"
+                            :disabled="projectOperating === project.name"
+                            @click="showProjectConfirm(project, 'down')"
+                            title="Stop project"
+                        >
+                            <span v-if="projectOperating === project.name && projectOperatingAction === 'down'">&#x23F9; Stopping...</span>
+                            <span v-else>&#x23F9; Stop</span>
+                        </button>
+                    </div>
                 </div>
                 <div v-if="project.working_dir" class="project-path">{{project.working_dir}}</div>
             </div>
@@ -843,6 +956,16 @@
                     </span>
                     <div class="project-meta">
                         <span v-if="project.last_active">{{formatTime(project.last_active)}}</span>
+                        <button
+                            class="project-btn start"
+                            :class="{ operating: projectOperating === project.name && projectOperatingAction === 'up' }"
+                            :disabled="projectOperating === project.name"
+                            @click="showProjectConfirm(project, 'up')"
+                            title="Start project"
+                        >
+                            <span v-if="projectOperating === project.name && projectOperatingAction === 'up'">&#x25B6; Starting...</span>
+                            <span v-else>&#x25B6; Start</span>
+                        </button>
                         <button
                             class="copy-btn"
                             :class="{ copied: copiedProject === project.name }"
@@ -927,6 +1050,9 @@
             theme: 'light',
             confirmRestart: null,
             restartingContainer: null,
+            confirmProjectOp: null,
+            projectOperating: null,
+            projectOperatingAction: null,
             logs: [],
             logsPaused: false,
             logFilter: { host: '', path: '', status: '' },
@@ -1215,6 +1341,47 @@
                     setTimeout(() => {
                         this.reloadingConfig = false;
                     }, 500);
+                }
+            },
+
+            showProjectConfirm(project, action) {
+                this.confirmProjectOp = { project, action };
+            },
+
+            async executeProjectOp(op) {
+                this.confirmProjectOp = null;
+                this.projectOperating = op.project.name;
+                this.projectOperatingAction = op.action;
+
+                try {
+                    const resp = await fetch(`/_api/projects/${encodeURIComponent(op.project.name)}/${op.action}`, {
+                        method: op.action === 'logs' ? 'GET' : 'POST'
+                    });
+
+                    if (!resp.ok) {
+                        const data = await resp.json().catch(() => ({ error: resp.statusText }));
+                        throw new Error(data.error || 'Operation failed');
+                    }
+
+                    // Refresh projects after operation
+                    await this.fetchProjects();
+
+                    // Show success notification
+                    if (this.notificationsEnabled && Notification.permission === 'granted') {
+                        const actionLabel = op.action === 'up' ? 'started' : op.action === 'down' ? 'stopped' : 'restarted';
+                        this.notify(
+                            `${op.project.name} ${actionLabel}`,
+                            `Project ${op.action} completed successfully`
+                        );
+                    }
+                } catch (e) {
+                    console.error(`Failed to ${op.action} project:`, e);
+                    alert(`Failed to ${op.action} project: ${e.message}`);
+                } finally {
+                    setTimeout(() => {
+                        this.projectOperating = null;
+                        this.projectOperatingAction = null;
+                    }, 1000);
                 }
             },
 

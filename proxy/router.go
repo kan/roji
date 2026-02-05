@@ -292,6 +292,7 @@ func (r *Router) ListRoutes() []RouteInfo {
 			ContainerID:   route.Backend.ContainerID,
 			ContainerName: route.Backend.ContainerName,
 			ServiceName:   route.Backend.ServiceName,
+			ProjectName:   route.Backend.ProjectName,
 			Warning:       route.Backend.Warning,
 			Network:       route.Backend.Network,
 			HasBasicAuth:  route.Backend.BasicAuth != nil,
@@ -311,6 +312,7 @@ func (r *Router) ListRoutes() []RouteInfo {
 				ContainerID:   route.Backend.ContainerID,
 				ContainerName: route.Backend.ContainerName,
 				ServiceName:   route.Backend.ServiceName,
+				ProjectName:   route.Backend.ProjectName,
 				Warning:       route.Backend.Warning,
 				Network:       route.Backend.Network,
 				HasBasicAuth:  route.Backend.BasicAuth != nil,
@@ -349,6 +351,7 @@ type RouteInfo struct {
 	ContainerID   string `json:"containerId,omitempty"`
 	ContainerName string `json:"containerName,omitempty"`
 	ServiceName   string `json:"serviceName"`
+	ProjectName   string `json:"projectName,omitempty"`
 	Warning       string `json:"warning,omitempty"`
 	Network       string `json:"network,omitempty"`
 	IsStatic      bool   `json:"isStatic,omitempty"`

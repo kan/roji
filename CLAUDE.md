@@ -50,6 +50,7 @@ roji/
 │   └── cmd/                  # Cobraコマンド（root, routes, version, health, server, config, doctor, ca）
 ├── docker/
 │   ├── client.go            # Docker API ラッパー
+│   ├── compose.go           # Docker Compose CLI実行（up/down/restart/logs）
 │   └── watcher.go           # Events 監視
 ├── proxy/
 │   ├── handler.go           # ReverseProxy 実装
@@ -117,6 +118,10 @@ roji/
 | `/_api/health` | ヘルスチェック |
 | `/_api/status` | 詳細ステータス（証明書期限等） |
 | `/_api/containers/{id}/restart` | コンテナ再起動 |
+| `/_api/projects/{name}/up` | プロジェクト起動（`docker compose up -d`） |
+| `/_api/projects/{name}/down` | プロジェクト停止（`docker compose down`） |
+| `/_api/projects/{name}/restart` | プロジェクト再起動（`docker compose restart`） |
+| `/_api/projects/{name}/logs` | プロジェクトログ（SSEストリーム） |
 | `/_api/config/reload` | 設定ファイル再読み込み（静的サイト更新） |
 
 ## 実装済み機能（v0.1.0 → v0.9.0）
@@ -133,9 +138,12 @@ roji/
 ### ダッシュボード
 - リアルタイム更新（SSE + Petite Vue）
 - プロジェクト履歴・クイックアクセス
+- Docker Compose操作（Start/Stop/Restartボタン）
 - リクエストログビューア（フィルタリング対応）
 - ログエクスポート（JSON/CSV形式）
 - コンテナ再起動ボタン
+- ルート一覧からプロジェクト停止ボタン
+- 非アクティブプロジェクトのURL直接アクセス時にStartボタン表示
 - ダークモード（システム設定連動）
 - 設定ミス警告表示
 - 認証バッジ表示（🔒 auth）
@@ -165,6 +173,7 @@ roji/
   - 自動セットアップ（doctor --fix, ca install, service install）
   - 旧Docker版は `install-docker.sh` として維持
 - 設定ファイルバリデーション（不明キー警告、型チェック）
+- Docker Compose操作（ダッシュボード/APIからup/down/restart/logs）
 
 ### 配布・品質
 - ワンライナーインストール（Native Mode / アップグレード対応）
@@ -389,7 +398,7 @@ Run 'roji doctor --fix' to auto-fix where possible
 - 管理者権限で実行する必要あり
 - ログは `%USERPROFILE%\.local\share\roji\roji.log` に出力
 
-#### Docker Compose操作
+#### Docker Compose操作 ✅
 
 ダッシュボード/APIからdocker-composeプロジェクトを操作:
 
@@ -400,9 +409,19 @@ Run 'roji doctor --fix' to auto-fix where possible
 | `POST /_api/projects/{name}/restart` | 全サービス再起動 |
 | `GET /_api/projects/{name}/logs` | ログ取得（SSE） |
 
-**実装方針:**
+**実装:**
+- `docker/compose.go`: `exec.CommandContext`で`docker compose`コマンドを実行
 - `project.Store`に保存済みの`working_dir`と`config_files`を使用
-- `docker compose -f <files> -p <project> <command>` を実行
+- カンマ区切りの`config_files`を`-f`フラグに展開
+- プロジェクト名バリデーション（`[a-zA-Z0-9_.\-]+`のみ許可）
+- CORS対応（非ダッシュボードホストからのAPI呼び出し）
+
+**ダッシュボード連携:**
+- アクティブプロジェクト: Restart / Stop ボタン
+- 非アクティブプロジェクト: Start ボタン（+ 既存のCopy start command）
+- ルート一覧: プロジェクト所属のルートにStopボタン
+- 確認ダイアログ付き（既存のコンテナ再起動と同じUIパターン）
+- Not Foundページ: ホスト名から非アクティブプロジェクトを自動検出し、Startボタンを表示
 
 #### 静的ファイルホスティング（httpd機能）✅
 

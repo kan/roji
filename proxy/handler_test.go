@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
+	"github.com/kan/roji/project"
 )
 
 func testStatusConfig() *StatusConfig {
@@ -973,5 +974,363 @@ func TestHandler_BasicAuth_DockerRoute(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHandler_ProjectOperation_MethodNotAllowed(t *testing.T) {
+	router := NewRouter()
+	store := project.NewStore("")
+	store.Update(&project.Project{
+		Name:       "myapp",
+		WorkingDir: "/tmp/myapp",
+		Active:     true,
+	})
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+	tests := []struct {
+		name           string
+		path           string
+		method         string
+		expectedStatus int
+	}{
+		// up/down/restart require POST
+		{"up with GET", "/_api/projects/myapp/up", "GET", http.StatusMethodNotAllowed},
+		{"down with GET", "/_api/projects/myapp/down", "GET", http.StatusMethodNotAllowed},
+		{"restart with GET", "/_api/projects/myapp/restart", "GET", http.StatusMethodNotAllowed},
+		// logs requires GET
+		{"logs with POST", "/_api/projects/myapp/logs", "POST", http.StatusMethodNotAllowed},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "https://roji.dev.localhost"+tt.path, nil)
+			req.Host = "roji.dev.localhost"
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("status = %d, want %d", w.Code, tt.expectedStatus)
+			}
+		})
+	}
+}
+
+func TestHandler_ProjectOperation_ProjectNotFound(t *testing.T) {
+	router := NewRouter()
+	store := project.NewStore("")
+	// Handler has project store but no docker client — however, docker client
+	// is checked before project lookup. To test "not found", we need the docker
+	// client nil check to pass. Since getProjectOrError checks projectStore first,
+	// then dockerClient, then project name, we test with nil dockerClient which
+	// returns 503. To truly test 404, we need non-nil dockerClient, but we can't
+	// easily create one in tests. Instead, test the 503 path for nil docker client
+	// is already covered. Here we check that an unknown project name with nil
+	// docker client returns 503 (service unavailable).
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+	req := httptest.NewRequest("POST", "https://roji.dev.localhost/_api/projects/nonexistent/up", nil)
+	req.Host = "roji.dev.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	// With nil docker client, returns 503 before checking project existence
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHandler_ProjectOperation_NilProjectStore(t *testing.T) {
+	router := NewRouter()
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	req := httptest.NewRequest("POST", "https://roji.dev.localhost/_api/projects/myapp/up", nil)
+	req.Host = "roji.dev.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHandler_ProjectOperation_InvalidName(t *testing.T) {
+	router := NewRouter()
+	store := project.NewStore("")
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+	// Test with names that are invalid but don't break URL parsing
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"path traversal", "/_api/projects/my;rm/up"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "https://roji.dev.localhost"+tt.path, nil)
+			req.Host = "roji.dev.localhost"
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("path %q: status = %d, want %d", tt.path, w.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}
+
+func TestHandler_ProjectOperation_RouteDispatch(t *testing.T) {
+	router := NewRouter()
+	store := project.NewStore("")
+	store.Update(&project.Project{
+		Name:       "my-app",
+		WorkingDir: "/tmp/myapp",
+		Active:     true,
+	})
+	store.Update(&project.Project{
+		Name:       "my.project",
+		WorkingDir: "/tmp/myproject",
+		Active:     true,
+	})
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+	tests := []struct {
+		name           string
+		path           string
+		expectedStatus int
+	}{
+		// Valid project names with hyphens and dots
+		{"hyphenated name", "/_api/projects/my-app/up", http.StatusServiceUnavailable},     // no docker client
+		{"dotted name", "/_api/projects/my.project/up", http.StatusServiceUnavailable},     // no docker client
+		// Invalid paths
+		{"no action", "/_api/projects/myapp/", http.StatusBadRequest},
+		{"unknown action", "/_api/projects/myapp/unknown", http.StatusBadRequest},
+		{"missing name", "/_api/projects//up", http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "https://roji.dev.localhost"+tt.path, nil)
+			req.Host = "roji.dev.localhost"
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("path %q: status = %d, want %d", tt.path, w.Code, tt.expectedStatus)
+			}
+		})
+	}
+}
+
+func TestHandler_ProjectOperation_CORS(t *testing.T) {
+	router := NewRouter()
+	store := project.NewStore("")
+	store.Update(&project.Project{
+		Name:       "myapp",
+		WorkingDir: "/tmp/myapp",
+		Active:     false,
+	})
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+	t.Run("preflight OPTIONS returns CORS headers", func(t *testing.T) {
+		req := httptest.NewRequest("OPTIONS", "https://roji.dev.localhost/_api/projects/myapp/up", nil)
+		req.Host = "roji.dev.localhost"
+		req.Header.Set("Origin", "https://myapp.dev.localhost")
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNoContent {
+			t.Errorf("status = %d, want %d", w.Code, http.StatusNoContent)
+		}
+		if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://myapp.dev.localhost" {
+			t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "https://myapp.dev.localhost")
+		}
+		if got := w.Header().Get("Access-Control-Allow-Methods"); got == "" {
+			t.Error("Access-Control-Allow-Methods should be set")
+		}
+	})
+
+	t.Run("no CORS for non-subdomain origin", func(t *testing.T) {
+		req := httptest.NewRequest("OPTIONS", "https://roji.dev.localhost/_api/projects/myapp/up", nil)
+		req.Host = "roji.dev.localhost"
+		req.Header.Set("Origin", "https://evil.example.com")
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("Access-Control-Allow-Origin should be empty for external origin, got %q", got)
+		}
+	})
+
+	t.Run("no CORS without Origin header", func(t *testing.T) {
+		req := httptest.NewRequest("OPTIONS", "https://roji.dev.localhost/_api/projects/myapp/up", nil)
+		req.Host = "roji.dev.localhost"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("Access-Control-Allow-Origin should be empty without Origin, got %q", got)
+		}
+	})
+}
+
+func TestIsValidProjectName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"simple", "myapp", true},
+		{"with hyphen", "my-app", true},
+		{"with dot", "my.app", true},
+		{"with underscore", "my_app", true},
+		{"with numbers", "app123", true},
+		{"all allowed chars", "my-app_v1.2", true},
+		{"empty", "", false},
+		{"with space", "my app", false},
+		{"with semicolon", "my;app", false},
+		{"with slash", "my/app", false},
+		{"shell injection", "$(whoami)", false},
+		{"dots only", "..", true}, // dots are valid; name is only used as store key, not file path
+		{"backticks", "`id`", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isValidProjectName(tt.input)
+			if got != tt.want {
+				t.Errorf("isValidProjectName(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHandler_NotFound_WithInactiveProject(t *testing.T) {
+	router := NewRouter()
+	store := project.NewStore("")
+
+	// Add an inactive project
+	store.Update(&project.Project{
+		Name:       "myapp",
+		WorkingDir: "/home/user/myapp",
+		Active:     false,
+		Services:   []string{"web", "db"},
+	})
+
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+	// Access hostname that matches inactive project
+	req := httptest.NewRequest("GET", "https://myapp.dev.localhost/", nil)
+	req.Host = "myapp.dev.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "myapp") {
+		t.Errorf("body should contain project name 'myapp'")
+	}
+	if !strings.Contains(body, "Start") {
+		t.Errorf("body should contain 'Start' button")
+	}
+	if !strings.Contains(body, "/_api/projects/myapp/up") {
+		t.Errorf("body should contain start API URL")
+	}
+}
+
+func TestHandler_NotFound_WithMultiServiceProject(t *testing.T) {
+	router := NewRouter()
+	store := project.NewStore("")
+
+	store.Update(&project.Project{
+		Name:       "myapp",
+		WorkingDir: "/home/user/myapp",
+		Active:     false,
+		Services:   []string{"web", "api"},
+	})
+
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+	// Access "web-myapp.dev.localhost" — multi-service pattern
+	req := httptest.NewRequest("GET", "https://web-myapp.dev.localhost/", nil)
+	req.Host = "web-myapp.dev.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "myapp") {
+		t.Errorf("body should contain project name 'myapp'")
+	}
+	if !strings.Contains(body, "Start") {
+		t.Errorf("body should contain 'Start' button for multi-service hostname match")
+	}
+}
+
+func TestHandler_NotFound_NoMatchForActiveProject(t *testing.T) {
+	router := NewRouter()
+	store := project.NewStore("")
+
+	// Add an active project — should NOT show start button
+	store.Update(&project.Project{
+		Name:       "myapp",
+		WorkingDir: "/home/user/myapp",
+		Active:     true,
+		Services:   []string{"web"},
+	})
+
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+	req := httptest.NewRequest("GET", "https://myapp.dev.localhost/", nil)
+	req.Host = "myapp.dev.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, "project-start\">") {
+		t.Errorf("body should NOT contain project-start section for active project")
+	}
+}
+
+func TestHandler_NotFound_NoMatchForUnknownHost(t *testing.T) {
+	router := NewRouter()
+	store := project.NewStore("")
+
+	store.Update(&project.Project{
+		Name:       "myapp",
+		WorkingDir: "/home/user/myapp",
+		Active:     false,
+	})
+
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+	// Access unrelated hostname — should NOT show start button
+	req := httptest.NewRequest("GET", "https://other.dev.localhost/", nil)
+	req.Host = "other.dev.localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, "project-start\">") {
+		t.Errorf("body should NOT contain project-start section for unmatched hostname")
 	}
 }

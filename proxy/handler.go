@@ -8,6 +8,7 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"embed"
@@ -19,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -207,6 +209,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Container restart endpoint
 		if strings.HasPrefix(r.URL.Path, "/_api/containers/") && strings.HasSuffix(r.URL.Path, "/restart") {
 			h.serveContainerRestart(w, r)
+			return
+		}
+		// Project operations endpoint (must come before /_api/logs)
+		if strings.HasPrefix(r.URL.Path, "/_api/projects/") {
+			h.serveProjectOperation(w, r)
 			return
 		}
 		// Request logs endpoint
@@ -810,14 +817,22 @@ func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request, hostnam
 
 	routes := h.router.ListRoutes()
 
+	// Try to find a matching inactive project for this hostname
+	var matchedProject *project.Project
+	if h.projectStore != nil && h.baseDomain != "" {
+		matchedProject = h.findProjectForHostname(hostname)
+	}
+
 	data := struct {
 		Hostname      string
 		Routes        []RouteInfo
 		DashboardHost string
+		Project       *project.Project
 	}{
 		Hostname:      hostname,
 		Routes:        routes,
 		DashboardHost: h.dashboardHost,
+		Project:       matchedProject,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -826,6 +841,44 @@ func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request, hostnam
 		slog.Error("failed to render notfound template", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
+}
+
+// findProjectForHostname attempts to match a hostname to an inactive project.
+// Hostname patterns:
+//   - {project}.{baseDomain}         → project name match
+//   - {service}-{project}.{baseDomain} → project name match on suffix
+func (h *Handler) findProjectForHostname(hostname string) *project.Project {
+	// Strip the base domain suffix to get the subdomain part
+	suffix := "." + h.baseDomain
+	if !strings.HasSuffix(hostname, suffix) {
+		return nil
+	}
+	subdomain := strings.TrimSuffix(hostname, suffix)
+	if subdomain == "" {
+		return nil
+	}
+
+	inactive := h.projectStore.ListInactive()
+
+	// First: exact match — subdomain == project name
+	for _, p := range inactive {
+		if p.Name == subdomain {
+			return p
+		}
+	}
+
+	// Second: multi-service pattern — subdomain is "service-project"
+	// Try matching the suffix after the first hyphen
+	if idx := strings.Index(subdomain, "-"); idx != -1 {
+		projectPart := subdomain[idx+1:]
+		for _, p := range inactive {
+			if p.Name == projectPart {
+				return p
+			}
+		}
+	}
+
+	return nil
 }
 
 func (h *Handler) handleRouteWarning(w http.ResponseWriter, r *http.Request, hostname string, route *Route) {
@@ -1221,4 +1274,256 @@ func (h *Handler) serveGRPC(w http.ResponseWriter, r *http.Request, targetURL *u
 	}
 
 	proxy.ServeHTTP(w, r)
+}
+
+// validProjectName matches project names containing only safe characters
+var validProjectName = regexp.MustCompile(`^[a-zA-Z0-9_.\-]+$`)
+
+// isValidProjectName checks if a project name contains only safe characters
+func isValidProjectName(name string) bool {
+	return validProjectName.MatchString(name)
+}
+
+// getProjectOrError looks up a project and writes error responses if something is wrong.
+// Returns nil if an error response was written.
+func (h *Handler) getProjectOrError(w http.ResponseWriter, name string) *project.Project {
+	if !isValidProjectName(name) {
+		http.Error(w, "Invalid project name", http.StatusBadRequest)
+		return nil
+	}
+	if h.projectStore == nil {
+		http.Error(w, "Project store not available", http.StatusServiceUnavailable)
+		return nil
+	}
+	if h.dockerClient == nil {
+		http.Error(w, "Docker client not available", http.StatusServiceUnavailable)
+		return nil
+	}
+
+	p := h.projectStore.Get(name)
+	if p == nil {
+		http.Error(w, "Project not found", http.StatusNotFound)
+		return nil
+	}
+	if p.WorkingDir == "" {
+		http.Error(w, "Project has no working directory", http.StatusBadRequest)
+		return nil
+	}
+
+	return p
+}
+
+// setProjectCORS sets CORS headers for project operation API responses.
+// These endpoints may be called cross-origin from notfound pages served on
+// project hostnames (e.g., myapp.dev.localhost → roji.dev.localhost).
+func (h *Handler) setProjectCORS(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return
+	}
+	// Allow requests from any subdomain of the base domain
+	if h.baseDomain != "" && strings.HasSuffix(strings.TrimPrefix(origin, "https://"), "."+h.baseDomain) {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	}
+}
+
+// serveProjectOperation dispatches project operations based on the URL path.
+// Path format: /_api/projects/{name}/{action}
+func (h *Handler) serveProjectOperation(w http.ResponseWriter, r *http.Request) {
+	// Handle CORS for cross-origin requests from project hostnames
+	h.setProjectCORS(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Parse /_api/projects/{name}/{action}
+	path := strings.TrimPrefix(r.URL.Path, "/_api/projects/")
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, "Invalid path: expected /_api/projects/{name}/{action}", http.StatusBadRequest)
+		return
+	}
+
+	name := parts[0]
+	action := parts[1]
+
+	switch action {
+	case "up":
+		h.serveProjectUp(w, r, name)
+	case "down":
+		h.serveProjectDown(w, r, name)
+	case "restart":
+		h.serveProjectRestart(w, r, name)
+	case "logs":
+		h.serveProjectLogs(w, r, name)
+	default:
+		http.Error(w, "Unknown action: "+action, http.StatusBadRequest)
+	}
+}
+
+func (h *Handler) serveProjectUp(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	p := h.getProjectOrError(w, name)
+	if p == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	output, err := h.dockerClient.ComposeUp(ctx, p.WorkingDir, p.ConfigFiles)
+	if err != nil {
+		slog.Error("failed to compose up project",
+			"project", name,
+			"error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+			"error":  err.Error(),
+			"output": output,
+		})
+		return
+	}
+
+	slog.Info("project started", "project", name)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "started",
+		"project": name,
+		"output":  output,
+	})
+}
+
+func (h *Handler) serveProjectDown(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	p := h.getProjectOrError(w, name)
+	if p == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	output, err := h.dockerClient.ComposeDown(ctx, p.WorkingDir, p.ConfigFiles)
+	if err != nil {
+		slog.Error("failed to compose down project",
+			"project", name,
+			"error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+			"error":  err.Error(),
+			"output": output,
+		})
+		return
+	}
+
+	slog.Info("project stopped", "project", name)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "stopped",
+		"project": name,
+		"output":  output,
+	})
+}
+
+func (h *Handler) serveProjectRestart(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	p := h.getProjectOrError(w, name)
+	if p == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	output, err := h.dockerClient.ComposeRestart(ctx, p.WorkingDir, p.ConfigFiles)
+	if err != nil {
+		slog.Error("failed to compose restart project",
+			"project", name,
+			"error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+			"error":  err.Error(),
+			"output": output,
+		})
+		return
+	}
+
+	slog.Info("project restarted", "project", name)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "restarted",
+		"project": name,
+		"output":  output,
+	})
+}
+
+func (h *Handler) serveProjectLogs(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	p := h.getProjectOrError(w, name)
+	if p == nil {
+		return
+	}
+
+	// Check for SSE support
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		return
+	}
+
+	reader, err := h.dockerClient.ComposeLogs(r.Context(), p.WorkingDir, p.ConfigFiles)
+	if err != nil {
+		slog.Error("failed to start compose logs",
+			"project", name,
+			"error", err)
+		http.Error(w, fmt.Sprintf("Failed to start logs: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer reader.Close()
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	flusher.Flush()
+
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+			line := scanner.Text()
+			fmt.Fprintf(w, "data: %s\n\n", line)
+			flusher.Flush()
+		}
+	}
 }
