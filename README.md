@@ -44,7 +44,7 @@ A simple reverse proxy for local development environments. Automatically discove
 Install and start roji with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.1/install.sh | bash
 ```
 
 This will:
@@ -72,7 +72,7 @@ curl -fsSL ... | bash -s -- --no-service
 The install script automatically detects existing installations:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.1/install.sh | bash
 ```
 
 - **Same version**: Shows "already up to date" and exits

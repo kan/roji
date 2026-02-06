@@ -1,6 +1,6 @@
 module github.com/kan/roji
 
-go 1.25
+go 1.25.7
 
 tool github.com/air-verse/air
 
