@@ -608,6 +608,7 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 | 機能 | 説明 | 優先度 |
 |------|------|--------|
 | VS Code拡張 | ルート一覧、ブラウザ起動、ログ連携（API安定後） | 高 |
+| Docker Desktop ネットワーク対応 | macOS/Windows NativeのDocker Desktopではコンテナ内部IPへの直接アクセス不可（Linux VM経由のため）。ポートフォワーディング自動化や`host.docker.internal`経由のルーティングなど、Docker Desktop固有のネットワーク制約への対応。※WSL2+Docker Desktopは既に動作 | 中 |
 | 簡易daemon化 | `roji start`でバックグラウンド起動（サービス登録不要）、PID管理 | 中 |
 | ルート別ヘルスチェック | 各バックエンドの死活監視、ダッシュボード表示 | 中 |
 | レスポンスタイム統計 | P50/P95/P99レイテンシ、ダッシュボードでグラフ表示 | 中 |
