@@ -1,17 +1,19 @@
-# Development docker-compose.yml
+# Development and testing docker-compose.yml
+#
+# This file is for roji development and testing ONLY.
+# For production use, install roji as a native binary:
+#   curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.0/install.sh | bash
 #
 # Usage:
 #   1. Generate certificates with mkcert:
 #      mkcert -install
-#      mkcert -cert-file certs/cert.pem -key-file certs/key.pem "*.localhost" localhost 127.0.0.1
+#      mkcert -cert-file certs/cert.pem -key-file certs/key.pem "*.dev.localhost" dev.localhost localhost 127.0.0.1
 #
 #   2. Copy env file and customize if needed:
 #      cp .env.example .env
 #
 #   3. Start development server with hot reload:
 #      docker compose up
-#
-# For production/user setup, see examples/docker-compose.yml
 
 services:
   roji:
@@ -34,10 +36,10 @@ services:
     environment:
       # Defaults; override via .env file
       ROJI_NETWORK: ${ROJI_NETWORK:-roji}
-      ROJI_DOMAIN: ${ROJI_DOMAIN:-localhost}
+      ROJI_DOMAIN: ${ROJI_DOMAIN:-dev.localhost}
       ROJI_CERTS_DIR: /certs
       ROJI_DATA_DIR: /data
-      ROJI_DASHBOARD: ${ROJI_DASHBOARD:-roji.localhost}
+      ROJI_DASHBOARD: ${ROJI_DASHBOARD:-roji.dev.localhost}
       ROJI_LOG_LEVEL: ${ROJI_LOG_LEVEL:-debug}
     labels:
       - "roji.self=true"

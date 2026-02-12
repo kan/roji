@@ -8,7 +8,6 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kan/roji)](https://github.com/kan/roji/blob/main/go.mod)
 [![GoDoc](https://pkg.go.dev/badge/github.com/kan/roji.svg)](https://pkg.go.dev/github.com/kan/roji)
 [![License](https://img.shields.io/github/license/kan/roji)](https://github.com/kan/roji/blob/main/LICENSE)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fkan%2Froji-blue?logo=docker)](https://github.com/kan/roji/pkgs/container/roji)
 
 A simple reverse proxy for local development environments. Automatically discovers Docker Compose services and provides HTTPS access via `*.dev.localhost`.
 
@@ -16,7 +15,7 @@ A simple reverse proxy for local development environments. Automatically discove
 
 ## Features
 
-- **Native Mode**: Run as a standalone binary without Docker (v0.8.0+)
+- **Standalone Binary**: Run as a single binary on your host system
 - **Auto-discovery**: Automatically detects and routes containers on the shared network
 - **TLS Support**: Auto-generates certificates (no mkcert required) or use your own
 - **Label-based Configuration**: Customize hostnames and ports via container labels
@@ -44,7 +43,7 @@ A simple reverse proxy for local development environments. Automatically discove
 Install and start roji with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.0/install.sh | bash
 ```
 
 This will:
@@ -72,17 +71,16 @@ curl -fsSL ... | bash -s -- --no-service
 The install script automatically detects existing installations:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.0/install.sh | bash
 ```
 
 - **Same version**: Shows "already up to date" and exits
 - **Newer available**: Prompts to upgrade (auto-upgrades in piped mode)
-- **Docker Mode detected**: Offers migration to Native Mode
 
 **Force upgrade (skip prompts):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash -s -- --upgrade
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.0/install.sh | bash -s -- --upgrade
 ```
 
 ### Manual Installation
@@ -111,33 +109,7 @@ sudo ./bin/roji
 
 Configuration is stored in `~/.config/roji/config.yaml`. See [CLI Commands](#cli-commands) for more details.
 
-### Docker Mode (Legacy)
-
-For Docker-based installation, use the legacy installer:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install-docker.sh | bash
-```
-
-This installs roji as a Docker container with docker-compose. Note that Native Mode (above) is now the recommended approach.
-
-**Manual Docker setup:**
-
-```bash
-# Clone repository
-git clone https://github.com/kan/roji.git
-cd roji
-
-# Create network and start
-docker network create roji
-docker compose up -d
-```
-
-**For development**: Use `docker compose -f docker-compose.dev.yml up` for hot-reloading with [Air](https://github.com/cosmtrek/air).
-
-Certificates are **automatically generated** on first startup. See [TLS Certificates](#tls-certificates) for how to trust them.
-
-#### 5. Start your application
+### Start your application
 
 ```yaml
 # your-app/docker-compose.yml
@@ -329,15 +301,15 @@ static_sites:
 
 ## Environment Variables
 
-| Variable | Description | Default (Native) | Default (Docker) |
-|----------|-------------|------------------|------------------|
-| `ROJI_NETWORK` | Docker network(s) to watch (comma-separated) | `roji` | `roji` |
-| `ROJI_DOMAIN` | Base domain | `dev.localhost` | `dev.localhost` |
-| `ROJI_CERTS_DIR` | Certificate directory | `~/.local/share/roji/certs` | `/certs` |
-| `ROJI_DATA_DIR` | Data directory (project history) | `~/.local/share/roji` | `/data` |
-| `ROJI_DASHBOARD` | Dashboard hostname | `roji.{domain}` | `roji.{domain}` |
-| `ROJI_LOG_LEVEL` | Log level | `info` | `info` |
-| `ROJI_AUTO_CERT` | Auto-generate certificates | `true` | `true` |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ROJI_NETWORK` | Docker network(s) to watch (comma-separated) | `roji` |
+| `ROJI_DOMAIN` | Base domain | `dev.localhost` |
+| `ROJI_CERTS_DIR` | Certificate directory | `~/.local/share/roji/certs` |
+| `ROJI_DATA_DIR` | Data directory (project history) | `~/.local/share/roji` |
+| `ROJI_DASHBOARD` | Dashboard hostname | `roji.{domain}` |
+| `ROJI_LOG_LEVEL` | Log level | `info` |
+| `ROJI_AUTO_CERT` | Auto-generate certificates | `true` |
 
 Settings priority (highest to lowest): CLI flags > Environment variables > Config file > Defaults
 

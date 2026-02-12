@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-02-12
+
+### Breaking Changes
+
+- **Docker Mode removed**: `install-docker.sh` has been deleted. roji now only supports Native Mode (standalone binary). Existing Docker Mode users should migrate manually by stopping the container, removing the installation, and re-running the native installer.
+- **`ROJI_DOMAIN` default unified**: `docker-compose.yml` now defaults to `dev.localhost` (was `localhost`), matching Native Mode behavior.
+
+### Added
+
+- **Recent Projects delete**: Remove projects from history via dashboard or API
+  - `DELETE /_api/projects/{name}/delete` endpoint
+  - Remove button on inactive projects in dashboard
+  - Confirmation dialog before deletion
+
+### Changed
+
+- `install.sh` now shows an error and migration instructions when Docker Mode is detected, instead of offering automatic migration
+- `docker-compose.yml` header updated to clarify it is for development and testing only
+
+### Removed
+
+- `install-docker.sh` (Docker Mode installer)
+- Docker Mode (Legacy) section from README.md
+- `--migrate` flag from `install.sh`
+
 ## [0.9.1] - 2026-02-06
 
 ### Security
@@ -375,6 +400,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.0.0]: https://github.com/kan/roji/releases/tag/v1.0.0
+[0.9.1]: https://github.com/kan/roji/releases/tag/v0.9.1
 [0.9.0]: https://github.com/kan/roji/releases/tag/v0.9.0
 [0.8.0]: https://github.com/kan/roji/releases/tag/v0.8.0
 [0.7.0]: https://github.com/kan/roji/releases/tag/v0.7.0

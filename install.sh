@@ -9,7 +9,6 @@ set -e
 #   --local         Install to ~/.local/bin (default)
 #   --global        Install to /usr/local/bin
 #   --no-service    Skip service installation
-#   --migrate       Migrate from Docker Mode
 
 # Color codes for output
 RED='\033[0;31m'
@@ -29,8 +28,6 @@ DOCKER_INSTALL_DIR="$HOME/.roji"
 INSTALL_MODE=""  # Will be set interactively or via flags
 FORCE_UPGRADE=false
 SKIP_SERVICE=false
-MIGRATE_DOCKER=false
-
 # Parse command line arguments
 for arg in "$@"; do
     case $arg in
@@ -45,9 +42,6 @@ for arg in "$@"; do
             ;;
         --no-service)
             SKIP_SERVICE=true
-            ;;
-        --migrate)
-            MIGRATE_DOCKER=true
             ;;
     esac
 done
@@ -190,71 +184,31 @@ get_latest_version() {
     echo "$version"
 }
 
-# Migrate from Docker Mode
-migrate_from_docker() {
+# Warn about Docker Mode (no longer supported in v1.0.0)
+warn_docker_mode() {
     echo ""
-    echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${YELLOW}║${NC}  Docker Mode installation detected                           ${YELLOW}║${NC}"
-    echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${RED}╔═══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║${NC}  Docker Mode is no longer supported (removed in v1.0.0)      ${RED}║${NC}"
+    echo -e "${RED}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo "roji now runs as a native binary instead of a Docker container."
-    echo "This provides better performance and easier management."
+    echo "roji v1.0.0 only supports Native Mode (standalone binary)."
+    echo "Docker Mode was deprecated in v0.9.0 and has been removed."
     echo ""
-
-    if [ -t 0 ] && [ "$MIGRATE_DOCKER" != true ]; then
-        echo -e "${CYAN}Options:${NC}"
-        echo "  1. Migrate to Native Mode (recommended)"
-        echo "  2. Keep Docker Mode (exit)"
-        echo ""
-        read -p "Choose an option [1]: " choice
-        choice=${choice:-1}
-
-        if [ "$choice" != "1" ]; then
-            echo ""
-            print_info "Keeping Docker Mode. No changes made."
-            echo ""
-            echo "To manage your Docker Mode installation:"
-            echo "  cd ${DOCKER_INSTALL_DIR}"
-            echo "  docker compose up -d"
-            echo ""
-            exit 0
-        fi
-    fi
-
-    print_info "Migrating from Docker Mode to Native Mode..."
-
-    # Stop Docker container
-    print_info "Stopping Docker container..."
-    if [ -f "${DOCKER_INSTALL_DIR}/docker-compose.yml" ]; then
-        cd "${DOCKER_INSTALL_DIR}"
-        docker compose down 2>/dev/null || true
-    else
-        docker stop roji 2>/dev/null || true
-        docker rm roji 2>/dev/null || true
-    fi
-    print_success "Docker container stopped"
-
-    # Backup certs if they exist
-    if [ -d "${DOCKER_INSTALL_DIR}/certs" ]; then
-        print_info "Backing up certificates..."
-        mkdir -p "$HOME/.local/share/roji"
-        cp -r "${DOCKER_INSTALL_DIR}/certs" "$HOME/.local/share/roji/" 2>/dev/null || true
-        print_success "Certificates backed up to ~/.local/share/roji/certs"
-    fi
-
-    # Rename old directory as backup
-    if [ -d "${DOCKER_INSTALL_DIR}" ]; then
-        local backup_dir="${DOCKER_INSTALL_DIR}.backup.$(date +%Y%m%d_%H%M%S)"
-        print_info "Moving old installation to ${backup_dir}..."
-        mv "${DOCKER_INSTALL_DIR}" "${backup_dir}"
-        print_success "Old installation backed up"
-        echo ""
-        echo "  You can delete it later with: rm -rf ${backup_dir}"
-    fi
-
+    echo -e "${CYAN}To migrate manually:${NC}"
     echo ""
-    print_success "Migration preparation complete"
+    echo "  1. Stop the Docker container:"
+    echo "     cd ${DOCKER_INSTALL_DIR} && docker compose down"
     echo ""
+    echo "  2. Back up your certificates (optional):"
+    echo "     cp -r ${DOCKER_INSTALL_DIR}/certs ~/.local/share/roji/"
+    echo ""
+    echo "  3. Remove the Docker installation:"
+    echo "     rm -rf ${DOCKER_INSTALL_DIR}"
+    echo ""
+    echo "  4. Re-run this installer:"
+    echo "     curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.0/install.sh | bash"
+    echo ""
+    exit 1
 }
 
 # Select installation directory
@@ -633,7 +587,7 @@ main() {
 
     # Check for existing installations
     if check_docker_mode; then
-        migrate_from_docker
+        warn_docker_mode
     elif check_native_mode; then
         handle_existing_native
     fi

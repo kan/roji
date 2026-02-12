@@ -885,18 +885,21 @@
                 <h3 v-if="confirmProjectOp.action === 'up'">&#x25B6; Start Project?</h3>
                 <h3 v-else-if="confirmProjectOp.action === 'down'">&#x23F9; Stop Project?</h3>
                 <h3 v-else-if="confirmProjectOp.action === 'restart'">&#x1F504; Restart Project?</h3>
+                <h3 v-else-if="confirmProjectOp.action === 'delete'">&#x1F5D1; Remove Project?</h3>
                 <p>
                     <span v-if="confirmProjectOp.action === 'up'">Start all services in</span>
                     <span v-else-if="confirmProjectOp.action === 'down'">Stop all services in</span>
                     <span v-else-if="confirmProjectOp.action === 'restart'">Restart all services in</span>
+                    <span v-else-if="confirmProjectOp.action === 'delete'">Remove from project history?</span>
                     <code>{{confirmProjectOp.project.name}}</code>?
                 </p>
                 <div class="confirm-buttons">
                     <button class="btn-cancel" @click="confirmProjectOp = null">Cancel</button>
-                    <button :class="['btn-confirm', confirmProjectOp.action === 'down' ? 'danger' : '']" @click="executeProjectOp(confirmProjectOp)">
+                    <button :class="['btn-confirm', (confirmProjectOp.action === 'down' || confirmProjectOp.action === 'delete') ? 'danger' : '']" @click="executeProjectOp(confirmProjectOp)">
                         <span v-if="confirmProjectOp.action === 'up'">Start</span>
                         <span v-else-if="confirmProjectOp.action === 'down'">Stop</span>
                         <span v-else-if="confirmProjectOp.action === 'restart'">Restart</span>
+                        <span v-else-if="confirmProjectOp.action === 'delete'">Remove</span>
                     </button>
                 </div>
             </div>
@@ -973,6 +976,16 @@
                         >
                             <span v-if="copiedProject === project.name">&#x2714; Copied</span>
                             <span v-else>&#x1F4CB; Copy start command</span>
+                        </button>
+                        <button
+                            class="project-btn stop"
+                            :class="{ operating: projectOperating === project.name && projectOperatingAction === 'delete' }"
+                            :disabled="projectOperating === project.name"
+                            @click="showProjectConfirm(project, 'delete')"
+                            title="Remove from history"
+                        >
+                            <span v-if="projectOperating === project.name && projectOperatingAction === 'delete'">&#x1F5D1; Removing...</span>
+                            <span v-else>&#x1F5D1; Remove</span>
                         </button>
                     </div>
                 </div>
@@ -1355,7 +1368,7 @@
 
                 try {
                     const resp = await fetch(`/_api/projects/${encodeURIComponent(op.project.name)}/${op.action}`, {
-                        method: op.action === 'logs' ? 'GET' : 'POST'
+                        method: op.action === 'delete' ? 'DELETE' : op.action === 'logs' ? 'GET' : 'POST'
                     });
 
                     if (!resp.ok) {
@@ -1368,7 +1381,7 @@
 
                     // Show success notification
                     if (this.notificationsEnabled && Notification.permission === 'granted') {
-                        const actionLabel = op.action === 'up' ? 'started' : op.action === 'down' ? 'stopped' : 'restarted';
+                        const actionLabel = op.action === 'up' ? 'started' : op.action === 'down' ? 'stopped' : op.action === 'delete' ? 'removed' : 'restarted';
                         this.notify(
                             `${op.project.name} ${actionLabel}`,
                             `Project ${op.action} completed successfully`

@@ -1324,7 +1324,7 @@ func (h *Handler) setProjectCORS(w http.ResponseWriter, r *http.Request) {
 	// Allow requests from any subdomain of the base domain
 	if h.baseDomain != "" && strings.HasSuffix(strings.TrimPrefix(origin, "https://"), "."+h.baseDomain) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	}
 }
@@ -1359,6 +1359,8 @@ func (h *Handler) serveProjectOperation(w http.ResponseWriter, r *http.Request) 
 		h.serveProjectRestart(w, r, name)
 	case "logs":
 		h.serveProjectLogs(w, r, name)
+	case "delete":
+		h.serveProjectDelete(w, r, name)
 	default:
 		http.Error(w, "Unknown action: "+action, http.StatusBadRequest)
 	}
@@ -1478,6 +1480,38 @@ func (h *Handler) serveProjectRestart(w http.ResponseWriter, r *http.Request, na
 		"status":  "restarted",
 		"project": name,
 		"output":  output,
+	})
+}
+
+func (h *Handler) serveProjectDelete(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if !isValidProjectName(name) {
+		http.Error(w, "Invalid project name", http.StatusBadRequest)
+		return
+	}
+	if h.projectStore == nil {
+		http.Error(w, "Project store not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	p := h.projectStore.Get(name)
+	if p == nil {
+		http.Error(w, "Project not found", http.StatusNotFound)
+		return
+	}
+
+	h.projectStore.Remove(name)
+
+	slog.Info("project removed from history", "project", name)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "deleted",
+		"project": name,
 	})
 }
 

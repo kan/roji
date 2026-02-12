@@ -238,9 +238,9 @@ roji/
 ├── project/
 │   └── store.go             # Project history storage
 ├── test/                    # Integration/E2E tests
-├── Dockerfile               # Multi-stage build
-├── docker-compose.yml       # Production (Docker Mode)
-├── docker-compose.dev.yml   # Development (Air hot reload)
+├── Dockerfile               # Multi-stage build (development/testing)
+├── docker-compose.yml       # Development and testing
+├── docker-compose.dev.yml   # Development with Air hot reload
 ├── Makefile                 # Build shortcuts
 ├── .air.toml                # Hot reload configuration
 ├── .env.example             # Environment template

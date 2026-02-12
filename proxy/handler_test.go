@@ -999,6 +999,9 @@ func TestHandler_ProjectOperation_MethodNotAllowed(t *testing.T) {
 		{"restart with GET", "/_api/projects/myapp/restart", "GET", http.StatusMethodNotAllowed},
 		// logs requires GET
 		{"logs with POST", "/_api/projects/myapp/logs", "POST", http.StatusMethodNotAllowed},
+		// delete requires DELETE
+		{"delete with POST", "/_api/projects/myapp/delete", "POST", http.StatusMethodNotAllowed},
+		{"delete with GET", "/_api/projects/myapp/delete", "GET", http.StatusMethodNotAllowed},
 	}
 
 	for _, tt := range tests {
@@ -1212,6 +1215,97 @@ func TestIsValidProjectName(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandler_ProjectDelete(t *testing.T) {
+	t.Run("successful delete", func(t *testing.T) {
+		router := NewRouter()
+		store := project.NewStore("")
+		store.Update(&project.Project{
+			Name:       "old-project",
+			WorkingDir: "/tmp/old",
+			Active:     false,
+		})
+		handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+		req := httptest.NewRequest("DELETE", "https://roji.dev.localhost/_api/projects/old-project/delete", nil)
+		req.Host = "roji.dev.localhost"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+		}
+
+		// Verify project was removed from store
+		if p := store.Get("old-project"); p != nil {
+			t.Error("project should have been removed from store")
+		}
+	})
+
+	t.Run("method not allowed - POST", func(t *testing.T) {
+		router := NewRouter()
+		store := project.NewStore("")
+		store.Update(&project.Project{
+			Name:       "myapp",
+			WorkingDir: "/tmp/myapp",
+			Active:     false,
+		})
+		handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+		req := httptest.NewRequest("POST", "https://roji.dev.localhost/_api/projects/myapp/delete", nil)
+		req.Host = "roji.dev.localhost"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+		}
+	})
+
+	t.Run("project not found", func(t *testing.T) {
+		router := NewRouter()
+		store := project.NewStore("")
+		handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+		req := httptest.NewRequest("DELETE", "https://roji.dev.localhost/_api/projects/nonexistent/delete", nil)
+		req.Host = "roji.dev.localhost"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("CORS allows DELETE method", func(t *testing.T) {
+		router := NewRouter()
+		store := project.NewStore("")
+		store.Update(&project.Project{
+			Name:       "myapp",
+			WorkingDir: "/tmp/myapp",
+			Active:     false,
+		})
+		handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), store)
+
+		req := httptest.NewRequest("OPTIONS", "https://roji.dev.localhost/_api/projects/myapp/delete", nil)
+		req.Host = "roji.dev.localhost"
+		req.Header.Set("Origin", "https://myapp.dev.localhost")
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNoContent {
+			t.Errorf("status = %d, want %d", w.Code, http.StatusNoContent)
+		}
+		methods := w.Header().Get("Access-Control-Allow-Methods")
+		if !strings.Contains(methods, "DELETE") {
+			t.Errorf("Access-Control-Allow-Methods = %q, should contain DELETE", methods)
+		}
+	})
 }
 
 func TestHandler_NotFound_WithInactiveProject(t *testing.T) {

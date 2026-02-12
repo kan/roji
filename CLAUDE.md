@@ -122,6 +122,7 @@ roji/
 | `/_api/projects/{name}/down` | プロジェクト停止（`docker compose down`） |
 | `/_api/projects/{name}/restart` | プロジェクト再起動（`docker compose restart`） |
 | `/_api/projects/{name}/logs` | プロジェクトログ（SSEストリーム） |
+| `/_api/projects/{name}/delete` | プロジェクト履歴削除 |
 | `/_api/config/reload` | 設定ファイル再読み込み（静的サイト更新） |
 
 ## 実装済み機能（v0.1.0 → v0.9.0）
@@ -537,26 +538,26 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 
 #### 1. Docker Mode 廃止
 
-- [ ] `install-docker.sh` を削除
-- [ ] README.md から「Docker Mode (Legacy)」セクションを削除
-- [ ] `docker-compose.yml` の `ROJI_DOMAIN` デフォルトを `dev.localhost` に統一
-- [ ] Dockerfile、docker-compose.yml、docker-compose.dev.yml は開発・テスト用として維持
+- [x] `install-docker.sh` を削除
+- [x] README.md から「Docker Mode (Legacy)」セクションを削除
+- [x] `docker-compose.yml` の `ROJI_DOMAIN` デフォルトを `dev.localhost` に統一
+- [x] Dockerfile、docker-compose.yml、docker-compose.dev.yml は開発・テスト用として維持
   - docker-compose.yml のコメントに「開発・テスト用」と明記
 
 #### 2. ダッシュボード機能強化
 
-- [ ] **Recent Projects の管理（削除）機能**
+- [x] **Recent Projects の管理（削除）機能**
   - 不要になったプロジェクト履歴をダッシュボードから削除
-  - `DELETE /_api/projects/{name}` エンドポイント追加
+  - `DELETE /_api/projects/{name}/delete` エンドポイント追加
   - ダッシュボードに削除ボタン追加（確認ダイアログ付き）
   - `project.Store` から該当プロジェクトを削除
 
 #### 3. 破壊的変更の整理
 
-- [ ] `ROJI_DOMAIN` のデフォルト値を全環境で `dev.localhost` に統一
+- [x] `ROJI_DOMAIN` のデフォルト値を全環境で `dev.localhost` に統一
   - docker-compose.yml が `localhost` を使用していた不整合を解消
 - [ ] `roji.self` ラベルをドキュメント化（内部使用ラベルとして公式化）
-- [ ] 環境変数・設定パス・APIは現状維持（変更不要と確認済み）
+- [x] 環境変数・設定パス・APIは現状維持（変更不要と確認済み）
 
 #### 4. パッケージマネージャー対応
 
