@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `install.sh` now shows an error and migration instructions when Docker Mode is detected, instead of offering automatic migration
 - `docker-compose.yml` header updated to clarify it is for development and testing only
+- Documented `roji.self` as a reserved internal label
 
 ### Removed
 

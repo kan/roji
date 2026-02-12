@@ -226,6 +226,7 @@ roji will use existing certificates and skip auto-generation.
 | `roji.auth.basic.user` | Basic auth username | none |
 | `roji.auth.basic.pass` | Basic auth password | none |
 | `roji.auth.basic.realm` | Basic auth realm | `Restricted` |
+| `roji.self` | Reserved: excludes container from routing (used internally) | none |
 
 #### Examples
 

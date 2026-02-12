@@ -91,6 +91,7 @@ roji/
 | `roji.auth.basic.user` | BASIC認証ユーザー名 | なし |
 | `roji.auth.basic.pass` | BASIC認証パスワード | なし |
 | `roji.auth.basic.realm` | BASIC認証レルム | `Restricted` |
+| `roji.self` | 予約済み: コンテナをルーティング対象から除外（内部使用） | なし |
 
 ### 環境変数
 
@@ -556,7 +557,7 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 
 - [x] `ROJI_DOMAIN` のデフォルト値を全環境で `dev.localhost` に統一
   - docker-compose.yml が `localhost` を使用していた不整合を解消
-- [ ] `roji.self` ラベルをドキュメント化（内部使用ラベルとして公式化）
+- [x] `roji.self` ラベルをドキュメント化（内部使用ラベルとして公式化）
 - [x] 環境変数・設定パス・APIは現状維持（変更不要と確認済み）
 
 #### 4. パッケージマネージャー対応
