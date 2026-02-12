@@ -8,13 +8,14 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/kan/roji/doctor"
+	"github.com/kan/roji/i18n"
 )
 
 // Network checks if the required Docker network(s) exist
 type Network struct{}
 
 func (c *Network) Name() string {
-	return "Docker network"
+	return i18n.T("doctor.check.network")
 }
 
 func (c *Network) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
@@ -22,7 +23,7 @@ func (c *Network) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResul
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Configuration not available",
+			Message: i18n.T("doctor.check.network.not_available"),
 			Fixable: false,
 		}
 	}
@@ -32,7 +33,7 @@ func (c *Network) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResul
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "No networks configured",
+			Message: i18n.T("doctor.check.network.none_configured"),
 			Fixable: false,
 		}
 	}
@@ -75,8 +76,8 @@ func (c *Network) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResul
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: fmt.Sprintf("Network(s) not found: %s", strings.Join(missing, ", ")),
-			Details: fmt.Sprintf("Run 'docker network create %s' or use 'roji doctor --fix'", missing[0]),
+			Message: i18n.Tf("doctor.check.network.missing", strings.Join(missing, ", ")),
+			Details: i18n.Tf("doctor.check.network.fix_hint", missing[0]),
 			Fixable: true,
 		}
 	}
@@ -84,7 +85,7 @@ func (c *Network) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResul
 	return doctor.CheckResult{
 		Name:    c.Name(),
 		Status:  doctor.Pass,
-		Message: fmt.Sprintf("Network(s) exist: %s", strings.Join(existing, ", ")),
+		Message: i18n.Tf("doctor.check.network.exist", strings.Join(existing, ", ")),
 		Fixable: false,
 	}
 }

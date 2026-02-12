@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/kan/roji/config"
+	"github.com/kan/roji/i18n"
 )
 
 // StaticBackend represents a static file hosting configuration
@@ -169,9 +170,12 @@ func serveDirectoryListing(w http.ResponseWriter, r *http.Request, dirPath, root
 	// Use the original request path (with trailing slash) for links
 	displayPath := r.URL.Path
 
+	// Detect language for i18n
+	lang := i18n.DetectHTTP(r.Header.Get("Accept-Language"))
+
 	// Generate HTML
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	generateDirectoryHTML(w, displayPath, relPath, items, dashboardHost)
+	generateDirectoryHTML(w, displayPath, relPath, items, dashboardHost, lang)
 }
 
 // sortDirectoryEntries sorts entries: directories first, then files, alphabetically
@@ -244,14 +248,26 @@ func getFileIcon(name string, isDir bool) string {
 }
 
 // generateDirectoryHTML writes the directory listing HTML to the response
-func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, entries []DirectoryEntry, dashboardHost string) {
+func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, entries []DirectoryEntry, dashboardHost string, lang string) {
+	msgs := i18n.Messages(lang)
+	t := func(key string) string {
+		if v, ok := msgs[key]; ok {
+			return v
+		}
+		enMsgs := i18n.Messages("en")
+		if v, ok := enMsgs[key]; ok {
+			return v
+		}
+		return key
+	}
+
 	// HTML template with roji-consistent styling
 	html := `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Index of ` + template.HTMLEscapeString(displayPath) + `</title>
+    <title>` + template.HTMLEscapeString(t("static.index_of")) + ` ` + template.HTMLEscapeString(displayPath) + `</title>
     <style>
         :root {
             --bg-primary: #ffffff;
@@ -352,7 +368,7 @@ func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, e
     </style>
 </head>
 <body>
-    <h1>📂 Index of <span class="path">` + template.HTMLEscapeString(displayPath) + `</span></h1>
+    <h1>📂 ` + template.HTMLEscapeString(t("static.index_of")) + ` <span class="path">` + template.HTMLEscapeString(displayPath) + `</span></h1>
     <div class="listing">`
 
 	// Add parent directory link if not at root
@@ -369,13 +385,13 @@ func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, e
             <span class="icon">⬆️</span>
             <span class="name">..</span>
             <span class="size">-</span>
-            <span class="date">Parent Directory</span>
+            <span class="date">` + template.HTMLEscapeString(t("static.parent_directory")) + `</span>
         </a>`
 	}
 
 	if len(entries) == 0 && urlPath == "/" {
 		html += `
-        <div class="empty">📭 This directory is empty</div>`
+        <div class="empty">📭 ` + template.HTMLEscapeString(t("static.empty_directory")) + `</div>`
 	}
 
 	for _, entry := range entries {
@@ -406,10 +422,10 @@ func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, e
     <div class="footer">`
 
 	if dashboardHost != "" {
-		html += `<a href="https://` + template.HTMLEscapeString(dashboardHost) + `">Dashboard</a> · `
+		html += `<a href="https://` + template.HTMLEscapeString(dashboardHost) + `">` + template.HTMLEscapeString(t("static.dashboard")) + `</a> · `
 	}
 
-	html += `Served by <a href="https://github.com/kan/roji">roji</a></div>
+	html += template.HTMLEscapeString(t("static.served_by")) + ` <a href="https://github.com/kan/roji">roji</a></div>
 </body>
 </html>`
 
@@ -418,6 +434,19 @@ func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, e
 
 // serveIndexDisabledPage shows a helpful page when directory listing is disabled
 func serveIndexDisabledPage(w http.ResponseWriter, r *http.Request, dashboardHost string) {
+	lang := i18n.DetectHTTP(r.Header.Get("Accept-Language"))
+	msgs := i18n.Messages(lang)
+	t := func(key string) string {
+		if v, ok := msgs[key]; ok {
+			return v
+		}
+		enMsgs := i18n.Messages("en")
+		if v, ok := enMsgs[key]; ok {
+			return v
+		}
+		return key
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusForbidden)
 
@@ -426,7 +455,7 @@ func serveIndexDisabledPage(w http.ResponseWriter, r *http.Request, dashboardHos
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Directory Listing Disabled</title>
+    <title>` + template.HTMLEscapeString(t("static.index_disabled.title")) + `</title>
     <style>
         :root {
             --bg-primary: #ffffff;
@@ -533,33 +562,27 @@ func serveIndexDisabledPage(w http.ResponseWriter, r *http.Request, dashboardHos
 <body>
     <div class="card">
         <div class="icon">🔒</div>
-        <h1>Directory Listing Disabled</h1>
-        <p>
-            This directory does not have an <code>index.html</code> file,
-            and directory listing is currently disabled for this static site.
-        </p>
+        <h1>` + template.HTMLEscapeString(t("static.index_disabled.title")) + `</h1>
+        <p>` + template.HTMLEscapeString(t("static.index_disabled.message")) + `</p>
 
         <div class="config-hint">
-            <h3>To enable directory listing, update your config:</h3>
+            <h3>` + template.HTMLEscapeString(t("static.index_disabled.config_hint")) + `</h3>
             <pre><span class="highlight"># ~/.config/roji/config.yaml</span>
 static_sites:
   - host: ` + template.HTMLEscapeString(r.Host) + `
     root: /path/to/files
-    <span class="highlight">index: true</span>  # Enable directory listing</pre>
+    <span class="highlight">index: true</span>  # ` + template.HTMLEscapeString(t("static.index_disabled.enable_comment")) + `</pre>
         </div>
 
-        <p style="font-size: 0.9rem;">
-            After updating the config, click <strong>Reload Config</strong> in the dashboard
-            or restart roji.
-        </p>
+        <p style="font-size: 0.9rem;">` + template.HTMLEscapeString(t("static.index_disabled.reload_hint")) + `</p>
 
         <div class="footer">`
 
 	if dashboardHost != "" {
-		html += `<a href="https://` + template.HTMLEscapeString(dashboardHost) + `" class="btn">Go to Dashboard</a><br><br>`
+		html += `<a href="https://` + template.HTMLEscapeString(dashboardHost) + `" class="btn">` + template.HTMLEscapeString(t("static.index_disabled.go_dashboard")) + `</a><br><br>`
 	}
 
-	html += `Served by <a href="https://github.com/kan/roji">roji</a>
+	html += template.HTMLEscapeString(t("static.served_by")) + ` <a href="https://github.com/kan/roji">roji</a>
         </div>
     </div>
 </body>

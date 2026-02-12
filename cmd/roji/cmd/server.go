@@ -15,6 +15,7 @@ import (
 	"github.com/kan/roji/certgen"
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
+	"github.com/kan/roji/i18n"
 	"github.com/kan/roji/project"
 	"github.com/kan/roji/proxy"
 	"golang.org/x/net/http2"
@@ -115,22 +116,22 @@ func run(ctx context.Context, cfg Config) error {
 
 		if !matches {
 			fmt.Println()
-			fmt.Println("⚠️  Certificate domain mismatch detected!")
-			fmt.Printf("   Current cert: %v\n", certDNSNames)
-			fmt.Printf("   Expected:     *.%s\n", cfg.BaseDomain)
+			fmt.Println("⚠️  " + i18n.T("server.cert.mismatch"))
+			fmt.Println(i18n.Tf("server.cert.current", certDNSNames))
+			fmt.Println(i18n.Tf("server.cert.expected", cfg.BaseDomain))
 			fmt.Println()
-			fmt.Println("   Regenerating server certificate...")
+			fmt.Println("   " + i18n.T("server.cert.regenerating"))
 
 			if err := certGen.RegenerateCerts(); err != nil {
 				return fmt.Errorf("failed to regenerate certificates: %w", err)
 			}
 
-			fmt.Println("   ✓ Server certificate regenerated")
+			fmt.Println("   ✓ " + i18n.T("server.cert.regenerated"))
 			fmt.Println()
-			fmt.Println("   The CA certificate remains unchanged.")
-			fmt.Println("   If you haven't installed the CA yet, run:")
+			fmt.Println("   " + i18n.T("server.cert.ca_unchanged"))
+			fmt.Println("   " + i18n.T("server.cert.ca_hint"))
 			fmt.Println()
-			fmt.Printf("     roji ca install\n")
+			fmt.Println("     " + i18n.T("server.cert.ca_command"))
 			fmt.Println()
 			return fmt.Errorf("certificate regenerated for new domain - please restart roji")
 		}
@@ -537,20 +538,20 @@ func registerStaticSites(cfg Config, router *proxy.Router) {
 
 func printBanner(cfg Config) {
 	fmt.Println()
-	fmt.Println("  roji - reverse proxy for local development")
+	fmt.Println("  " + i18n.T("server.banner.title"))
 	fmt.Println("  ─────────────────────────────────────────")
-	fmt.Printf("  Networks:  %s\n", strings.Join(cfg.Networks, ", "))
-	fmt.Printf("  Domain:    *.%s\n", cfg.BaseDomain)
-	fmt.Printf("  Dashboard: https://%s\n", cfg.DashboardHost)
+	fmt.Printf("  %s\n", i18n.Tf("server.banner.networks", strings.Join(cfg.Networks, ", ")))
+	fmt.Printf("  %s\n", i18n.Tf("server.banner.domain", cfg.BaseDomain))
+	fmt.Printf("  %s\n", i18n.Tf("server.banner.dashboard", cfg.DashboardHost))
 	if len(cfg.StaticSites) > 0 {
-		fmt.Printf("  Static:    %d site(s) configured\n", len(cfg.StaticSites))
+		fmt.Printf("  %s\n", i18n.Tf("server.banner.static", len(cfg.StaticSites)))
 	}
 	fmt.Println()
 
 	// Show CA certificate install hint if auto-cert is enabled
 	if cfg.AutoCert {
-		fmt.Printf("  CA Cert:   %s/ca.crt (Windows) or ca.pem (macOS/Linux)\n", cfg.CertsDir)
-		fmt.Println("  Install the CA certificate in your browser/OS to trust HTTPS.")
+		fmt.Printf("  %s\n", i18n.Tf("server.banner.ca_cert", cfg.CertsDir))
+		fmt.Println("  " + i18n.T("server.banner.ca_hint"))
 		fmt.Println()
 	}
 }
@@ -563,7 +564,7 @@ func printRoutes(router *proxy.Router) {
 	}
 
 	fmt.Println()
-	fmt.Println("📋 Registered Routes:")
+	fmt.Println(i18n.T("server.routes.header"))
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	for _, r := range routes {
 		fmt.Printf("  %s\n", r.String())

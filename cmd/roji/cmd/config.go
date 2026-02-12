@@ -6,6 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/kan/roji/config"
+	"github.com/kan/roji/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -42,10 +43,10 @@ var configPathCmd = &cobra.Command{
 	Long:  `Show the paths where roji looks for configuration files and stores data.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		paths := config.DefaultPaths()
-		fmt.Printf("Config file:  %s\n", config.ConfigFilePath())
-		fmt.Printf("Config dir:   %s\n", paths.ConfigDir)
-		fmt.Printf("Data dir:     %s\n", paths.DataDir)
-		fmt.Printf("Certs dir:    %s\n", paths.CertsDir)
+		fmt.Println(i18n.Tf("cmd.config.path.config_file", config.ConfigFilePath()))
+		fmt.Println(i18n.Tf("cmd.config.path.config_dir", paths.ConfigDir))
+		fmt.Println(i18n.Tf("cmd.config.path.data_dir", paths.DataDir))
+		fmt.Println(i18n.Tf("cmd.config.path.certs_dir", paths.CertsDir))
 	},
 }
 
@@ -70,9 +71,9 @@ var configInitCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Created configuration file: %s\n", path)
-		fmt.Println("\nYou can edit this file to customize roji settings.")
-		fmt.Println("Run 'roji config show' to see the current configuration.")
+		fmt.Println(i18n.Tf("cmd.config.init.success", path))
+		fmt.Println(i18n.T("cmd.config.init.edit_hint"))
+		fmt.Println(i18n.T("cmd.config.init.show_hint"))
 		return nil
 	},
 }
@@ -89,7 +90,7 @@ var configEditCmd = &cobra.Command{
 
 		// Check if file exists, create if not
 		if !config.Exists(path) {
-			fmt.Printf("Configuration file does not exist. Creating: %s\n", path)
+			fmt.Println(i18n.Tf("cmd.config.edit.creating", path))
 			settings := config.Defaults()
 			if err := settings.SaveToFile(path); err != nil {
 				return err

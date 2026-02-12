@@ -574,10 +574,7 @@
             margin-top: 32px;
         }
         .log-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
         }
         .log-header h2 {
             margin: 0;
@@ -592,6 +589,8 @@
             display: flex;
             align-items: center;
             gap: 12px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
         }
         .log-filter {
             display: flex;
@@ -721,6 +720,27 @@
             border-radius: 4px;
             font-size: 0.75rem;
         }
+        /* Language toggle */
+        .lang-toggle {
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 6px 10px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 32px;
+        }
+        .lang-toggle:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-color: var(--link-color);
+        }
         /* GitHub link */
         .github-link {
             display: inline-flex;
@@ -741,9 +761,9 @@
         <h1>
             <img src="/_assets/favicon.svg" alt="roji" class="logo-icon">
             <span>roji</span>
-            <span class="subtitle">reverse proxy for local development</span>
+            <span class="subtitle">{{t('dashboard.subtitle')}}</span>
             <span class="header-right">
-                <button class="theme-toggle" @click="toggleTheme" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
+                <button class="theme-toggle" @click="toggleTheme" :title="theme === 'dark' ? t('dashboard.theme.light') : t('dashboard.theme.dark')">
                     <!-- Sun icon (shown in dark mode) -->
                     <svg v-if="theme === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="5"></circle>
@@ -761,58 +781,61 @@
                         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
                     </svg>
                 </button>
-                <a href="https://github.com/kan/roji" target="_blank" class="github-link" title="View on GitHub">
+                <button class="lang-toggle" @click="toggleLang" :title="lang === 'en' ? t('dashboard.lang.switch_ja') : t('dashboard.lang.switch_en')">
+                    {{lang === 'en' ? 'JA' : 'EN'}}
+                </button>
+                <a href="https://github.com/kan/roji" target="_blank" class="github-link" :title="t('dashboard.github')">
                     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
                 </a>
                 <span v-if="version" class="version">
                     v{{version}}
                     <span class="version-tooltip">
-                        <div><strong>Commit:</strong> <code>{{buildInfo.commit || 'unknown'}}</code></div>
-                        <div><strong>Built:</strong> {{formatBuildDate(buildInfo.date)}}</div>
-                        <div><strong>By:</strong> {{buildInfo.built_by || 'unknown'}}</div>
+                        <div><strong>{{t('dashboard.status.commit')}}</strong> <code>{{buildInfo.commit || 'unknown'}}</code></div>
+                        <div><strong>{{t('dashboard.status.built')}}</strong> {{formatBuildDate(buildInfo.date)}}</div>
+                        <div><strong>{{t('dashboard.status.by')}}</strong> {{buildInfo.built_by || 'unknown'}}</div>
                     </span>
                 </span>
                 <span :class="['status', connected ? 'connected' : 'disconnected']">
                     <span class="status-dot"></span>
-                    {{connected ? 'Live' : 'Disconnected'}}
+                    {{connected ? t('dashboard.status.live') : t('dashboard.status.disconnected')}}
                 </span>
             </span>
         </h1>
 
         <p class="controls">
-            <span v-if="routes.length"><span class="count">{{routes.length}}</span> routes registered</span>
+            <span v-if="routes.length"><span class="count">{{routes.length}}</span> {{t('dashboard.routes_count')}}</span>
             <span v-if="networks.length" class="networks-info">
-                <span class="networks-label">Networks:</span>
+                <span class="networks-label">{{t('dashboard.networks')}}</span>
                 <span
                     v-for="(net, index) in networks"
                     :key="net"
                     :class="['network-badge', 'clickable', selectedNetwork === net ? 'selected' : '']"
                     @click="toggleNetworkFilter(net)"
-                    :title="selectedNetwork === net ? 'Click to show all' : 'Click to filter by ' + net"
+                    :title="selectedNetwork === net ? t('dashboard.networks.show_all') : t('dashboard.networks.filter') + ' ' + net"
                 >{{net}}</span>
                 <span v-if="selectedNetwork" class="clear-filter" @click="selectedNetwork = null" title="Clear filter">&#x2715;</span>
             </span>
             <label v-if="notificationSupported" class="notification-toggle">
                 <input type="checkbox" v-model="notificationsEnabled" @change="toggleNotifications">
-                Notifications
+                {{t('dashboard.notifications')}}
             </label>
             <button
                 class="reload-btn"
                 :class="{ reloading: reloadingConfig }"
                 :disabled="reloadingConfig"
                 @click="reloadConfig"
-                title="Reload configuration from file"
+                :title="t('dashboard.reload_config.title')"
             >
-                <span v-if="reloadingConfig">&#x21BB; Reloading...</span>
-                <span v-else>&#x21BB; Reload Config</span>
+                <span v-if="reloadingConfig">&#x21BB; {{t('dashboard.reload_config.loading')}}</span>
+                <span v-else>&#x21BB; {{t('dashboard.reload_config')}}</span>
             </button>
         </p>
 
         <div class="routes">
             <div v-if="filteredRoutes.length === 0" class="empty">
-                <p v-if="selectedNetwork">No routes on network "{{selectedNetwork}}"</p>
-                <p v-else>&#x1F50D; No routes registered yet</p>
-                <p v-if="!selectedNetwork">Start some containers on the roji network!</p>
+                <p v-if="selectedNetwork">{{t('dashboard.no_routes_network')}} "{{selectedNetwork}}"</p>
+                <p v-else>&#x1F50D; {{t('dashboard.no_routes')}}</p>
+                <p v-if="!selectedNetwork">{{t('dashboard.no_routes_hint')}}</p>
             </div>
             <div v-for="route in filteredRoutes" :key="route.hostname + (route.pathPrefix || '')" :class="['route', route.warning ? 'has-warning' : '']">
                 <div>
@@ -834,10 +857,10 @@
                         :class="{ restarting: projectOperating === route.projectName && projectOperatingAction === 'down' }"
                         :disabled="projectOperating === route.projectName"
                         @click="showProjectConfirm({ name: route.projectName }, 'down')"
-                        title="Stop project"
+                        :title="t('dashboard.projects.stop_title')"
                     >
-                        <span v-if="projectOperating === route.projectName && projectOperatingAction === 'down'">&#x23F9; Stopping...</span>
-                        <span v-else>&#x23F9; Stop</span>
+                        <span v-if="projectOperating === route.projectName && projectOperatingAction === 'down'">&#x23F9; {{t('dashboard.projects.stopping')}}</span>
+                        <span v-else>&#x23F9; {{t('dashboard.route.stop')}}</span>
                     </button>
                     <button
                         v-if="!route.isStatic"
@@ -845,16 +868,16 @@
                         :class="{ restarting: restartingContainer === route.containerId }"
                         :disabled="restartingContainer === route.containerId"
                         @click="showRestartConfirm(route)"
-                        title="Restart container"
+                        :title="t('dashboard.route.restart')"
                     >
-                        <span v-if="restartingContainer === route.containerId">&#x21BB; Restarting...</span>
-                        <span v-else>&#x21BB; Restart</span>
+                        <span v-if="restartingContainer === route.containerId">&#x21BB; {{t('dashboard.route.restarting')}}</span>
+                        <span v-else>&#x21BB; {{t('dashboard.projects.restart')}}</span>
                     </button>
-                    <span v-if="route.hasBasicAuth" class="auth-badge" title="Basic authentication required">
+                    <span v-if="route.hasBasicAuth" class="auth-badge" :title="t('dashboard.route.auth')">
                         &#x1F512; auth
                     </span>
-                    <span v-if="route.isStatic" :class="['static-badge', route.indexEnabled ? 'index-on' : 'index-off']" :title="route.indexEnabled ? 'Directory listing enabled' : 'Directory listing disabled'">
-                        &#x1F4C1; static
+                    <span v-if="route.isStatic" :class="['static-badge', route.indexEnabled ? 'index-on' : 'index-off']" :title="route.indexEnabled ? t('dashboard.route.index_enabled') : t('dashboard.route.index_disabled')">
+                        &#x1F4C1; {{t('dashboard.route.static')}}
                         <span v-if="route.indexEnabled" class="index-indicator">&#x1F4CB;</span>
                         <span v-else class="index-indicator">&#x1F512;</span>
                     </span>
@@ -867,14 +890,13 @@
         <!-- Restart Confirm Dialog -->
         <div v-if="confirmRestart" class="confirm-overlay" @click.self="confirmRestart = null">
             <div class="confirm-dialog">
-                <h3>&#x1F504; Restart Container?</h3>
+                <h3>&#x1F504; {{t('dashboard.confirm.restart_container')}}</h3>
                 <p>
-                    Are you sure you want to restart <code>{{confirmRestart.containerName}}</code>?<br>
-                    This will briefly interrupt the service.
+                    {{tBefore('dashboard.confirm.restart_container_msg')}}<code>{{confirmRestart.containerName}}</code>{{tAfter('dashboard.confirm.restart_container_msg')}}
                 </p>
                 <div class="confirm-buttons">
-                    <button class="btn-cancel" @click="confirmRestart = null">Cancel</button>
-                    <button class="btn-restart" @click="restartContainer(confirmRestart)">Restart</button>
+                    <button class="btn-cancel" @click="confirmRestart = null">{{t('dashboard.confirm.cancel')}}</button>
+                    <button class="btn-restart" @click="restartContainer(confirmRestart)">{{t('dashboard.confirm.restart')}}</button>
                 </div>
             </div>
         </div>
@@ -882,24 +904,20 @@
         <!-- Project Operation Confirm Dialog -->
         <div v-if="confirmProjectOp" class="confirm-overlay" @click.self="confirmProjectOp = null">
             <div class="confirm-dialog">
-                <h3 v-if="confirmProjectOp.action === 'up'">&#x25B6; Start Project?</h3>
-                <h3 v-else-if="confirmProjectOp.action === 'down'">&#x23F9; Stop Project?</h3>
-                <h3 v-else-if="confirmProjectOp.action === 'restart'">&#x1F504; Restart Project?</h3>
-                <h3 v-else-if="confirmProjectOp.action === 'delete'">&#x1F5D1; Remove Project?</h3>
+                <h3 v-if="confirmProjectOp.action === 'up'">&#x25B6; {{t('dashboard.confirm.start_project')}}</h3>
+                <h3 v-else-if="confirmProjectOp.action === 'down'">&#x23F9; {{t('dashboard.confirm.stop_project')}}</h3>
+                <h3 v-else-if="confirmProjectOp.action === 'restart'">&#x1F504; {{t('dashboard.confirm.restart_project')}}</h3>
+                <h3 v-else-if="confirmProjectOp.action === 'delete'">&#x1F5D1; {{t('dashboard.confirm.remove_project')}}</h3>
                 <p>
-                    <span v-if="confirmProjectOp.action === 'up'">Start all services in</span>
-                    <span v-else-if="confirmProjectOp.action === 'down'">Stop all services in</span>
-                    <span v-else-if="confirmProjectOp.action === 'restart'">Restart all services in</span>
-                    <span v-else-if="confirmProjectOp.action === 'delete'">Remove from project history?</span>
-                    <code>{{confirmProjectOp.project.name}}</code>?
+                    {{tBefore(projectConfirmKey(confirmProjectOp.action))}}<code>{{confirmProjectOp.project.name}}</code>{{tAfter(projectConfirmKey(confirmProjectOp.action))}}
                 </p>
                 <div class="confirm-buttons">
-                    <button class="btn-cancel" @click="confirmProjectOp = null">Cancel</button>
+                    <button class="btn-cancel" @click="confirmProjectOp = null">{{t('dashboard.confirm.cancel')}}</button>
                     <button :class="['btn-confirm', (confirmProjectOp.action === 'down' || confirmProjectOp.action === 'delete') ? 'danger' : '']" @click="executeProjectOp(confirmProjectOp)">
-                        <span v-if="confirmProjectOp.action === 'up'">Start</span>
-                        <span v-else-if="confirmProjectOp.action === 'down'">Stop</span>
-                        <span v-else-if="confirmProjectOp.action === 'restart'">Restart</span>
-                        <span v-else-if="confirmProjectOp.action === 'delete'">Remove</span>
+                        <span v-if="confirmProjectOp.action === 'up'">{{t('dashboard.confirm.start')}}</span>
+                        <span v-else-if="confirmProjectOp.action === 'down'">{{t('dashboard.confirm.stop')}}</span>
+                        <span v-else-if="confirmProjectOp.action === 'restart'">{{t('dashboard.confirm.restart')}}</span>
+                        <span v-else-if="confirmProjectOp.action === 'delete'">{{t('dashboard.confirm.remove')}}</span>
                     </button>
                 </div>
             </div>
@@ -907,7 +925,7 @@
 
         <!-- Active Projects Section -->
         <div v-if="activeProjects.length > 0" class="section-header">
-            <h2>&#x1F4C2; Active Projects</h2>
+            <h2>&#x1F4C2; {{t('dashboard.projects.active')}}</h2>
             <span class="section-badge active">{{activeProjects.length}}</span>
         </div>
         <div v-if="activeProjects.length > 0" class="projects">
@@ -918,26 +936,26 @@
                         {{project.name}}
                     </span>
                     <div class="project-actions">
-                        <span class="project-services">{{project.services ? project.services.length : 0}} services</span>
+                        <span class="project-services">{{project.services ? project.services.length : 0}} {{t('dashboard.projects.services')}}</span>
                         <button
                             class="project-btn"
                             :class="{ operating: projectOperating === project.name && projectOperatingAction === 'restart' }"
                             :disabled="projectOperating === project.name"
                             @click="showProjectConfirm(project, 'restart')"
-                            title="Restart all services"
+                            :title="t('dashboard.projects.restart_title')"
                         >
-                            <span v-if="projectOperating === project.name && projectOperatingAction === 'restart'">&#x21BB; Restarting...</span>
-                            <span v-else>&#x21BB; Restart</span>
+                            <span v-if="projectOperating === project.name && projectOperatingAction === 'restart'">&#x21BB; {{t('dashboard.projects.restarting')}}</span>
+                            <span v-else>&#x21BB; {{t('dashboard.projects.restart')}}</span>
                         </button>
                         <button
                             class="project-btn stop"
                             :class="{ operating: projectOperating === project.name && projectOperatingAction === 'down' }"
                             :disabled="projectOperating === project.name"
                             @click="showProjectConfirm(project, 'down')"
-                            title="Stop project"
+                            :title="t('dashboard.projects.stop_title')"
                         >
-                            <span v-if="projectOperating === project.name && projectOperatingAction === 'down'">&#x23F9; Stopping...</span>
-                            <span v-else>&#x23F9; Stop</span>
+                            <span v-if="projectOperating === project.name && projectOperatingAction === 'down'">&#x23F9; {{t('dashboard.projects.stopping')}}</span>
+                            <span v-else>&#x23F9; {{t('dashboard.confirm.stop')}}</span>
                         </button>
                     </div>
                 </div>
@@ -947,7 +965,7 @@
 
         <!-- Inactive Projects Section -->
         <div v-if="inactiveProjects.length > 0" class="section-header">
-            <h2>&#x1F4C1; Recent Projects</h2>
+            <h2>&#x1F4C1; {{t('dashboard.projects.recent')}}</h2>
             <span class="section-badge inactive">{{inactiveProjects.length}}</span>
         </div>
         <div v-if="inactiveProjects.length > 0" class="projects">
@@ -964,28 +982,28 @@
                             :class="{ operating: projectOperating === project.name && projectOperatingAction === 'up' }"
                             :disabled="projectOperating === project.name"
                             @click="showProjectConfirm(project, 'up')"
-                            title="Start project"
+                            :title="t('dashboard.confirm.start_project')"
                         >
-                            <span v-if="projectOperating === project.name && projectOperatingAction === 'up'">&#x25B6; Starting...</span>
-                            <span v-else>&#x25B6; Start</span>
+                            <span v-if="projectOperating === project.name && projectOperatingAction === 'up'">&#x25B6; {{t('dashboard.confirm.start')}}...</span>
+                            <span v-else>&#x25B6; {{t('dashboard.confirm.start')}}</span>
                         </button>
                         <button
                             class="copy-btn"
                             :class="{ copied: copiedProject === project.name }"
                             @click="copyStartCommand(project)"
                         >
-                            <span v-if="copiedProject === project.name">&#x2714; Copied</span>
-                            <span v-else>&#x1F4CB; Copy start command</span>
+                            <span v-if="copiedProject === project.name">&#x2714; {{t('dashboard.projects.copied')}}</span>
+                            <span v-else>&#x1F4CB; {{t('dashboard.projects.copy_cmd')}}</span>
                         </button>
                         <button
                             class="project-btn stop"
                             :class="{ operating: projectOperating === project.name && projectOperatingAction === 'delete' }"
                             :disabled="projectOperating === project.name"
                             @click="showProjectConfirm(project, 'delete')"
-                            title="Remove from history"
+                            :title="t('dashboard.projects.remove_title')"
                         >
-                            <span v-if="projectOperating === project.name && projectOperatingAction === 'delete'">&#x1F5D1; Removing...</span>
-                            <span v-else>&#x1F5D1; Remove</span>
+                            <span v-if="projectOperating === project.name && projectOperatingAction === 'delete'">&#x1F5D1; {{t('dashboard.projects.removing')}}</span>
+                            <span v-else>&#x1F5D1; {{t('dashboard.projects.remove')}}</span>
                         </button>
                     </div>
                 </div>
@@ -997,47 +1015,47 @@
         <div class="log-section">
             <div class="log-header">
                 <h2>
-                    &#x1F4DD; Request Log
-                    <span v-if="logsPaused" class="log-paused-badge">Paused</span>
+                    &#x1F4DD; {{t('dashboard.logs.title')}}
+                    <span v-if="logsPaused" class="log-paused-badge">{{t('dashboard.logs.paused')}}</span>
                 </h2>
-                <div class="log-controls">
-                    <div class="log-filter">
-                        <select v-model="logFilter.host">
-                            <option value="">All hosts</option>
-                            <option v-for="host in activeHosts" :key="host" :value="host">{{host}}</option>
-                        </select>
-                        <input
-                            type="text"
-                            v-model="logFilter.path"
-                            placeholder="Filter by path..."
-                        >
-                        <select v-model="logFilter.status">
-                            <option value="">All status</option>
-                            <option value="2xx">2xx Success</option>
-                            <option value="3xx">3xx Redirect</option>
-                            <option value="4xx">4xx Client Error</option>
-                            <option value="5xx">5xx Server Error</option>
-                        </select>
-                    </div>
-                    <label class="notification-toggle">
-                        <input type="checkbox" v-model="logsPaused">
-                        Pause
-                    </label>
-                    <button class="log-action-btn" @click="exportLogs('json')" title="Export as JSON">JSON</button>
-                    <button class="log-action-btn" @click="exportLogs('csv')" title="Export as CSV">CSV</button>
-                    <button class="log-action-btn clear" @click="clearLogs">Clear</button>
+            </div>
+            <div class="log-controls">
+                <div class="log-filter">
+                    <select v-model="logFilter.host">
+                        <option value="">{{t('dashboard.logs.all_hosts')}}</option>
+                        <option v-for="host in activeHosts" :key="host" :value="host">{{host}}</option>
+                    </select>
+                    <input
+                        type="text"
+                        v-model="logFilter.path"
+                        :placeholder="t('dashboard.logs.filter_path')"
+                    >
+                    <select v-model="logFilter.status">
+                        <option value="">{{t('dashboard.logs.all_status')}}</option>
+                        <option value="2xx">{{t('dashboard.logs.status_2xx')}}</option>
+                        <option value="3xx">{{t('dashboard.logs.status_3xx')}}</option>
+                        <option value="4xx">{{t('dashboard.logs.status_4xx')}}</option>
+                        <option value="5xx">{{t('dashboard.logs.status_5xx')}}</option>
+                    </select>
                 </div>
+                <label class="notification-toggle">
+                    <input type="checkbox" v-model="logsPaused">
+                    {{t('dashboard.logs.pause')}}
+                </label>
+                <button class="log-action-btn" @click="exportLogs('json')" :title="t('dashboard.logs.export_json')">JSON</button>
+                <button class="log-action-btn" @click="exportLogs('csv')" :title="t('dashboard.logs.export_csv')">CSV</button>
+                <button class="log-action-btn clear" @click="clearLogs">{{t('dashboard.logs.clear')}}</button>
             </div>
             <div class="log-panel">
                 <div v-if="filteredLogs.length === 0" class="log-empty">
-                    <p>&#x1F50D; No requests yet</p>
-                    <p>Requests to proxied services will appear here</p>
+                    <p>&#x1F50D; {{t('dashboard.logs.empty')}}</p>
+                    <p>{{t('dashboard.logs.empty_hint')}}</p>
                 </div>
                 <div v-for="log in filteredLogs" :key="log.id" class="log-entry">
                     <span :class="['log-status', getStatusClass(log.status)]">{{log.status}}</span>
                     <span :class="['log-method', log.method]">{{log.method}}</span>
                     <span class="log-path" :title="log.path">{{log.path}}</span>
-                    <span v-if="log.is_mock" class="log-mock">mock</span>
+                    <span v-if="log.is_mock" class="log-mock">{{t('dashboard.logs.mock')}}</span>
                     <span :class="['log-duration', getDurationClass(log.duration_ms)]">{{formatDuration(log.duration_ms)}}</span>
                     <span class="log-host" :title="log.host">{{log.host}}</span>
                 </div>
@@ -1046,6 +1064,9 @@
     </div>
 
     <script>
+    const _allMessages = [[.AllMessagesJSON]];
+    const _serverLang = '[[.Lang]]';
+
     function Dashboard() {
         return {
             routes: [[.RoutesJSON]],
@@ -1061,6 +1082,7 @@
             inactiveProjects: [],
             copiedProject: null,
             theme: 'light',
+            lang: localStorage.getItem('roji-lang') || _serverLang,
             confirmRestart: null,
             restartingContainer: null,
             confirmProjectOp: null,
@@ -1071,6 +1093,20 @@
             logFilter: { host: '', path: '', status: '' },
             logsEventSource: null,
             reloadingConfig: false,
+
+            t(key) {
+                const msgs = _allMessages[this.lang] || _allMessages['en'] || {};
+                if (msgs[key]) return msgs[key];
+                // Fallback to English
+                const en = _allMessages['en'] || {};
+                return en[key] || key;
+            },
+            tBefore(key) { return this.t(key).split('%s')[0]; },
+            tAfter(key) { const parts = this.t(key).split('%s'); return parts.length > 1 ? parts[1] : ''; },
+            projectConfirmKey(action) {
+                const map = { up: 'start', down: 'stop', restart: 'restart', delete: 'remove' };
+                return 'dashboard.confirm.' + (map[action] || action) + '_msg';
+            },
 
             init() {
                 // Initialize theme
@@ -1114,6 +1150,11 @@
                 this.theme = this.theme === 'dark' ? 'light' : 'dark';
                 localStorage.setItem('roji-theme', this.theme);
                 this.applyTheme();
+            },
+
+            toggleLang() {
+                this.lang = this.lang === 'en' ? 'ja' : 'en';
+                localStorage.setItem('roji-lang', this.lang);
             },
 
             applyTheme() {
@@ -1312,13 +1353,13 @@
                     // Show success notification
                     if (this.notificationsEnabled && Notification.permission === 'granted') {
                         this.notify(
-                            `${route.containerName} restarted`,
-                            'Container restart initiated successfully'
+                            this.t('dashboard.notify.restarted').replace('%s', route.containerName),
+                            ''
                         );
                     }
                 } catch (e) {
                     console.error('Failed to restart container:', e);
-                    alert(`Failed to restart container: ${e.message}`);
+                    alert(this.t('dashboard.error.restart_failed') + ': ' + e.message);
                 } finally {
                     // Reset after a short delay to show the restarting state
                     setTimeout(() => {
@@ -1345,11 +1386,11 @@
 
                     // Show success notification
                     if (this.notificationsEnabled && Notification.permission === 'granted') {
-                        this.notify('Config reloaded', 'Static sites configuration has been updated');
+                        this.notify(this.t('dashboard.notify.config_reloaded'), '');
                     }
                 } catch (e) {
                     console.error('Failed to reload config:', e);
-                    alert(`Failed to reload config: ${e.message}`);
+                    alert(this.t('dashboard.notify.config_failed') + ': ' + e.message);
                 } finally {
                     setTimeout(() => {
                         this.reloadingConfig = false;
@@ -1381,15 +1422,15 @@
 
                     // Show success notification
                     if (this.notificationsEnabled && Notification.permission === 'granted') {
-                        const actionLabel = op.action === 'up' ? 'started' : op.action === 'down' ? 'stopped' : op.action === 'delete' ? 'removed' : 'restarted';
+                        const actionKey = { up: 'started', down: 'stopped', delete: 'removed', restart: 'restarted' }[op.action] || op.action;
                         this.notify(
-                            `${op.project.name} ${actionLabel}`,
-                            `Project ${op.action} completed successfully`
+                            this.t('dashboard.notify.' + actionKey).replace('%s', op.project.name),
+                            this.t('dashboard.notify.project_action').replace('%s', op.action)
                         );
                     }
                 } catch (e) {
                     console.error(`Failed to ${op.action} project:`, e);
-                    alert(`Failed to ${op.action} project: ${e.message}`);
+                    alert(this.t('dashboard.error.project_failed').replace('%s', op.action).replace('%s', e.message));
                 } finally {
                     setTimeout(() => {
                         this.projectOperating = null;

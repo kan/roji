@@ -10,6 +10,7 @@ import (
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/doctor"
 	"github.com/kan/roji/doctor/checks"
+	"github.com/kan/roji/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -117,13 +118,13 @@ func outputPretty(results []doctor.CheckResult) error {
 		switch r.Status {
 		case doctor.Pass:
 			icon = green("✓")
-			status = green("pass")
+			status = green(i18n.T("cmd.doctor.status.pass"))
 		case doctor.Warn:
 			icon = yellow("⚠")
-			status = yellow("warn")
+			status = yellow(i18n.T("cmd.doctor.status.warn"))
 		case doctor.Fail:
 			icon = red("✗")
-			status = red("fail")
+			status = red(i18n.T("cmd.doctor.status.fail"))
 		}
 
 		fmt.Printf("%s %s [%s]\n", icon, r.Name, status)
@@ -149,15 +150,15 @@ func outputPretty(results []doctor.CheckResult) error {
 	}
 
 	if failCount > 0 {
-		fmt.Printf("%s %d error(s), %d warning(s)\n", red("✗"), failCount, warnCount)
+		fmt.Printf("%s %s\n", red("✗"), i18n.Tf("cmd.doctor.summary.errors", failCount, warnCount))
 		fmt.Println()
-		fmt.Println("Run 'roji doctor --fix' to auto-fix where possible.")
+		fmt.Println(i18n.T("cmd.doctor.hint.fix"))
 		os.Exit(2)
 	} else if warnCount > 0 {
-		fmt.Printf("%s %d warning(s)\n", yellow("⚠"), warnCount)
+		fmt.Printf("%s %s\n", yellow("⚠"), i18n.Tf("cmd.doctor.summary.warnings", warnCount))
 		os.Exit(1)
 	} else {
-		fmt.Printf("%s All checks passed!\n", green("✓"))
+		fmt.Printf("%s %s\n", green("✓"), i18n.T("cmd.doctor.summary.all_passed"))
 	}
 
 	fmt.Println()

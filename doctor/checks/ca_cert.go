@@ -8,13 +8,14 @@ import (
 
 	"github.com/kan/roji/certgen"
 	"github.com/kan/roji/doctor"
+	"github.com/kan/roji/i18n"
 )
 
 // CACert checks if CA certificate exists and is valid
 type CACert struct{}
 
 func (c *CACert) Name() string {
-	return "CA certificate"
+	return i18n.T("doctor.check.ca_cert")
 }
 
 func (c *CACert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
@@ -27,7 +28,7 @@ func (c *CACert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Warn,
-			Message: "Certificates directory not configured",
+			Message: i18n.T("doctor.check.ca_cert.dir_not_configured"),
 			Fixable: false,
 		}
 	}
@@ -40,8 +41,8 @@ func (c *CACert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "CA certificate not found",
-			Details: fmt.Sprintf("Expected at: %s\nRun 'roji' to auto-generate or 'roji doctor --fix'", caCertPath),
+			Message: i18n.T("doctor.check.ca_cert.not_found"),
+			Details: i18n.Tf("doctor.check.ca_cert.not_found_hint", caCertPath),
 			Fixable: true,
 		}
 	}
@@ -51,8 +52,8 @@ func (c *CACert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "CA private key not found",
-			Details: fmt.Sprintf("Expected at: %s", caKeyPath),
+			Message: i18n.T("doctor.check.ca_cert.key_not_found"),
+			Details: i18n.Tf("doctor.check.ca_cert.expected_at", caKeyPath),
 			Fixable: true,
 		}
 	}
@@ -60,7 +61,7 @@ func (c *CACert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 	return doctor.CheckResult{
 		Name:    c.Name(),
 		Status:  doctor.Pass,
-		Message: "CA certificate exists",
+		Message: i18n.T("doctor.check.ca_cert.exists"),
 		Details: caCertPath,
 		Fixable: false,
 	}

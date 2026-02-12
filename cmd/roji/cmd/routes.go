@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/kan/roji/i18n"
 	"github.com/kan/roji/proxy"
 	"github.com/spf13/cobra"
 )
@@ -65,12 +66,12 @@ func runRoutes(cmd *cobra.Command, args []string) error {
 
 	// Display routes
 	if len(routes) == 0 {
-		fmt.Println("No routes registered")
+		fmt.Println(i18n.T("cmd.routes.no_routes"))
 		return nil
 	}
 
 	fmt.Println()
-	fmt.Printf("📋 Registered Routes (%d):\n", len(routes))
+	fmt.Println(i18n.Tf("cmd.routes.header", len(routes)))
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	for _, r := range routes {
 		fmt.Printf("  %s\n", r.String())

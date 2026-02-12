@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"runtime/debug"
 
+	"github.com/kan/roji/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -66,12 +67,12 @@ var versionCmd = &cobra.Command{
 	Long:  `Display the current version of roji.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		version, commit, date, builtBy := getVersionInfo()
-		fmt.Printf("roji version %s\n", version)
-		fmt.Printf("  commit:  %s\n", commit)
-		fmt.Printf("  built:   %s\n", date)
-		fmt.Printf("  by:      %s\n", builtBy)
-		fmt.Printf("  go:      %s\n", runtime.Version())
-		fmt.Printf("  os/arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+		fmt.Println(i18n.Tf("cmd.version.output", version))
+		fmt.Println(i18n.Tf("cmd.version.commit", commit))
+		fmt.Println(i18n.Tf("cmd.version.built", date))
+		fmt.Println(i18n.Tf("cmd.version.by", builtBy))
+		fmt.Println(i18n.Tf("cmd.version.go", runtime.Version()))
+		fmt.Println(i18n.Tf("cmd.version.os_arch", runtime.GOOS, runtime.GOARCH))
 	},
 }
 

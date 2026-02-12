@@ -6,13 +6,14 @@ import (
 	"runtime"
 
 	"github.com/kan/roji/doctor"
+	"github.com/kan/roji/i18n"
 )
 
 // DockerSocket checks if the Docker socket is accessible
 type DockerSocket struct{}
 
 func (c *DockerSocket) Name() string {
-	return "Docker socket"
+	return i18n.T("doctor.check.docker_socket")
 }
 
 func (c *DockerSocket) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
@@ -23,7 +24,7 @@ func (c *DockerSocket) Run(ctx context.Context, cfg *doctor.Config) doctor.Check
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Docker socket not found",
+			Message: i18n.T("doctor.check.docker_socket.not_found"),
 			Details: "Expected socket at: " + socketPath,
 			Fixable: false,
 		}
@@ -32,7 +33,7 @@ func (c *DockerSocket) Run(ctx context.Context, cfg *doctor.Config) doctor.Check
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Cannot access Docker socket",
+			Message: i18n.T("doctor.check.docker_socket.no_access"),
 			Details: err.Error(),
 			Fixable: false,
 		}
@@ -44,7 +45,7 @@ func (c *DockerSocket) Run(ctx context.Context, cfg *doctor.Config) doctor.Check
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Path exists but is not a socket",
+			Message: i18n.T("doctor.check.docker_socket.not_socket"),
 			Details: socketPath,
 			Fixable: false,
 		}
@@ -53,7 +54,7 @@ func (c *DockerSocket) Run(ctx context.Context, cfg *doctor.Config) doctor.Check
 	return doctor.CheckResult{
 		Name:    c.Name(),
 		Status:  doctor.Pass,
-		Message: "Docker socket is accessible",
+		Message: i18n.T("doctor.check.docker_socket.accessible"),
 		Details: socketPath,
 		Fixable: false,
 	}

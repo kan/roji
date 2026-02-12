@@ -11,13 +11,14 @@ import (
 
 	"github.com/kan/roji/certgen"
 	"github.com/kan/roji/doctor"
+	"github.com/kan/roji/i18n"
 )
 
 // ServerCert checks if server certificate exists and is valid
 type ServerCert struct{}
 
 func (c *ServerCert) Name() string {
-	return "Server certificate"
+	return i18n.T("doctor.check.server_cert")
 }
 
 func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
@@ -30,7 +31,7 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Warn,
-			Message: "Certificates directory not configured",
+			Message: i18n.T("doctor.check.server_cert.dir_not_configured"),
 			Fixable: false,
 		}
 	}
@@ -43,8 +44,8 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Server certificate not found",
-			Details: fmt.Sprintf("Expected at: %s", certPath),
+			Message: i18n.T("doctor.check.server_cert.not_found"),
+			Details: i18n.Tf("doctor.check.server_cert.expected_at", certPath),
 			Fixable: true,
 		}
 	}
@@ -54,8 +55,8 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Server private key not found",
-			Details: fmt.Sprintf("Expected at: %s", keyPath),
+			Message: i18n.T("doctor.check.server_cert.key_not_found"),
+			Details: i18n.Tf("doctor.check.server_cert.expected_at", keyPath),
 			Fixable: true,
 		}
 	}
@@ -66,7 +67,7 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Failed to read server certificate",
+			Message: i18n.T("doctor.check.server_cert.read_failed"),
 			Details: err.Error(),
 			Fixable: true,
 		}
@@ -77,7 +78,7 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Invalid server certificate format",
+			Message: i18n.T("doctor.check.server_cert.invalid_format"),
 			Fixable: true,
 		}
 	}
@@ -87,7 +88,7 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Failed to parse server certificate",
+			Message: i18n.T("doctor.check.server_cert.parse_failed"),
 			Details: err.Error(),
 			Fixable: true,
 		}
@@ -112,8 +113,8 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Certificate domain mismatch",
-			Details: fmt.Sprintf("Expected: %s\nCertificate has: %v\nRun 'roji doctor --fix' to regenerate", expectedWildcard, cert.DNSNames),
+			Message: i18n.T("doctor.check.server_cert.domain_mismatch"),
+			Details: i18n.Tf("doctor.check.server_cert.domain_mismatch_detail", expectedWildcard, cert.DNSNames),
 			Fixable: true,
 		}
 	}
@@ -124,8 +125,8 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Server certificate has expired",
-			Details: fmt.Sprintf("Expired on: %s", cert.NotAfter.Format("2006-01-02")),
+			Message: i18n.T("doctor.check.server_cert.expired"),
+			Details: i18n.Tf("doctor.check.server_cert.expired_detail", cert.NotAfter.Format("2006-01-02")),
 			Fixable: true,
 		}
 	}
@@ -136,8 +137,8 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Warn,
-			Message: fmt.Sprintf("Server certificate expires in %d days", daysUntilExpiry),
-			Details: fmt.Sprintf("Expires on: %s", cert.NotAfter.Format("2006-01-02")),
+			Message: i18n.Tf("doctor.check.server_cert.expiring_soon", daysUntilExpiry),
+			Details: i18n.Tf("doctor.check.server_cert.expires_on", cert.NotAfter.Format("2006-01-02")),
 			Fixable: true,
 		}
 	}
@@ -145,7 +146,7 @@ func (c *ServerCert) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckRe
 	return doctor.CheckResult{
 		Name:    c.Name(),
 		Status:  doctor.Pass,
-		Message: fmt.Sprintf("Server certificate is valid (expires in %d days)", daysUntilExpiry),
+		Message: i18n.Tf("doctor.check.server_cert.valid", daysUntilExpiry),
 		Details: certPath,
 		Fixable: false,
 	}

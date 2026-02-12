@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `DELETE /_api/projects/{name}/delete` endpoint
   - Remove button on inactive projects in dashboard
   - Confirmation dialog before deletion
+- **Internationalization (i18n)**: Japanese language support
+  - CLI commands: All user-facing messages translated via `i18n.T()` / `i18n.Tf()`
+  - Dashboard: Client-side translation with `Accept-Language` header detection
+  - Not Found / Warning pages: Server-side Go template translation
+  - Static file directory listing: Translated UI elements
+  - install.sh: Language detection via `LANG` / `LC_ALL` / `LC_MESSAGES`
+  - Doctor checks: All check names, messages, and details translated
+  - Lightweight i18n package (`i18n/`) with JSON message files embedded via `embed.FS`
+  - Language auto-detection: CLI uses `LANG` env var, HTTP uses `Accept-Language` header
+  - Fallback chain: current language → English → key itself
 
 ### Changed
 

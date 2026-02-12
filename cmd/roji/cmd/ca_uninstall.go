@@ -8,6 +8,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/kan/roji/certgen"
 	"github.com/kan/roji/config"
+	"github.com/kan/roji/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -53,8 +54,8 @@ func runCAUninstall(cmd *cobra.Command, args []string) error {
 
 	// Check if CA certificate exists
 	if _, err := os.Stat(caCertPath); os.IsNotExist(err) {
-		fmt.Printf("%s CA certificate not found at: %s\n", yellow("⚠"), caCertPath)
-		fmt.Println("Cannot uninstall without the original certificate file.")
+		fmt.Printf("%s %s\n", yellow("⚠"), i18n.Tf("cmd.ca.uninstall.not_found", caCertPath))
+		fmt.Println(i18n.T("cmd.ca.uninstall.no_file"))
 		return nil
 	}
 
@@ -63,7 +64,7 @@ func runCAUninstall(cmd *cobra.Command, args []string) error {
 	if caUninstallWindows {
 		// Uninstall from Windows via WSL
 		if !certgen.IsWSL() {
-			fmt.Printf("%s --windows flag is only available on WSL\n", red("✗"))
+			fmt.Printf("%s %s\n", red("✗"), i18n.T("cmd.ca.uninstall.wsl_only"))
 			return nil
 		}
 		// WSL always uses user store (cannot elevate to admin)
@@ -77,15 +78,15 @@ func runCAUninstall(cmd *cobra.Command, args []string) error {
 	// Check if installed
 	installed, _ := installer.IsInstalled(caCertPath)
 	if !installed {
-		fmt.Printf("%s CA certificate is not installed in system trust store\n", yellow("⚠"))
+		fmt.Printf("%s %s\n", yellow("⚠"), i18n.T("cmd.ca.uninstall.not_installed"))
 		fmt.Println()
 		return nil
 	}
 
 	// Show what we're about to do
-	fmt.Printf("Removing CA certificate from: %s\n", installer.Description())
+	fmt.Println(i18n.Tf("cmd.ca.uninstall.removing", installer.Description()))
 	if installer.NeedsSudo() {
-		fmt.Println("This operation requires elevated privileges.")
+		fmt.Println(i18n.T("cmd.ca.uninstall.needs_sudo"))
 	}
 	fmt.Println()
 
@@ -94,22 +95,22 @@ func runCAUninstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to uninstall CA certificate: %w", err)
 	}
 
-	fmt.Printf("%s CA certificate removed successfully\n", green("✓"))
+	fmt.Printf("%s %s\n", green("✓"), i18n.T("cmd.ca.uninstall.success"))
 	fmt.Println()
 
 	// Optionally uninstall from Firefox (Linux only)
 	if caUninstallFirefox {
-		fmt.Println("Removing from Firefox...")
+		fmt.Println(i18n.T("cmd.ca.uninstall.firefox_removing"))
 		ffInstaller := certgen.NewFirefoxInstaller()
 		if err := ffInstaller.Uninstall(caCertPath); err != nil {
-			fmt.Printf("%s Failed to remove from Firefox: %v\n", red("✗"), err)
+			fmt.Printf("%s %s\n", red("✗"), i18n.Tf("cmd.ca.uninstall.firefox_failed", err))
 		} else {
-			fmt.Printf("%s Removed from Firefox\n", green("✓"))
+			fmt.Printf("%s %s\n", green("✓"), i18n.T("cmd.ca.uninstall.firefox_success"))
 		}
 		fmt.Println()
 	}
 
-	fmt.Println("You may need to restart your browser for changes to take effect.")
+	fmt.Println(i18n.T("cmd.ca.uninstall.restart_hint"))
 	fmt.Println()
 
 	return nil

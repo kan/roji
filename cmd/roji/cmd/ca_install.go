@@ -8,6 +8,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/kan/roji/certgen"
 	"github.com/kan/roji/config"
+	"github.com/kan/roji/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -72,9 +73,9 @@ func runCAInstall(cmd *cobra.Command, args []string) error {
 
 	// Check if CA certificate exists
 	if _, err := os.Stat(caCertPath); os.IsNotExist(err) {
-		fmt.Printf("%s CA certificate not found at: %s\n", red("✗"), caCertPath)
+		fmt.Printf("%s %s\n", red("✗"), i18n.Tf("cmd.ca.install.not_found", caCertPath))
 		fmt.Println()
-		fmt.Println("Run 'roji' to auto-generate certificates first.")
+		fmt.Println(i18n.T("cmd.ca.install.generate_hint"))
 		return nil
 	}
 
@@ -83,7 +84,7 @@ func runCAInstall(cmd *cobra.Command, args []string) error {
 	if caInstallWindows {
 		// Install to Windows from WSL
 		if !certgen.IsWSL() {
-			fmt.Printf("%s --windows flag is only available on WSL\n", red("✗"))
+			fmt.Printf("%s %s\n", red("✗"), i18n.T("cmd.ca.install.wsl_only"))
 			return nil
 		}
 		// WSL always uses user store (cannot elevate to admin)
@@ -98,18 +99,18 @@ func runCAInstall(cmd *cobra.Command, args []string) error {
 	if !caInstallForce {
 		installed, _ := installer.IsInstalled(caCertPath)
 		if installed {
-			fmt.Printf("%s CA certificate is already installed\n", green("✓"))
+			fmt.Printf("%s %s\n", green("✓"), i18n.T("cmd.ca.install.already_installed"))
 			fmt.Printf("  %s\n", installer.Description())
 			fmt.Println()
-			fmt.Println("Use --force to reinstall/replace the certificate.")
+			fmt.Println(i18n.T("cmd.ca.install.force_hint"))
 			return nil
 		}
 	}
 
 	// Show what we're about to do
-	fmt.Printf("Installing CA certificate to: %s\n", installer.Description())
+	fmt.Println(i18n.Tf("cmd.ca.install.installing", installer.Description()))
 	if installer.NeedsSudo() {
-		fmt.Println("This operation requires elevated privileges.")
+		fmt.Println(i18n.T("cmd.ca.install.needs_sudo"))
 	}
 	fmt.Println()
 
@@ -118,22 +119,22 @@ func runCAInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to install CA certificate: %w", err)
 	}
 
-	fmt.Printf("%s CA certificate installed successfully\n", green("✓"))
+	fmt.Printf("%s %s\n", green("✓"), i18n.T("cmd.ca.install.success"))
 	fmt.Println()
 
 	// Optionally install to Firefox (Linux only)
 	if caInstallFirefox {
-		fmt.Println("Installing to Firefox...")
+		fmt.Println(i18n.T("cmd.ca.install.firefox_installing"))
 		ffInstaller := certgen.NewFirefoxInstaller()
 		if err := ffInstaller.Install(caCertPath); err != nil {
-			fmt.Printf("%s Failed to install to Firefox: %v\n", red("✗"), err)
+			fmt.Printf("%s %s\n", red("✗"), i18n.Tf("cmd.ca.install.firefox_failed", err))
 		} else {
-			fmt.Printf("%s Installed to Firefox\n", green("✓"))
+			fmt.Printf("%s %s\n", green("✓"), i18n.T("cmd.ca.install.firefox_success"))
 		}
 		fmt.Println()
 	}
 
-	fmt.Println("You may need to restart your browser for changes to take effect.")
+	fmt.Println(i18n.T("cmd.ca.install.restart_hint"))
 	fmt.Println()
 
 	return nil

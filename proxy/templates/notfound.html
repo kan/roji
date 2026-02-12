@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>No Route Found - roji</title>
+    <title>[[call .T "notfound.title"]] - roji</title>
     <link rel="icon" type="image/svg+xml" href="https://[[.DashboardHost]]/_assets/favicon.svg">
     <script>
         (function() {
@@ -64,23 +64,29 @@
     </style>
 </head>
 <body>
-    <h1>&#x1F6AB; No Route Found</h1>
-    <p>No backend is configured for <code>[[.Hostname]]</code></p>
+    <h1>&#x1F6AB; [[call .T "notfound.title"]]</h1>
+    <p>[[printf (call .T "notfound.message") .Hostname]]</p>
     [[if .Project]]
     <div class="project-start">
-        <h3>&#x1F4C2; Project <code>[[.Project.Name]]</code> found</h3>
-        <p>This hostname belongs to an inactive project. Start it to restore the service.</p>
+        <h3>&#x1F4C2; [[printf (call .T "notfound.project_found") .Project.Name]]</h3>
+        <p>[[call .T "notfound.project_hint"]]</p>
         <button class="start-btn" id="start-btn" onclick="startProject()">
-            &#x25B6; Start [[.Project.Name]]
+            &#x25B6; [[printf (call .T "notfound.start") .Project.Name]]
         </button>
         <div id="start-status" class="start-status"></div>
     </div>
     <script>
+        const _t = {
+            starting: '[[call .T "notfound.starting"]]',
+            startSuccess: '[[call .T "notfound.start_success"]]',
+            startFailed: '[[call .T "notfound.start_failed"]]',
+            startBtn: '\u25B6 [[printf (call .T "notfound.start") .Project.Name]]'
+        };
         async function startProject() {
             const btn = document.getElementById('start-btn');
             const status = document.getElementById('start-status');
             btn.disabled = true;
-            btn.innerHTML = '&#x21BB; Starting...';
+            btn.innerHTML = '&#x21BB; ' + _t.starting;
             status.textContent = '';
             status.className = 'start-status';
 
@@ -89,10 +95,10 @@
                 const data = await resp.json();
 
                 if (!resp.ok) {
-                    throw new Error(data.error || 'Failed to start project');
+                    throw new Error(data.error || _t.startFailed);
                 }
 
-                status.textContent = 'Project started successfully. Reloading...';
+                status.textContent = _t.startSuccess;
                 status.className = 'start-status success';
 
                 // Reload after a delay for containers to become ready
@@ -101,25 +107,25 @@
                 status.textContent = 'Error: ' + e.message;
                 status.className = 'start-status error';
                 btn.disabled = false;
-                btn.innerHTML = '&#x25B6; Start [[.Project.Name]]';
+                btn.innerHTML = _t.startBtn;
             }
         }
     </script>
     [[end]]
     [[if .Routes]]
     <div class="routes">
-        <h3>Available Routes:</h3>
+        <h3>[[call .T "notfound.available_routes"]]</h3>
         [[range .Routes]]
         <div class="route">&#x2022; <a href="https://[[.Hostname]][[if .PathPrefix]][[.PathPrefix]][[else]]/[[end]]">[[.Hostname]][[if .PathPrefix]][[.PathPrefix]][[else]]/[[end]]</a> &#x2192; [[.ServiceName]]</div>
         [[end]]
     </div>
     [[else]]
     [[if not .Project]]
-    <p>No routes are currently registered. Start some containers on the roji network!</p>
+    <p>[[call .T "notfound.no_routes"]]</p>
     [[end]]
     [[end]]
     [[if .DashboardHost]]
-    <p><a href="https://[[.DashboardHost]]">View Dashboard</a></p>
+    <p><a href="https://[[.DashboardHost]]">[[call .T "notfound.view_dashboard"]]</a></p>
     [[end]]
 </body>
 </html>

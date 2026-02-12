@@ -10,13 +10,14 @@ import (
 	"time"
 
 	"github.com/kan/roji/doctor"
+	"github.com/kan/roji/i18n"
 )
 
 // Ports checks if required ports are available
 type Ports struct{}
 
 func (c *Ports) Name() string {
-	return "Port availability"
+	return i18n.T("doctor.check.ports")
 }
 
 func (c *Ports) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
@@ -24,7 +25,7 @@ func (c *Ports) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult 
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Configuration not available",
+			Message: i18n.T("doctor.check.ports.not_available"),
 			Fixable: false,
 		}
 	}
@@ -40,7 +41,7 @@ func (c *Ports) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult 
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Pass,
-			Message: fmt.Sprintf("Ports %d, %d are available", httpPort, httpsPort),
+			Message: i18n.Tf("doctor.check.ports.available", httpPort, httpsPort),
 			Fixable: false,
 		}
 	}
@@ -50,8 +51,8 @@ func (c *Ports) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult 
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Pass,
-			Message: fmt.Sprintf("roji is already running on ports %d, %d", httpPort, httpsPort),
-			Details: "roji server detected via health check endpoint",
+			Message: i18n.Tf("doctor.check.ports.roji_running", httpPort, httpsPort),
+			Details: i18n.T("doctor.check.ports.roji_detected"),
 			Fixable: false,
 		}
 	}
@@ -68,8 +69,8 @@ func (c *Ports) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult 
 	return doctor.CheckResult{
 		Name:    c.Name(),
 		Status:  doctor.Fail,
-		Message: fmt.Sprintf("Port(s) %s already in use", strings.Join(unavailable, ", ")),
-		Details: "Stop any services using these ports or configure different ports",
+		Message: i18n.Tf("doctor.check.ports.in_use", strings.Join(unavailable, ", ")),
+		Details: i18n.T("doctor.check.ports.in_use_hint"),
 		Fixable: false,
 	}
 }

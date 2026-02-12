@@ -27,6 +27,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
+	"github.com/kan/roji/i18n"
 	"github.com/kan/roji/project"
 	"golang.org/x/net/http2"
 )
@@ -389,14 +390,27 @@ func (h *Handler) serveDashboard(w http.ResponseWriter, r *http.Request) {
 		routesJSON = []byte("[]")
 	}
 
+	// Detect language from Accept-Language header
+	lang := i18n.DetectHTTP(r.Header.Get("Accept-Language"))
+	allMsgs := i18n.AllMessages()
+	allMessagesJSON, err := json.Marshal(allMsgs)
+	if err != nil {
+		slog.Error("failed to marshal i18n messages", "error", err)
+		allMessagesJSON = []byte("{}")
+	}
+
 	data := struct {
-		Routes     []RouteInfo
-		RoutesJSON template.JS // Safe for embedding in script
-		Version    string
+		Routes          []RouteInfo
+		RoutesJSON      template.JS // Safe for embedding in script
+		Version         string
+		AllMessagesJSON template.JS
+		Lang            string
 	}{
-		Routes:     routes,
-		RoutesJSON: template.JS(routesJSON),
-		Version:    h.statusConfig.Version,
+		Routes:          routes,
+		RoutesJSON:      template.JS(routesJSON),
+		Version:         h.statusConfig.Version,
+		AllMessagesJSON: template.JS(allMessagesJSON),
+		Lang:            lang,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -823,16 +837,33 @@ func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request, hostnam
 		matchedProject = h.findProjectForHostname(hostname)
 	}
 
+	// Detect language from Accept-Language header
+	lang := i18n.DetectHTTP(r.Header.Get("Accept-Language"))
+	msgs := i18n.Messages(lang)
+	tFunc := func(key string) string {
+		if v, ok := msgs[key]; ok {
+			return v
+		}
+		// Fallback to English
+		enMsgs := i18n.Messages("en")
+		if v, ok := enMsgs[key]; ok {
+			return v
+		}
+		return key
+	}
+
 	data := struct {
 		Hostname      string
 		Routes        []RouteInfo
 		DashboardHost string
 		Project       *project.Project
+		T             func(string) string
 	}{
 		Hostname:      hostname,
 		Routes:        routes,
 		DashboardHost: h.dashboardHost,
 		Project:       matchedProject,
+		T:             tFunc,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -896,18 +927,34 @@ func (h *Handler) handleRouteWarning(w http.ResponseWriter, r *http.Request, hos
 		warningType = "conflict"
 	}
 
+	// Detect language from Accept-Language header
+	lang := i18n.DetectHTTP(r.Header.Get("Accept-Language"))
+	msgs := i18n.Messages(lang)
+	tFunc := func(key string) string {
+		if v, ok := msgs[key]; ok {
+			return v
+		}
+		enMsgs := i18n.Messages("en")
+		if v, ok := enMsgs[key]; ok {
+			return v
+		}
+		return key
+	}
+
 	data := struct {
 		Hostname      string
 		ServiceName   string
 		Warning       string
 		WarningType   string
 		DashboardHost string
+		T             func(string) string
 	}{
 		Hostname:      hostname,
 		ServiceName:   route.Backend.ServiceName,
 		Warning:       route.Backend.Warning,
 		WarningType:   warningType,
 		DashboardHost: h.dashboardHost,
+		T:             tFunc,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

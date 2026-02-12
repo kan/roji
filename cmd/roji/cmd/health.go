@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/kan/roji/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -16,10 +17,10 @@ var healthCmd = &cobra.Command{
 	Long:  "Performs a health check against the local roji instance. Exits with 0 if healthy, 1 otherwise.",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := checkHealth(); err != nil {
-			fmt.Fprintf(os.Stderr, "unhealthy: %v\n", err)
+			fmt.Fprintln(os.Stderr, i18n.Tf("cmd.health.unhealthy", err))
 			os.Exit(1)
 		}
-		fmt.Println("healthy")
+		fmt.Println(i18n.T("cmd.health.healthy"))
 		os.Exit(0)
 	},
 }

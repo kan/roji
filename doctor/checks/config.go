@@ -8,13 +8,14 @@ import (
 
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/doctor"
+	"github.com/kan/roji/i18n"
 )
 
 // Config checks if the configuration file is valid
 type Config struct{}
 
 func (c *Config) Name() string {
-	return "Config file validation"
+	return i18n.T("doctor.check.config")
 }
 
 func (c *Config) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
@@ -31,15 +32,15 @@ func (c *Config) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 			return doctor.CheckResult{
 				Name:    c.Name(),
 				Status:  doctor.Pass,
-				Message: "No config file found (using defaults)",
-				Details: fmt.Sprintf("Config file not found at %s", configPath),
+				Message: i18n.T("doctor.check.config.no_file"),
+				Details: i18n.Tf("doctor.check.config.no_file_detail", configPath),
 				Fixable: false,
 			}
 		}
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Fail,
-			Message: "Failed to read config file",
+			Message: i18n.T("doctor.check.config.read_failed"),
 			Details: err.Error(),
 			Fixable: false,
 		}
@@ -52,7 +53,7 @@ func (c *Config) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Pass,
-			Message: fmt.Sprintf("Config file is valid (%s)", configPath),
+			Message: i18n.Tf("doctor.check.config.valid", configPath),
 			Fixable: false,
 		}
 	}
@@ -79,16 +80,16 @@ func (c *Config) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 	// Build summary message
 	var summaryParts []string
 	if unknownKeyCount > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d unknown key(s)", unknownKeyCount))
+		summaryParts = append(summaryParts, i18n.Tf("doctor.check.config.unknown_keys", unknownKeyCount))
 	}
 	if invalidTypeCount > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d invalid type(s)", invalidTypeCount))
+		summaryParts = append(summaryParts, i18n.Tf("doctor.check.config.invalid_types", invalidTypeCount))
 	}
 	if missingRequiredCount > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d missing required field(s)", missingRequiredCount))
+		summaryParts = append(summaryParts, i18n.Tf("doctor.check.config.missing_required", missingRequiredCount))
 	}
 	if otherCount > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d other issue(s)", otherCount))
+		summaryParts = append(summaryParts, i18n.Tf("doctor.check.config.other_issues", otherCount))
 	}
 
 	// Build details with all issues
@@ -106,7 +107,7 @@ func (c *Config) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 	return doctor.CheckResult{
 		Name:    c.Name(),
 		Status:  status,
-		Message: fmt.Sprintf("Config issues found: %s", strings.Join(summaryParts, ", ")),
+		Message: i18n.Tf("doctor.check.config.issues_found", strings.Join(summaryParts, ", ")),
 		Details: strings.Join(details, "\n"),
 		Fixable: false,
 	}

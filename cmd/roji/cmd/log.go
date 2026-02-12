@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kan/roji/config"
+	"github.com/kan/roji/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -117,7 +118,7 @@ func followLog(logPath string, initialLines int) error {
 		return fmt.Errorf("failed to seek: %w", err)
 	}
 
-	fmt.Printf("\n--- Following %s (Ctrl+C to exit) ---\n\n", logPath)
+	fmt.Printf("\n%s\n\n", i18n.Tf("cmd.log.following", logPath))
 
 	// Follow new lines
 	buf := make([]byte, 4096)
@@ -137,7 +138,7 @@ func followLog(logPath string, initialLines int) error {
 				// File was truncated, seek to beginning
 				file.Seek(0, io.SeekStart)
 				pos = 0
-				fmt.Println("\n--- Log file rotated ---")
+				fmt.Printf("\n%s\n", i18n.T("cmd.log.rotated"))
 			}
 
 			// Sleep briefly before checking again

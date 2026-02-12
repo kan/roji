@@ -569,15 +569,15 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 
 #### 5. 多言語対応 (i18n)
 
-- [ ] **ダッシュボード (Web UI)**
+- [x] **ダッシュボード (Web UI)**
   - メッセージの外部化（JSON / 埋め込みリソース）
-  - ブラウザの `navigator.language` で言語自動検出
+  - ブラウザの `Accept-Language` ヘッダーで言語自動検出
   - 日本語リソース追加
-- [ ] **CLIコマンド**
+- [x] **CLIコマンド**
   - メッセージ・ヘルプテキストの外部化
   - `LANG` 環境変数で言語自動検出
   - 日本語リソース追加
-- [ ] **インストーラー (install.sh)**
+- [x] **インストーラー (install.sh)**
   - メッセージの日本語対応
 
 #### 6. ドキュメント整備

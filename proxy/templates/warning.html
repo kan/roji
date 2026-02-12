@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Service Unavailable - roji</title>
+    <title>[[call .T "warning.title"]] - roji</title>
     <link rel="icon" type="image/svg+xml" href="https://[[.DashboardHost]]/_assets/favicon.svg">
     <script>
         (function() {
@@ -34,43 +34,43 @@
     </style>
 </head>
 <body>
-    <h1>&#x26A0;&#xFE0F; Service Unavailable</h1>
-    <p>The container for <code>[[.Hostname]]</code> is running but cannot be proxied.</p>
+    <h1>&#x26A0;&#xFE0F; [[call .T "warning.title"]]</h1>
+    <p>[[printf (call .T "warning.message") .Hostname]]</p>
 
     <div class="warning-box">
-        <h3>Issue: [[.Warning]]</h3>
-        <p>Service: <strong>[[.ServiceName]]</strong></p>
+        <h3>[[call .T "warning.issue"]] [[.Warning]]</h3>
+        <p>[[call .T "warning.service"]] <strong>[[.ServiceName]]</strong></p>
     </div>
 
     <div class="fix-hint">
-        <h3>&#x1F527; How to fix</h3>
+        <h3>&#x1F527; [[call .T "warning.how_to_fix"]]</h3>
         [[if eq .WarningType "no_port"]]
-        <p>Add an <code>expose</code> directive to your docker-compose.yml:</p>
+        <p>[[call .T "warning.no_port.hint"]]</p>
         <pre>services:
   [[.ServiceName]]:
     image: your-image
     expose:
       - "8080"  # Replace with your service port</pre>
-        <p>Or use the <code>roji.port</code> label:</p>
+        <p>[[call .T "warning.no_port.or_label"]]</p>
         <pre>services:
   [[.ServiceName]]:
     image: your-image
     labels:
       - "roji.port=8080"  # Replace with your service port</pre>
         [[else if eq .WarningType "conflict"]]
-        <p>Multiple services are using the same hostname. Use the <code>roji.host</code> label to assign unique hostnames:</p>
+        <p>[[call .T "warning.conflict.hint"]]</p>
         <pre>services:
   [[.ServiceName]]:
     image: your-image
     labels:
       - "roji.host=[[.ServiceName]].localhost"  # Use a unique hostname</pre>
         [[else]]
-        <p>Check your docker-compose.yml configuration for issues with this service.</p>
+        <p>[[call .T "warning.generic.hint"]]</p>
         [[end]]
     </div>
 
     [[if .DashboardHost]]
-    <p><a href="https://[[.DashboardHost]]">&#x2190; Back to Dashboard</a></p>
+    <p><a href="https://[[.DashboardHost]]">&#x2190; [[call .T "warning.back_to_dashboard"]]</a></p>
     [[end]]
 </body>
 </html>

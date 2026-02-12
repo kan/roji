@@ -9,6 +9,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/kan/roji/certgen"
 	"github.com/kan/roji/config"
+	"github.com/kan/roji/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -51,9 +52,9 @@ func runCAExport(cmd *cobra.Command, args []string) error {
 
 	// Check if CA certificate exists
 	if _, err := os.Stat(caCertPath); os.IsNotExist(err) {
-		fmt.Printf("%s CA certificate not found at: %s\n", red("✗"), caCertPath)
+		fmt.Printf("%s %s\n", red("✗"), i18n.Tf("cmd.ca.export.not_found", caCertPath))
 		fmt.Println()
-		fmt.Println("Run 'roji' to auto-generate certificates first.")
+		fmt.Println(i18n.T("cmd.ca.export.generate_hint"))
 		return nil
 	}
 
@@ -93,18 +94,15 @@ func runCAExport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to export certificate: %w", exportErr)
 	}
 
-	fmt.Printf("%s CA certificate exported to: %s\n", green("✓"), outputPath)
+	fmt.Printf("%s %s\n", green("✓"), i18n.Tf("cmd.ca.export.success", outputPath))
 
 	switch ext {
 	case ".crt", ".cer":
 		fmt.Println()
-		fmt.Println("This is a DER-encoded certificate (binary format).")
-		fmt.Println("On Windows, double-click to install, or use:")
-		fmt.Println("  certutil -addstore ROOT " + outputPath)
+		fmt.Println(i18n.Tf("cmd.ca.export.der_hint", outputPath))
 	default:
 		fmt.Println()
-		fmt.Println("This is a PEM-encoded certificate (text format).")
-		fmt.Println("Import this file into your browser or OS trust store.")
+		fmt.Println(i18n.T("cmd.ca.export.pem_hint"))
 	}
 
 	fmt.Println()

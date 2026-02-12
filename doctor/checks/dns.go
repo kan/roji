@@ -2,18 +2,18 @@ package checks
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 
 	"github.com/kan/roji/doctor"
+	"github.com/kan/roji/i18n"
 )
 
 // DNS checks if *.localhost domains resolve correctly
 type DNS struct{}
 
 func (c *DNS) Name() string {
-	return "DNS resolution"
+	return i18n.T("doctor.check.dns")
 }
 
 func (c *DNS) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
@@ -34,8 +34,8 @@ func (c *DNS) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
 			return doctor.CheckResult{
 				Name:    c.Name(),
 				Status:  doctor.Pass,
-				Message: fmt.Sprintf("*.%s (browser auto-resolve)", domain),
-				Details: "Chrome-based browsers automatically resolve *.localhost to 127.0.0.1.\nNote: curl and other CLI tools may require /etc/hosts entry.",
+				Message: i18n.Tf("doctor.check.dns.browser_resolve", domain),
+				Details: i18n.T("doctor.check.dns.browser_resolve_detail"),
 				Fixable: false,
 			}
 		}
@@ -44,8 +44,8 @@ func (c *DNS) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Warn,
-			Message: fmt.Sprintf("Cannot resolve %s", testHost),
-			Details: "Custom domains require DNS configuration.\nAdd entries to /etc/hosts or configure a local DNS server.",
+			Message: i18n.Tf("doctor.check.dns.cannot_resolve", testHost),
+			Details: i18n.T("doctor.check.dns.custom_domain_hint"),
 			Fixable: false,
 		}
 	}
@@ -64,8 +64,8 @@ func (c *DNS) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Warn,
-			Message: fmt.Sprintf("%s resolves to non-local address", testHost),
-			Details: fmt.Sprintf("Resolved to: %v\nExpected: 127.0.0.1 or ::1", addrs),
+			Message: i18n.Tf("doctor.check.dns.non_local", testHost),
+			Details: i18n.Tf("doctor.check.dns.non_local_detail", addrs),
 			Fixable: false,
 		}
 	}
@@ -73,8 +73,8 @@ func (c *DNS) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
 	return doctor.CheckResult{
 		Name:    c.Name(),
 		Status:  doctor.Pass,
-		Message: fmt.Sprintf("*.%s resolves to localhost", domain),
-		Details: fmt.Sprintf("Tested: %s -> %v", testHost, addrs),
+		Message: i18n.Tf("doctor.check.dns.resolves", domain),
+		Details: i18n.Tf("doctor.check.dns.resolves_detail", testHost, addrs),
 		Fixable: false,
 	}
 }

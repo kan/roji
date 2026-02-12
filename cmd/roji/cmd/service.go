@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/kan/roji/i18n"
 	"github.com/kan/roji/service"
 	"github.com/spf13/cobra"
 )
@@ -91,35 +92,35 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println("Installing roji service...")
+	fmt.Println(i18n.T("cmd.service.install.installing"))
 	if err := mgr.Install(); err != nil {
 		return err
 	}
 
-	fmt.Println("✓ Service installed successfully")
+	fmt.Println(i18n.T("cmd.service.install.success"))
 	fmt.Println()
-	fmt.Println("To start the service:")
+	fmt.Println(i18n.T("cmd.service.install.start_hint"))
 	switch runtime.GOOS {
 	case "linux":
-		fmt.Println("  sudo roji service start")
+		fmt.Println(i18n.T("cmd.service.install.start_linux"))
 	case "darwin":
-		fmt.Println("  roji service start")
+		fmt.Println(i18n.T("cmd.service.install.start_macos"))
 	case "windows":
-		fmt.Println("  roji service start  (run as Administrator)")
+		fmt.Println(i18n.T("cmd.service.install.start_windows"))
 	default:
-		fmt.Println("  roji service start")
+		fmt.Println(i18n.T("cmd.service.install.start_macos"))
 	}
 	fmt.Println()
-	fmt.Println("To view logs:")
+	fmt.Println(i18n.T("cmd.service.install.log_hint"))
 	switch runtime.GOOS {
 	case "linux":
-		fmt.Println("  sudo journalctl -u roji -f")
+		fmt.Println(i18n.T("cmd.service.install.log_linux"))
 	case "darwin":
-		fmt.Println("  tail -f ~/Library/Logs/roji.log")
+		fmt.Println(i18n.T("cmd.service.install.log_macos"))
 	case "windows":
-		fmt.Printf("  type %%USERPROFILE%%\\.local\\share\\roji\\roji.log\n")
+		fmt.Println(i18n.T("cmd.service.install.log_windows"))
 	}
-	fmt.Println("  roji log")
+	fmt.Println(i18n.T("cmd.service.install.log_roji"))
 
 	return nil
 }
@@ -130,12 +131,12 @@ func runServiceUninstall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println("Uninstalling roji service...")
+	fmt.Println(i18n.T("cmd.service.uninstall.uninstalling"))
 	if err := mgr.Uninstall(); err != nil {
 		return err
 	}
 
-	fmt.Println("✓ Service uninstalled successfully")
+	fmt.Println(i18n.T("cmd.service.uninstall.success"))
 
 	return nil
 }
@@ -146,12 +147,12 @@ func runServiceStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println("Starting roji service...")
+	fmt.Println(i18n.T("cmd.service.start.starting"))
 	if err := mgr.Start(); err != nil {
 		return err
 	}
 
-	fmt.Println("✓ Service started")
+	fmt.Println(i18n.T("cmd.service.start.success"))
 
 	return nil
 }
@@ -162,12 +163,12 @@ func runServiceStop(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println("Stopping roji service...")
+	fmt.Println(i18n.T("cmd.service.stop.stopping"))
 	if err := mgr.Stop(); err != nil {
 		return err
 	}
 
-	fmt.Println("✓ Service stopped")
+	fmt.Println(i18n.T("cmd.service.stop.success"))
 
 	return nil
 }
@@ -178,12 +179,12 @@ func runServiceRestart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println("Restarting roji service...")
+	fmt.Println(i18n.T("cmd.service.restart.restarting"))
 	if err := mgr.Restart(); err != nil {
 		return err
 	}
 
-	fmt.Println("✓ Service restarted")
+	fmt.Println(i18n.T("cmd.service.restart.success"))
 
 	return nil
 }
@@ -199,28 +200,28 @@ func runServiceStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println("roji service status")
+	fmt.Println(i18n.T("cmd.service.status.title"))
 	fmt.Println("───────────────────")
 
 	if !status.Installed {
-		fmt.Println("Status: not installed")
+		fmt.Println(i18n.T("cmd.service.status.not_installed"))
 		fmt.Println()
-		fmt.Println("Run 'sudo roji service install' to install the service.")
+		fmt.Println(i18n.T("cmd.service.status.install_hint"))
 		return nil
 	}
 
-	fmt.Printf("Installed: yes\n")
+	fmt.Println(i18n.T("cmd.service.status.installed"))
 
 	if status.Running {
-		fmt.Printf("Running:   yes\n")
+		fmt.Println(i18n.T("cmd.service.status.running_yes"))
 	} else {
-		fmt.Printf("Running:   no\n")
+		fmt.Println(i18n.T("cmd.service.status.running_no"))
 	}
 
 	if status.Enabled {
-		fmt.Printf("Enabled:   yes (auto-start on boot)\n")
+		fmt.Println(i18n.T("cmd.service.status.enabled_yes"))
 	} else {
-		fmt.Printf("Enabled:   no\n")
+		fmt.Println(i18n.T("cmd.service.status.enabled_no"))
 	}
 
 	if status.Description != "" {
