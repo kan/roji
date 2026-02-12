@@ -609,12 +609,160 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 
 | 機能 | 説明 | 優先度 |
 |------|------|--------|
+| **公式サイト** | チュートリアル・ドキュメントサイト（詳細は下記） | 高 |
 | VS Code拡張 | ルート一覧、ブラウザ起動、ログ連携（API安定後） | 高 |
 | Docker Desktop ネットワーク対応 | macOS/Windows NativeのDocker Desktopではコンテナ内部IPへの直接アクセス不可（Linux VM経由のため）。ポートフォワーディング自動化や`host.docker.internal`経由のルーティングなど、Docker Desktop固有のネットワーク制約への対応。※WSL2+Docker Desktopは既に動作 | 中 |
 | 簡易daemon化 | `roji start`でバックグラウンド起動（サービス登録不要）、PID管理 | 中 |
 | ルート別ヘルスチェック | 各バックエンドの死活監視、ダッシュボード表示 | 中 |
 | レスポンスタイム統計 | P50/P95/P99レイテンシ、ダッシュボードでグラフ表示 | 中 |
 | プラグインシステム | カスタムミドルウェア、認証プロキシ等の拡張 | 低 |
+
+---
+
+### 公式サイト（ドキュメント・チュートリアル）
+
+> 目標: rojiを初めて知った人が、サイトを見てインストール → 最初のサービス公開まで迷わず到達できる
+
+#### 技術選定
+
+| 項目 | 選定 | 理由 |
+|------|------|------|
+| SSG | **Hugo** | Go製でプロジェクトと親和性が高い、ビルド高速、i18n機能組み込み |
+| テーマ | **Doks**（Hugo） | ドキュメント特化、検索・ナビゲーション・ダークモード標準対応 |
+| ホスティング | **GitHub Pages** | 無料、GitHub Actionsで自動デプロイ、カスタムドメイン対応 |
+| ドメイン | **`roji-proxy.dev`** | Cloudflare Registrar で取得済み |
+| 多言語 | EN / JA | Hugoの `i18n/` + コンテンツディレクトリ分離（`content/en/`, `content/ja/`） |
+
+#### ディレクトリ構成
+
+```
+website/                          # リポジトリ内サブディレクトリ（モノレポ）
+├── hugo.toml                     # Hugo設定
+├── content/
+│   ├── en/                       # 英語コンテンツ（デフォルト）
+│   │   ├── _index.md             # ランディングページ
+│   │   ├── docs/
+│   │   │   ├── getting-started/
+│   │   │   │   ├── installation.md
+│   │   │   │   ├── quick-start.md
+│   │   │   │   └── first-service.md
+│   │   │   ├── guide/
+│   │   │   │   ├── configuration.md
+│   │   │   │   ├── static-sites.md
+│   │   │   │   ├── basic-auth.md
+│   │   │   │   ├── mock-routes.md
+│   │   │   │   ├── multi-network.md
+│   │   │   │   └── docker-compose-patterns.md
+│   │   │   ├── reference/
+│   │   │   │   ├── cli.md
+│   │   │   │   ├── labels.md
+│   │   │   │   ├── environment-variables.md
+│   │   │   │   ├── config-file.md
+│   │   │   │   └── api.md
+│   │   │   ├── troubleshooting/
+│   │   │   │   ├── common-issues.md
+│   │   │   │   ├── wsl.md
+│   │   │   │   ├── macos.md
+│   │   │   │   └── linux.md
+│   │   │   └── architecture.md
+│   │   └── blog/                 # リリースノート・Tips記事（任意）
+│   └── ja/                       # 日本語コンテンツ（同一構成）
+│       └── ...
+├── i18n/                         # UIテキスト翻訳（Hugo用）
+│   ├── en.yaml
+│   └── ja.yaml
+├── static/
+│   ├── images/                   # スクリーンショット・図
+│   └── favicon.svg               # 既存アセット流用
+├── layouts/                      # テーマカスタマイズ（最小限）
+└── .github/
+    └── workflows/
+        └── deploy-site.yml       # GitHub Pages自動デプロイ
+```
+
+#### コンテンツ計画
+
+**1. ランディングページ**
+- キャッチコピー: "本番は高速道路、開発は路地裏で"
+- 3つの特長: ゼロコンフィグ / 自動HTTPS / Docker自動検出
+- ワンライナーインストール表示
+- ダッシュボードのスクリーンショット
+- 30秒デモGIF（ターミナル → ブラウザ）
+
+**2. Getting Started（チュートリアル形式）**
+- `installation.md` — OS別インストール手順（ワンライナー / Homebrew）
+- `quick-start.md` — 5分でわかるroji（既存プロジェクトにrojiを追加）
+- `first-service.md` — ゼロから始める（docker-compose.yml作成 → rojiで公開）
+
+**3. ガイド（ユースケース別）**
+- `configuration.md` — 設定ファイルの全体像と使い方
+- `static-sites.md` — 静的ファイルホスティング（httpd機能）
+- `basic-auth.md` — BASIC認証の設定
+- `mock-routes.md` — モックレスポンスの活用
+- `multi-network.md` — 複数ネットワーク構成
+- `docker-compose-patterns.md` — よくある構成パターン集
+  - フロントエンド + API + DB
+  - マイクロサービス
+  - WordPress / Laravel / Rails
+
+**4. リファレンス（網羅的）**
+- `cli.md` — 全コマンド・フラグ一覧（`roji`, `roji doctor`, `roji ca`, `roji service`, ...）
+- `labels.md` — Dockerラベル仕様（`roji.host`, `roji.port`, `roji.mock.*`, ...）
+- `environment-variables.md` — 環境変数一覧
+- `config-file.md` — config.yamlの全キー
+- `api.md` — ダッシュボードAPI（`/_api/*`）
+
+**5. トラブルシューティング（プラットフォーム別）**
+- `common-issues.md` — よくある問題と `roji doctor` の使い方
+- `wsl.md` — WSL固有の注意点（Windows証明書、ネットワーク）
+- `macos.md` — macOS固有（Keychain、Docker Desktop）
+- `linux.md` — Linux固有（systemd、ポート権限）
+
+**6. アーキテクチャ**
+- 全体構成図（CLAUDE.mdのアーキテクチャ図を発展）
+- コンポーネント間のデータフロー
+- 証明書チェーンの仕組み
+
+#### デプロイパイプライン
+
+```yaml
+# .github/workflows/deploy-site.yml
+name: Deploy Website
+on:
+  push:
+    branches: [main]
+    paths: ['website/**']
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: peaceiris/actions-hugo@v3
+      - run: cd website && hugo --minify
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          publish_dir: ./website/public
+```
+
+#### デザイン方針
+
+- ダッシュボードと同じカラーパレット・フォント（ブランド統一）
+- ダークモード対応（Doksテーマ標準）
+- モバイルレスポンシブ
+- コードブロック: コピーボタン付き、シンタックスハイライト
+- 各ページにフィードバックリンク（GitHub Issues）
+
+#### 実装順序
+
+1. **Hugo + Doksセットアップ** — `website/` ディレクトリ作成、テーマ導入、GitHub Pages設定
+2. **ランディングページ** — デザイン、スクリーンショット撮影、デモGIF作成
+3. **Getting Started** — インストール〜最初のサービスまでのチュートリアル
+4. **リファレンス** — CLAUDE.mdの仕様セクションをベースに整形（最も機械的に作れる）
+5. **ガイド** — ユースケース別の実践的な記事
+6. **トラブルシューティング** — 既存のREADMEセクション + プラットフォーム別
+7. **日本語翻訳** — 全コンテンツの日本語版
+8. **README.md更新** — サイトへのリンク追加、重複コンテンツ削減
 
 ## 開発メモ
 
@@ -670,3 +818,5 @@ curl -k https://web.dev.localhost
 - [Go httputil.ReverseProxy](https://pkg.go.dev/net/http/httputil#ReverseProxy)
 - [Petite Vue](https://github.com/vuejs/petite-vue)
 - [VS Code Extension API](https://code.visualstudio.com/api)
+- [Hugo](https://gohugo.io/) - Go製静的サイトジェネレーター
+- [Doks](https://getdoks.org/) - Hugo用ドキュメントテーマ
