@@ -38,6 +38,12 @@ A simple reverse proxy for local development environments. Automatically discove
 
 ## Installation
 
+### Homebrew (macOS)
+
+```bash
+brew install kan/roji/roji
+```
+
 ### One-liner Install (Recommended)
 
 Install and start roji with a single command:

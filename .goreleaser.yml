@@ -46,6 +46,24 @@ archives:
       - README.md
       - CHANGELOG.md
 
+homebrew_casks:
+  - name: roji
+    ids:
+      - roji
+    binaries:
+      - roji
+    homepage: "https://github.com/kan/roji"
+    description: "A simple reverse proxy for local development. Auto-discovers Docker Compose services and provides HTTPS access via *.dev.localhost."
+    caveats: |
+      After installation, run:
+        sudo roji doctor --fix
+        sudo roji ca install
+        sudo roji service install && sudo roji service start
+    repository:
+      owner: kan
+      name: homebrew-roji
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+
 checksum:
   name_template: 'checksums.txt'
 
@@ -115,8 +133,14 @@ release:
     docker pull ghcr.io/kan/roji:{{.Version}}
     ```
     
+    ## Homebrew (macOS)
+
+    ```bash
+    brew install kan/roji/roji
+    ```
+
     ## Quick Install
-    
+
     ```bash
     curl -fsSL https://raw.githubusercontent.com/kan/roji/v{{.Version}}/install.sh | bash
     ```

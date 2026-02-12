@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Homebrew tap support**: Install on macOS with `brew install kan/roji/roji`
+  - GoReleaser auto-generates and pushes Formula to `kan/homebrew-roji` on release
 - **Recent Projects delete**: Remove projects from history via dashboard or API
   - `DELETE /_api/projects/{name}/delete` endpoint
   - Remove button on inactive projects in dashboard

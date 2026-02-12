@@ -561,9 +561,9 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 
 #### 4. パッケージマネージャー対応
 
-- [ ] **Homebrew対応**（macOS）
+- [x] **Homebrew対応**（macOS）
   - Formulaの作成（GoReleaserの `brews` セクション利用）
-  - `brew install kan/tap/roji` でインストール可能に
+  - `brew install kan/roji/roji` でインストール可能に
 - [ ] APT/RPMパッケージは検討のみ（v1.x以降）
 
 #### 5. 多言語対応 (i18n)
