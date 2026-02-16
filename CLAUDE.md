@@ -582,15 +582,15 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 
 #### 6. ドキュメント整備
 
-- [ ] **README.md 全面改訂**
+- [x] **README.md 全面改訂**
   - Docker Mode関連の記述を削除・整理
   - Native Mode前提の記述に統一
   - 機能一覧を最新状態に更新
-- [ ] **Getting Started ガイド**（新規作成）
+- [x] **Getting Started ガイド**（新規作成）
   - インストールから初めてのサービス公開まで
   - 設定ファイルの使い方
   - よくある構成例
-- [ ] **トラブルシューティングガイド**（拡充）
+- [x] **トラブルシューティングガイド**（拡充）
   - 既存セクションの拡充
   - プラットフォーム別の注意事項（WSL、macOS、Linux）
   - `roji doctor` との連携説明
