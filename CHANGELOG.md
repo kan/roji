@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2026-02-12
+## [1.0.0] - 2026-02-17
 
 ### Breaking Changes
 
@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Lightweight i18n package (`i18n/`) with JSON message files embedded via `embed.FS`
   - Language auto-detection: CLI uses `LANG` env var, HTTP uses `Accept-Language` header
   - Fallback chain: current language → English → key itself
+- **README.md overhaul**: Complete rewrite for v1.0.0
+  - New Quick Start section for fastest path to first service
+  - New Getting Started tutorial (multi-service project walkthrough)
+  - New API Reference with all 16 endpoints
+  - Expanded Troubleshooting with platform-specific guides (WSL, macOS, Linux)
+  - Expanded CLI Reference with all commands and flags
+  - Consolidated Configuration section with full config file example
+  - Added missing `ROJI_HTTP_PORT` / `ROJI_HTTPS_PORT` environment variables to docs
 
 ### Changed
 
@@ -41,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `install-docker.sh` (Docker Mode installer)
 - Docker Mode (Legacy) section from README.md
+- TLS Certificates manual installation section (replaced by `roji ca install`)
 - `--migrate` flag from `install.sh`
 
 ## [0.9.1] - 2026-02-06
