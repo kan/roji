@@ -1,0 +1,26 @@
+[get_started]
+other = "はじめる"
+
+[feature_zero_config_title]
+other = "ゼロコンフィグ"
+
+[feature_zero_config_desc]
+other = "rojiネットワークに接続するだけで <code>*.dev.localhost</code> のホスト名を自動取得。ラベルも設定ファイルも不要。"
+
+[feature_auto_https_title]
+other = "自動HTTPS"
+
+[feature_auto_https_desc]
+other = "TLS証明書を自動生成し、システム信頼ストアにインストール。すべてのサービスが設定なしでHTTPSに対応。"
+
+[feature_auto_discovery_title]
+other = "Docker自動検出"
+
+[feature_auto_discovery_desc]
+other = "Docker Eventsでコンテナをリアルタイム検出。コンテナを起動すれば、ダッシュボードに即座に表示。"
+
+[feature_dashboard_title]
+other = "ライブダッシュボード"
+
+[feature_dashboard_desc]
+other = "リアルタイムルート更新、リクエストログ、Docker Compose操作、プロジェクト管理 — すべてを一箇所で。"

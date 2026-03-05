@@ -1,0 +1,55 @@
+{{ define "main" }}
+<section class="section container-fluid mt-n3 pb-3">
+  <div class="row justify-content-center">
+    <div class="col-lg-12 text-center">
+      <h1>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="56" height="56" class="me-2" style="vertical-align: -0.15em;">
+          <path d="M 26 12 L 10 54 L 54 54 L 38 12 Z" fill="#5a6268" stroke="#343a40" stroke-width="2"/>
+          <line x1="32" y1="18" x2="32" y2="25" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="32" y2="37" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="32" y1="42" x2="32" y2="49" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+        {{ .Title }}
+      </h1>
+    </div>
+    <div class="col-lg-9 col-xl-8 text-center">
+      <p class="lead">{{ .Params.lead | safeHTML }}</p>
+      <a class="btn btn-primary btn-cta rounded-pill btn-lg my-3" href="{{ relLangURL "/docs/getting-started/installation/" }}" role="button">{{ i18n "get_started" }}</a>
+      {{ .Content }}
+    </div>
+  </div>
+</section>
+{{ end }}
+
+{{ define "sidebar-prefooter" }}
+  {{ if site.Params.doks.backgroundDots -}}
+  <div class="d-flex justify-content-start">
+    <div class="bg-dots"></div>
+  </div>
+  {{ end -}}
+  <section class="section section-md section-features">
+    <div class="container">
+      <div class="row justify-content-center text-center">
+        <div class="col-lg-5">
+          <h2 class="h4">{{ i18n "feature_zero_config_title" | default "Zero Configuration" }}</h2>
+          <p>{{ i18n "feature_zero_config_desc" | default "Connect to the roji network and get a <code>*.dev.localhost</code> hostname automatically. No labels, no config files needed." }}</p>
+        </div>
+        <div class="col-lg-5">
+          <h2 class="h4">{{ i18n "feature_auto_https_title" | default "Auto HTTPS" }}</h2>
+          <p>{{ i18n "feature_auto_https_desc" | default "TLS certificates are generated and installed to your system trust store automatically. Every service gets HTTPS out of the box." }}</p>
+        </div>
+        <div class="col-lg-5">
+          <h2 class="h4">{{ i18n "feature_auto_discovery_title" | default "Docker Auto-Discovery" }}</h2>
+          <p>{{ i18n "feature_auto_discovery_desc" | default "Containers are detected in real-time via Docker Events. Start a container, and it appears on your dashboard instantly." }}</p>
+        </div>
+        <div class="col-lg-5">
+          <h2 class="h4">{{ i18n "feature_dashboard_title" | default "Live Dashboard" }}</h2>
+          <p>{{ i18n "feature_dashboard_desc" | default "Real-time route updates, request logging, Docker Compose controls, and project management — all in one place." }}</p>
+        </div>
+      </div>
+    </div>
+  </section>
+{{ end }}
+
+{{ define "sidebar-footer" }}
+{{ end }}

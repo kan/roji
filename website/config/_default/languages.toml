@@ -1,0 +1,20 @@
+[en]
+  languageName = "English"
+  contentDir = "content/en"
+  weight = 10
+  [en.params]
+    languageISO = "EN"
+    languageTag = "en-US"
+    footer = 'Built with <a class="text-muted" href="https://gohugo.io/">Hugo</a> and <a class="text-muted" href="https://getdoks.org/">Doks</a>'
+
+[ja]
+  languageName = "日本語"
+  contentDir = "content/ja"
+  weight = 20
+  [ja.params]
+    languageISO = "JA"
+    languageTag = "ja-JP"
+    footer = '<a class="text-muted" href="https://gohugo.io/">Hugo</a> と <a class="text-muted" href="https://getdoks.org/">Doks</a> で構築'
+  [ja.params.doks]
+    navBarButtonUrl = "/ja/docs/getting-started/installation/"
+    navBarButtonText = "はじめる"

@@ -1,0 +1,26 @@
+[get_started]
+other = "Get Started"
+
+[feature_zero_config_title]
+other = "Zero Configuration"
+
+[feature_zero_config_desc]
+other = "Connect to the roji network and get a <code>*.dev.localhost</code> hostname automatically. No labels, no config files needed."
+
+[feature_auto_https_title]
+other = "Auto HTTPS"
+
+[feature_auto_https_desc]
+other = "TLS certificates are generated and installed to your system trust store automatically. Every service gets HTTPS out of the box."
+
+[feature_auto_discovery_title]
+other = "Docker Auto-Discovery"
+
+[feature_auto_discovery_desc]
+other = "Containers are detected in real-time via Docker Events. Start a container, and it appears on your dashboard instantly."
+
+[feature_dashboard_title]
+other = "Live Dashboard"
+
+[feature_dashboard_desc]
+other = "Real-time route updates, request logging, Docker Compose controls, and project management — all in one place."

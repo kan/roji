@@ -1,0 +1,136 @@
+# Hugo
+title = "roji"
+description = "A simple reverse proxy for local development. Auto-discovers Docker services, provides HTTPS via *.dev.localhost."
+images = ["cover.png"]
+
+# mainSections
+mainSections = ["docs"]
+
+math = false
+
+[social]
+  twitter = ""
+
+# Doks (@thulite/doks-core)
+[doks]
+  # Color mode
+  colorMode = "auto"
+  colorModeToggler = true
+
+  # Navbar
+  navbarSticky = true
+  containerBreakpoint = "fluid"
+
+  ## Button
+  navBarButton = true
+  navBarButtonUrl = "/docs/getting-started/installation/"
+  navBarButtonText = "Get Started"
+
+  # FlexSearch
+  flexSearch = true
+  searchExclKinds = []
+  searchExclTypes = []
+  showSearch = []
+  indexSummary = false
+
+  ## Search results
+  showDate = false
+  showSummary = true
+  searchLimit = 99
+
+  # Global alert
+  alert = false
+  alertDismissable = true
+
+  # Bootstrap
+  bootstrapJavascript = false
+
+  # Nav
+  sectionSwitcher = false
+  sectionNav = ["docs"]
+  toTopButton = true
+  breadcrumbTrail = true
+  headlineHash = true
+  scrollSpy = true
+
+  # Multilingual
+  multilingualMode = true
+  showMissingLanguages = true
+
+  # Versioning
+  docsVersioning = false
+  docsVersion = "1.0"
+
+  # UX
+  headerBar = false
+  backgroundDots = true
+  aiButtons = false
+
+  # Homepage
+  sectionFooter = false
+
+  # Blog
+  relatedPosts = false
+  imageList = true
+  imageSingle = true
+
+  # Repository
+  editPage = true
+  lastMod = false
+  repoHost = "GitHub"
+  docsRepo = "https://github.com/kan/roji"
+  docsRepoBranch = "main"
+  docsRepoSubPath = "website"
+
+  # SCSS colors
+  ## Dark theme
+  # textDark = "#e0e0e0"
+  # accentDark = "#66b3ff"
+  ## Light theme
+  # textLight = "#333333"
+  # accentLight = "#0066cc"
+
+# Debug
+[render_hooks.image]
+  errorLevel = 'ignore'
+
+[render_hooks.link]
+  errorLevel = 'ignore'
+  highlightBroken = false
+
+# Images (@thulite/images)
+[thulite_images]
+  [thulite_images.defaults]
+    decoding = "async"
+    fetchpriority = "auto"
+    loading = "lazy"
+    widths = [480, 576, 768, 1025, 1200, 1440]
+    sizes = "auto"
+    process = ""
+    lqip = "16x webp q20"
+
+# Inline SVG (@thulite/inline-svg)
+[inline_svg]
+  iconSetDir = "tabler-icons"
+  iconSetVariant = "outline"
+
+# SEO (@thulite/seo)
+[seo]
+  [seo.title]
+    separator = " | "
+    suffix = "roji"
+  [seo.description]
+    summaryFallback = ""
+  [seo.favicons]
+    icon = "favicon.png"
+    svgIcon = "favicon.svg"
+  [seo.schemas]
+    type = "Organization"
+    logo = "favicon-512x512.png"
+    name = "roji"
+    sameAs = ["https://github.com/kan/roji"]
+    images = ["cover.png"]
+    article = []
+    newsArticle = []
+    blogPosting = ["blog"]
+    product = []
