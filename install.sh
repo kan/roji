@@ -665,7 +665,7 @@ show_completion() {
     echo ""
 
     echo -e "${CYAN}${MSG_DOCUMENTATION}${NC}"
-    echo "  https://github.com/kan/roji"
+    echo "  https://roji-proxy.dev"
     echo ""
 }
 
