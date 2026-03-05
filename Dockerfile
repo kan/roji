@@ -1,7 +1,7 @@
 # ============================================
 # Development stage with hot reload
 # ============================================
-FROM golang:1.25-alpine AS development
+FROM golang:1.26-alpine AS development
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ CMD ["go", "tool", "air", "-c", ".air.toml"]
 # ============================================
 # Build stage
 # ============================================
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
