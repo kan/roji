@@ -443,6 +443,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.0.1]: https://github.com/kan/roji/releases/tag/v1.0.1
 [1.0.0]: https://github.com/kan/roji/releases/tag/v1.0.0
 [0.9.1]: https://github.com/kan/roji/releases/tag/v0.9.1
 [0.9.0]: https://github.com/kan/roji/releases/tag/v0.9.0
