@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-03-16
+
+### Security
+
+- Upgrade Go to 1.26.1, fixing 3 standard library vulnerabilities:
+  - [GO-2026-4601](https://pkg.go.dev/vuln/GO-2026-4601): Incorrect parsing of IPv6 host literals in `net/url`
+  - [GO-2026-4602](https://pkg.go.dev/vuln/GO-2026-4602): FileInfo can escape from a Root in `os`
+  - [GO-2026-4603](https://pkg.go.dev/vuln/GO-2026-4603): URLs in meta content attribute actions are not escaped in `html/template`
+
+### Dependencies
+
+- `golang.org/x/net` 0.51.0 → 0.52.0
+- `golang.org/x/text` 0.34.0 → 0.35.0
+- `golang.org/x/sys` 0.41.0 → 0.42.0
+
+### CI
+
+- `docker/build-push-action` v6 → v7
+- `docker/setup-buildx-action` v3 → v4
+- `actions/checkout`, `actions/setup-node`, `actions/upload-pages-artifact` updated to latest versions
+
 ## [1.0.0] - 2026-02-17
 
 ### Breaking Changes
