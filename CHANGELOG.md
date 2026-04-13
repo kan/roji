@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-04-13
+
+### Security
+
+- Migrate Docker client from `github.com/docker/docker` to `github.com/moby/moby/client v0.4.0`, fixing [CVE-2026-34040](https://www.cve.org/CVERecord?id=CVE-2026-34040) (AuthZ bypass in Docker daemon)
+- Upgrade Go to 1.26.2, fixing 5 standard library vulnerabilities:
+  - [GO-2026-4947](https://pkg.go.dev/vuln/GO-2026-4947): Unexpected work during chain building in `crypto/x509`
+  - [GO-2026-4946](https://pkg.go.dev/vuln/GO-2026-4946): Inefficient policy validation in `crypto/x509`
+  - [GO-2026-4870](https://pkg.go.dev/vuln/GO-2026-4870): TLS 1.3 KeyUpdate DoS in `crypto/tls`
+  - [GO-2026-4866](https://pkg.go.dev/vuln/GO-2026-4866): Case-sensitive name constraints Auth Bypass in `crypto/x509`
+  - [GO-2026-4865](https://pkg.go.dev/vuln/GO-2026-4865): XSS in `html/template`
+
+### Dependencies
+
+- `golang.org/x/net` 0.52.0 → 0.53.0
+- `golang.org/x/text` 0.35.0 → 0.36.0
+- `github.com/fatih/color` 1.18.0 → 1.19.0
+- `github.com/gohugoio/hugo` 0.149.1 → 0.159.2 (website)
+
+### CI
+
+- `actions/configure-pages` v5 → v6
+- `codecov/codecov-action` v5 → v6
+- `actions/deploy-pages` v4 → v5
+- `docker/login-action` v3 → v4
+- `docker/metadata-action` v5 → v6
+
 ## [1.0.1] - 2026-03-16
 
 ### Security
@@ -443,6 +470,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.0.2]: https://github.com/kan/roji/releases/tag/v1.0.2
 [1.0.1]: https://github.com/kan/roji/releases/tag/v1.0.1
 [1.0.0]: https://github.com/kan/roji/releases/tag/v1.0.0
 [0.9.1]: https://github.com/kan/roji/releases/tag/v0.9.1
