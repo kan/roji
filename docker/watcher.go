@@ -5,8 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/api/types/filters"
+	dockerclient "github.com/moby/moby/client"
+
+	"github.com/moby/moby/api/types/events"
 )
 
 // EventType represents the type of container event
@@ -65,13 +66,11 @@ func (w *Watcher) Watch(ctx context.Context) <-chan ContainerEvent {
 // watchLoop handles a single Events connection
 func (w *Watcher) watchLoop(ctx context.Context, eventCh chan<- ContainerEvent) {
 	// Filter for container events only
-	filterArgs := filters.NewArgs()
-	filterArgs.Add("type", "container")
-	filterArgs.Add("event", "start")
-	filterArgs.Add("event", "stop")
-	filterArgs.Add("event", "die")
+	filterArgs := make(dockerclient.Filters).
+		Add("type", "container").
+		Add("event", "start", "stop", "die")
 
-	msgCh, errCh := w.client.DockerClient().Events(ctx, events.ListOptions{
+	result := w.client.DockerClient().Events(ctx, dockerclient.EventsListOptions{
 		Filters: filterArgs,
 	})
 
@@ -80,13 +79,13 @@ func (w *Watcher) watchLoop(ctx context.Context, eventCh chan<- ContainerEvent) 
 		case <-ctx.Done():
 			return
 
-		case err := <-errCh:
+		case err := <-result.Err:
 			if err != nil {
 				slog.Error("docker events error, will reconnect", "error", err)
 			}
 			return // Exit loop to reconnect
 
-		case msg := <-msgCh:
+		case msg := <-result.Messages:
 			event := w.processEvent(msg)
 			if event != nil {
 				select {

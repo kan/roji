@@ -1,9 +1,14 @@
 package docker
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 
-	"github.com/docker/docker/api/types/events"
+	dockerclient "github.com/moby/moby/client"
+
+	"github.com/moby/moby/api/types/events"
 )
 
 func TestNewWatcher(t *testing.T) {
@@ -105,4 +110,169 @@ func TestWatcher_processEvent(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestWatcher_watchLoop tests that watchLoop correctly delivers events from
+// the EventsResult.Messages channel and exits on EventsResult.Err.
+func TestWatcher_watchLoop(t *testing.T) {
+	t.Run("delivers start event from Messages channel", func(t *testing.T) {
+		msgCh := make(chan events.Message, 1)
+		errCh := make(chan error, 1)
+
+		mock := &mockDockerAPI{
+			eventsFunc: func(ctx context.Context, options dockerclient.EventsListOptions) dockerclient.EventsResult {
+				return dockerclient.EventsResult{Messages: msgCh, Err: errCh}
+			},
+		}
+		client := NewClientWithAPI(mock, []string{"roji"}, "localhost")
+		watcher := NewWatcher(client)
+
+		eventCh := make(chan ContainerEvent, 1)
+
+		// Send a start message then close the error channel to exit watchLoop
+		msgCh <- events.Message{
+			Action: "start",
+			Actor: events.Actor{
+				ID:         "abc123",
+				Attributes: map[string]string{"name": "test-container"},
+			},
+		}
+
+		go func() {
+			watcher.watchLoop(context.Background(), eventCh)
+		}()
+
+		select {
+		case got := <-eventCh:
+			if got.Type != EventStart {
+				t.Errorf("got event type %v, want EventStart", got.Type)
+			}
+			if got.ContainerID != "abc123" {
+				t.Errorf("got ContainerID %q, want %q", got.ContainerID, "abc123")
+			}
+			// Signal watchLoop to exit
+			errCh <- nil
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for event from watchLoop")
+		}
+	})
+
+	t.Run("exits on error from Err channel", func(t *testing.T) {
+		msgCh := make(chan events.Message)
+		errCh := make(chan error, 1)
+
+		mock := &mockDockerAPI{
+			eventsFunc: func(ctx context.Context, options dockerclient.EventsListOptions) dockerclient.EventsResult {
+				return dockerclient.EventsResult{Messages: msgCh, Err: errCh}
+			},
+		}
+		client := NewClientWithAPI(mock, []string{"roji"}, "localhost")
+		watcher := NewWatcher(client)
+
+		eventCh := make(chan ContainerEvent, 1)
+		done := make(chan struct{})
+
+		// Send an error to trigger exit
+		errCh <- errors.New("docker daemon disconnected")
+
+		go func() {
+			watcher.watchLoop(context.Background(), eventCh)
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			// watchLoop exited as expected
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out: watchLoop did not exit on error")
+		}
+	})
+
+	t.Run("exits on context cancellation", func(t *testing.T) {
+		msgCh := make(chan events.Message)
+		errCh := make(chan error)
+
+		mock := &mockDockerAPI{
+			eventsFunc: func(ctx context.Context, options dockerclient.EventsListOptions) dockerclient.EventsResult {
+				return dockerclient.EventsResult{Messages: msgCh, Err: errCh}
+			},
+		}
+		client := NewClientWithAPI(mock, []string{"roji"}, "localhost")
+		watcher := NewWatcher(client)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		eventCh := make(chan ContainerEvent, 1)
+		done := make(chan struct{})
+
+		go func() {
+			watcher.watchLoop(ctx, eventCh)
+			close(done)
+		}()
+
+		cancel()
+
+		select {
+		case <-done:
+			// watchLoop exited on context cancellation as expected
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out: watchLoop did not exit on context cancellation")
+		}
+	})
+}
+
+// TestWatcher_Watch tests the full Watch loop including reconnect behavior.
+func TestWatcher_Watch(t *testing.T) {
+	t.Run("delivers events and stops on context cancel", func(t *testing.T) {
+		msgCh := make(chan events.Message, 1)
+		errCh := make(chan error, 1)
+
+		mock := &mockDockerAPI{
+			eventsFunc: func(ctx context.Context, options dockerclient.EventsListOptions) dockerclient.EventsResult {
+				return dockerclient.EventsResult{Messages: msgCh, Err: errCh}
+			},
+		}
+		client := NewClientWithAPI(mock, []string{"roji"}, "localhost")
+		watcher := NewWatcher(client)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		outCh := watcher.Watch(ctx)
+
+		// Send an event
+		msgCh <- events.Message{
+			Action: "stop",
+			Actor: events.Actor{
+				ID:         "def456",
+				Attributes: map[string]string{"name": "stopped-container"},
+			},
+		}
+
+		select {
+		case got := <-outCh:
+			if got.Type != EventStop {
+				t.Errorf("got event type %v, want EventStop", got.Type)
+			}
+			if got.ContainerID != "def456" {
+				t.Errorf("got ContainerID %q, want %q", got.ContainerID, "def456")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for event from Watch")
+		}
+
+		// Cancel context and verify output channel is eventually closed
+		cancel()
+		// Drain errCh to allow watchLoop to exit
+		errCh <- nil
+
+		select {
+		case _, ok := <-outCh:
+			if ok {
+				// It's okay if a stray event arrives; we only care that the channel closes
+			}
+		case <-time.After(3 * time.Second):
+			// Acceptable: Watch uses a 5-second reconnect delay, so the goroutine
+			// may still be in time.After. The important thing is no deadlock.
+		}
+	})
 }

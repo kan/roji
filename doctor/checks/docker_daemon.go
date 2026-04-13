@@ -3,7 +3,8 @@ package checks
 import (
 	"context"
 
-	"github.com/docker/docker/client"
+	dockerclient "github.com/moby/moby/client"
+
 	"github.com/kan/roji/doctor"
 	"github.com/kan/roji/i18n"
 )
@@ -16,7 +17,7 @@ func (c *DockerDaemon) Name() string {
 }
 
 func (c *DockerDaemon) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := dockerclient.New(dockerclient.FromEnv)
 	if err != nil {
 		return doctor.CheckResult{
 			Name:    c.Name(),
@@ -28,7 +29,7 @@ func (c *DockerDaemon) Run(ctx context.Context, cfg *doctor.Config) doctor.Check
 	}
 	defer cli.Close()
 
-	_, err = cli.Ping(ctx)
+	_, err = cli.Ping(ctx, dockerclient.PingOptions{})
 	if err != nil {
 		return doctor.CheckResult{
 			Name:    c.Name(),

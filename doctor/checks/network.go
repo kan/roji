@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
+	cerrdefs "github.com/containerd/errdefs"
+	dockerclient "github.com/moby/moby/client"
+
 	"github.com/kan/roji/doctor"
 	"github.com/kan/roji/i18n"
 )
@@ -38,7 +39,7 @@ func (c *Network) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResul
 		}
 	}
 
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := dockerclient.New(dockerclient.FromEnv)
 	if err != nil {
 		return doctor.CheckResult{
 			Name:    c.Name(),
@@ -54,9 +55,9 @@ func (c *Network) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResul
 	var existing []string
 
 	for _, netName := range networks {
-		_, err := cli.NetworkInspect(ctx, netName, network.InspectOptions{})
+		_, err := cli.NetworkInspect(ctx, netName, dockerclient.NetworkInspectOptions{})
 		if err != nil {
-			if client.IsErrNotFound(err) {
+			if cerrdefs.IsNotFound(err) {
 				missing = append(missing, netName)
 			} else {
 				return doctor.CheckResult{
@@ -99,7 +100,7 @@ func (c *Network) Fix(ctx context.Context, cfg *doctor.Config) error {
 		return fmt.Errorf("configuration not available")
 	}
 
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := dockerclient.New(dockerclient.FromEnv)
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
 	}
@@ -107,10 +108,10 @@ func (c *Network) Fix(ctx context.Context, cfg *doctor.Config) error {
 
 	networks := cfg.Settings.Networks()
 	for _, netName := range networks {
-		_, err := cli.NetworkInspect(ctx, netName, network.InspectOptions{})
-		if err != nil && client.IsErrNotFound(err) {
+		_, err := cli.NetworkInspect(ctx, netName, dockerclient.NetworkInspectOptions{})
+		if err != nil && cerrdefs.IsNotFound(err) {
 			// Network doesn't exist, create it
-			_, err = cli.NetworkCreate(ctx, netName, network.CreateOptions{
+			_, err = cli.NetworkCreate(ctx, netName, dockerclient.NetworkCreateOptions{
 				Driver: "bridge",
 			})
 			if err != nil {
