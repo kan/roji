@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-05-18
+
+### Security
+
+- Upgrade Go to 1.26.3, fixing 5 standard library vulnerabilities:
+  - [GO-2026-4982](https://pkg.go.dev/vuln/GO-2026-4982): Bypass of meta content URL escaping causes XSS in `html/template`
+  - [GO-2026-4980](https://pkg.go.dev/vuln/GO-2026-4980): Escaper bypass leads to XSS in `html/template`
+  - [GO-2026-4976](https://pkg.go.dev/vuln/GO-2026-4976): Issue in `net/http/httputil`
+  - [GO-2026-4971](https://pkg.go.dev/vuln/GO-2026-4971): Panic in `Dial` and `LookupPort` when handling NUL byte on Windows in `net`
+  - [GO-2026-4918](https://pkg.go.dev/vuln/GO-2026-4918): Issue in `net/http/internal/http2` via `golang.org/x/net`
+- Upgrade `go.opentelemetry.io/otel` 1.40.0 → 1.41.0, fixing [CVE-2026-29181](https://nvd.nist.gov/vuln/detail/CVE-2026-29181) (HIGH): multi-value `baggage` header extraction causes excessive allocations (remote DoS amplification)
+
+### Dependencies
+
+- `golang.org/x/net` 0.53.0 → 0.54.0
+- `github.com/moby/moby/client` 0.4.0 → 0.4.1
+- `github.com/gohugoio/hugo` 0.159.2 → 0.161.0 (website)
+- `@babel/plugin-transform-modules-systemjs` 7.29.0 → 7.29.4 (website)
+- `postcss` 8.5.8 → 8.5.10 (website)
+
+### CI
+
+- `actions/upload-pages-artifact` v4 → v5
+
 ## [1.0.2] - 2026-04-13
 
 ### Security
