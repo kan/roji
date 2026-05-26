@@ -411,7 +411,7 @@ warn_docker_mode() {
     echo "     rm -rf ${DOCKER_INSTALL_DIR}"
     echo ""
     echo "  4. ${MSG_MIGRATE_STEP4}"
-    echo "     curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.0/install.sh | bash"
+    echo "     curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash"
     echo ""
     exit 1
 }

@@ -2,7 +2,7 @@
 #
 # This file is for roji development and testing ONLY.
 # For production use, install roji as a native binary:
-#   curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.0/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
 #
 # Usage:
 #   1. Generate certificates with mkcert:
