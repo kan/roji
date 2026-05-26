@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-05-26
+
+### Security
+
+- Upgrade `golang.org/x/net` 0.54.0 → 0.55.0, fixing [GO-2026-5026](https://pkg.go.dev/vuln/GO-2026-5026): Punycode label decoding bypass in the `idna` package. `ToASCII`/`ToUnicode` incorrectly accept Punycode-encoded labels that decode to ASCII-only labels, enabling a hostname privilege-escalation bypass. Reachable in roji because the `httputil.ReverseProxy` in `proxy/handler.go` validates upstream hosts through `golang.org/x/net/http2` → `httpguts` → `idna.ToASCII`.
+
+### Dependencies
+
+- `brace-expansion` 5.0.5 → 5.0.6 (website)
+
 ## [1.0.3] - 2026-05-18
 
 ### Security
@@ -494,6 +504,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.0.4]: https://github.com/kan/roji/releases/tag/v1.0.4
+[1.0.3]: https://github.com/kan/roji/releases/tag/v1.0.3
 [1.0.2]: https://github.com/kan/roji/releases/tag/v1.0.2
 [1.0.1]: https://github.com/kan/roji/releases/tag/v1.0.1
 [1.0.0]: https://github.com/kan/roji/releases/tag/v1.0.0
