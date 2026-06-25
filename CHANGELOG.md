@@ -548,6 +548,8 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.0.6]: https://github.com/kan/roji/releases/tag/v1.0.6
+[1.0.5]: https://github.com/kan/roji/releases/tag/v1.0.5
 [1.0.4]: https://github.com/kan/roji/releases/tag/v1.0.4
 [1.0.3]: https://github.com/kan/roji/releases/tag/v1.0.3
 [1.0.2]: https://github.com/kan/roji/releases/tag/v1.0.2
