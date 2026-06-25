@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-06-25
+
+Dependency and security maintenance release. Resolves all 14 open security
+alerts (Dependabot + code scanning). The fixed issues are in build/website
+tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
+
+### Security
+
+- Upgrade `github.com/gohugoio/hugo` 0.161.0 → 0.163.3, fixing 5 advisories:
+  - [CVE-2026-50133](https://nvd.nist.gov/vuln/detail/CVE-2026-50133): XSS via unescaped code-fence language in the default code block renderer
+  - [CVE-2026-50134](https://nvd.nist.gov/vuln/detail/CVE-2026-50134): XSS via `text/html` content files
+  - [CVE-2026-50135](https://nvd.nist.gov/vuln/detail/CVE-2026-50135): `security.http.urls` allow-list bypass via HTTP redirects
+  - [GHSA-q76j-gcg9-vxc6](https://github.com/advisories/GHSA-q76j-gcg9-vxc6): Symlink confinement bypass in `os.ReadFile`
+  - [GHSA-c3wq-j5vh-68rc](https://github.com/advisories/GHSA-c3wq-j5vh-68rc): Symlink confinement bypass in `resources.Get`
+- Upgrade `vite` and `esbuild` (website), fixing:
+  - [GHSA-jqfw-vq24-v9c3](https://github.com/advisories/GHSA-jqfw-vq24-v9c3) (HIGH): `vite` `server.fs.deny` bypass on Windows alternate paths
+  - launch-editor: NTLMv2 hash disclosure via UNC path handling on Windows
+  - `esbuild` arbitrary file read when running the dev server on Windows
+- Upgrade `@babel/core` 7.29.0 → 7.29.7 (website), fixing [CVE-2026-49356](https://nvd.nist.gov/vuln/detail/CVE-2026-49356): arbitrary file read via `sourceMappingURL` comment
+- Remove unused `@changesets/cli` / `@changesets/changelog-github` dev dependencies (website). They were inherited from the Doks theme starter and are not used (this project uses GoReleaser + a hand-maintained CHANGELOG); removing them drops the only paths to the vulnerable `js-yaml` ([GHSA-h67p-54hq-rp68](https://github.com/advisories/GHSA-h67p-54hq-rp68): quadratic-complexity DoS in merge key handling)
+
+### Dependencies
+
+- `golang.org/x/net` 0.55.0 → 0.56.0
+- `golang.org/x/text` 0.37.0 → 0.38.0
+- `github.com/moby/moby/api` 1.54.2 → 1.55.0
+- `github.com/moby/moby/client` 0.4.1 → 0.5.0
+
+### CI
+
+- `actions/checkout` v6 → v7
+
 ## [1.0.5] - 2026-06-08
 
 ### Security
