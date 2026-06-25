@@ -8,7 +8,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/fatih/color v1.19.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/moby/moby/api v1.54.2
+	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.4.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
