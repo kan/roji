@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-07-13
+
+Dependency and security maintenance release. Clears all open security alerts
+(2 code scanning) and the failing govulncheck / Trivy checks, all rooted in the
+Go 1.26.4 standard library.
+
+### Security
+
+- Upgrade Go to 1.26.5, fixing 2 standard library vulnerabilities:
+  - [CVE-2026-39822](https://nvd.nist.gov/vuln/detail/CVE-2026-39822) (HIGH): Symlink-following in `os.Root` allows directory traversal
+  - [CVE-2026-42505](https://nvd.nist.gov/vuln/detail/CVE-2026-42505) (MEDIUM): Information disclosure in `crypto/tls` Encrypted Client Hello
+- Upgrade the `golang` builder image 1.26.4-alpine → 1.26.5-alpine (#57), so the released binary is built with the patched standard library
+
+### Dependencies
+
+- Upgrade `golang.org/x/net` 0.56.0 → 0.57.0 (#58), which also pulls `golang.org/x/text` 0.38.0 → 0.40.0
+
 ## [1.0.6] - 2026-06-25
 
 Dependency and security maintenance release. Resolves all 14 open security
@@ -548,6 +565,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.0.7]: https://github.com/kan/roji/releases/tag/v1.0.7
 [1.0.6]: https://github.com/kan/roji/releases/tag/v1.0.6
 [1.0.5]: https://github.com/kan/roji/releases/tag/v1.0.5
 [1.0.4]: https://github.com/kan/roji/releases/tag/v1.0.4
