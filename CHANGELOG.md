@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-08-01
+
+Bug fix release. The `roji routes` and `roji health` commands ignored the
+resolved configuration when calling the local API, so both failed on any setup
+that did not use the built-in defaults.
+
+### Fixed
+
+- `roji routes` and `roji health` now honor the configured `domain`, `https_port`
+  and `dashboard` values from the config file and `ROJI_*` environment variables.
+  Neither command called `config.Load()`, and instead read globals that are only
+  populated when the root command parses its own flags:
+  - `roji routes` requested `https://roji.:0/_api/routes` and always failed to connect
+  - `roji health` requested a hardcoded `https://localhost/_api/health`, which returns
+    404 whenever `domain` is not `localhost`, because the API is only served on the
+    dashboard virtual host
+
+### Changed
+
+- Extract the local API client into a new `apiclient` package, shared by the CLI
+  commands and the `roji doctor` port check. Requests connect to localhost and
+  carry the dashboard hostname in the `Host` header, so no `*.localhost` DNS
+  resolution is required.
+
 ## [1.0.7] - 2026-07-13
 
 Dependency and security maintenance release. Clears all open security alerts
@@ -565,6 +589,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.0.8]: https://github.com/kan/roji/releases/tag/v1.0.8
 [1.0.7]: https://github.com/kan/roji/releases/tag/v1.0.7
 [1.0.6]: https://github.com/kan/roji/releases/tag/v1.0.6
 [1.0.5]: https://github.com/kan/roji/releases/tag/v1.0.5
