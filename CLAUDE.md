@@ -187,14 +187,40 @@ roji/
 ## リリース手順
 
 1. **ドキュメント更新**
+
+   install.sh の URL は**タグ固定**（`main` は開発中のコードを拾ってしまうため）。
+   リリースのたびに以下すべてを新バージョンへ追従させる。漏れを防ぐため、
+   grep で残りがないことを確認する。
+
    ```bash
-   # README.md: install.sh URLを新バージョンに更新（2箇所）
-   # CHANGELOG.md: 新バージョンの変更内容を追加
+   # 一括置換（vX.Y.Z は新バージョン、vA.B.C は直前のバージョン）
+   grep -rln "kan/roji/vA\.B\.C/install\.sh" README.md website/content/
+   sed -i 's|kan/roji/vA\.B\.C/install\.sh|kan/roji/vX.Y.Z/install.sh|g' \
+     README.md \
+     website/content/{en,ja}/_index.md \
+     website/content/{en,ja}/docs/getting-started/installation.md
+
+   # 取りこぼしチェック（何も出なければOK）
+   grep -rn "raw.githubusercontent.com/kan/roji/v" \
+     --exclude-dir=public README.md website/content/ | grep -v "vX\.Y\.Z"
+
+   # CHANGELOG.md: 新バージョンの変更内容 + 末尾のリンク定義を追加
    ```
+
+   対象ファイル（2026-08-01 時点）:
+
+   | ファイル | 箇所数 |
+   |---|---|
+   | `README.md` | 3 |
+   | `website/content/{en,ja}/_index.md` | 各 1 |
+   | `website/content/{en,ja}/docs/getting-started/installation.md` | 各 2 |
+
+   ※ `install.sh` / `docker-compose.yml` 内の URL は `main` 固定で正しい
+   （インストーラー自身の自己参照のため、追従不要）。
 
 2. **コミット & タグ**
    ```bash
-   git add README.md CHANGELOG.md
+   git add README.md CHANGELOG.md website/content/
    git commit -m "Prepare for vX.Y.Z release"
    git tag -a vX.Y.Z -m "Release vX.Y.Z: [主要機能]"
    git push origin main
@@ -203,6 +229,7 @@ roji/
 
 3. **確認**
    - GitHub Actions → GitHub Release → Docker Image
+   - 公式サイト（`website/**` を変更したので Deploy Website も走る）
 
 ## ロードマップ（v0.7.0 → v1.0.0）
 
