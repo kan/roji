@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,29 +24,7 @@ func init() {
 }
 
 func runRoutes(cmd *cobra.Command, args []string) error {
-	// Build API URL
-	apiURL := fmt.Sprintf("https://%s/_api/routes", dashboardHost)
-	if dashboardHost == "" {
-		// Use default
-		apiURL = fmt.Sprintf("https://roji.%s/_api/routes", baseDomain)
-	}
-	if httpsPort != 443 {
-		if dashboardHost == "" {
-			apiURL = fmt.Sprintf("https://roji.%s:%d/_api/routes", baseDomain, httpsPort)
-		} else {
-			apiURL = fmt.Sprintf("https://%s:%d/_api/routes", dashboardHost, httpsPort)
-		}
-	}
-
-	// Fetch routes from API (skip TLS verification for self-signed certs)
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-		Timeout: 5 * time.Second,
-	}
-
-	resp, err := client.Get(apiURL)
+	resp, err := apiGet(cmd, "/_api/routes", 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to connect to roji (is it running?): %w", err)
 	}

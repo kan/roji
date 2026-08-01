@@ -2,13 +2,14 @@ package checks
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/kan/roji/apiclient"
+	"github.com/kan/roji/config"
 	"github.com/kan/roji/doctor"
 	"github.com/kan/roji/i18n"
 )
@@ -47,7 +48,7 @@ func (c *Ports) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult 
 	}
 
 	// Ports are in use - check if roji is already running
-	if c.isRojiRunning(httpsPort, cfg.Settings.Dashboard) {
+	if c.isRojiRunning(cfg.Settings) {
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Pass,
@@ -93,31 +94,10 @@ func (c *Ports) isPortAvailable(port int) bool {
 	return true
 }
 
-// isRojiRunning checks if roji is running on the given HTTPS port
-// by calling the health check endpoint
-func (c *Ports) isRojiRunning(httpsPort int, dashboardHost string) bool {
-	// Create HTTP client with TLS verification disabled (self-signed cert)
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-	}
-
-	url := fmt.Sprintf("https://localhost:%d/_api/health", httpsPort)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return false
-	}
-
-	// Set Host header to dashboard host (required when not in /etc/hosts)
-	if dashboardHost != "" {
-		req.Host = dashboardHost
-	}
-
-	resp, err := client.Do(req)
+// isRojiRunning checks if roji is already listening on the configured HTTPS
+// port by calling the health check endpoint
+func (c *Ports) isRojiRunning(settings *config.Settings) bool {
+	resp, err := apiclient.Get(settings, "/_api/health", 2*time.Second)
 	if err != nil {
 		return false
 	}

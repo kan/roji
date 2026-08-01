@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -16,7 +15,7 @@ var healthCmd = &cobra.Command{
 	Short: "Check if roji is healthy",
 	Long:  "Performs a health check against the local roji instance. Exits with 0 if healthy, 1 otherwise.",
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := checkHealth(); err != nil {
+		if err := checkHealth(cmd); err != nil {
 			fmt.Fprintln(os.Stderr, i18n.Tf("cmd.health.unhealthy", err))
 			os.Exit(1)
 		}
@@ -29,16 +28,9 @@ func init() {
 	rootCmd.AddCommand(healthCmd)
 }
 
-func checkHealth() error {
-	// Health check via HTTPS (allow self-signed certificates)
-	client := &http.Client{
-		Timeout: 3 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
-	resp, err := client.Get("https://localhost/_api/health")
+func checkHealth(cmd *cobra.Command) error {
+	// Health check via HTTPS against the configured dashboard host
+	resp, err := apiGet(cmd, "/_api/health", 3*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
