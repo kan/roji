@@ -66,3 +66,8 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          # GitHub's publish step usually takes seconds, but has taken over the
+          # 10 minute default, failing the job for a deployment that then
+          # reported "succeed" and went live minutes later.
+          timeout: 1800000 # 30 minutes
