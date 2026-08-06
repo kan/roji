@@ -1497,8 +1497,9 @@ func TestHostForURL(t *testing.T) {
 	}
 }
 
-// addBackendFor registers a route pointing at the given test server URL.
-func addBackendFor(t *testing.T, router *Router, hostname, serverURL string) {
+// addBackendFor registers a route pointing at the given test server URL,
+// optionally under a path prefix.
+func addBackendFor(t *testing.T, router *Router, hostname, serverURL string, pathPrefix ...string) {
 	t.Helper()
 
 	u, err := url.Parse(serverURL)
@@ -1510,33 +1511,51 @@ func addBackendFor(t *testing.T, router *Router, hostname, serverURL string) {
 		t.Fatalf("parse backend port: %v", err)
 	}
 
-	router.AddBackend(&docker.Backend{
+	backend := &docker.Backend{
 		ContainerID:   hostname,
 		ContainerName: hostname,
 		ServiceName:   hostname,
 		Host:          u.Hostname(),
 		Port:          port,
 		Hostname:      hostname,
-	})
+	}
+	if len(pathPrefix) > 0 {
+		backend.PathPrefix = pathPrefix[0]
+	}
+	router.AddBackend(backend)
 }
 
-// forwardedRecorder captures the headers a backend receives.
+// recordedRequest is what a backend received. The zero value stands for
+// "no request arrived"; header.Get reads fine from a nil Header.
+type recordedRequest struct {
+	header   http.Header
+	host     string
+	path     string
+	rawQuery string
+}
+
+// forwardedRecorder captures what a backend receives.
 type forwardedRecorder struct {
-	mu     sync.Mutex
-	header http.Header
+	mu   sync.Mutex
+	last recordedRequest
 }
 
 func (fr *forwardedRecorder) record(r *http.Request) {
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
-	fr.header = r.Header.Clone()
+	fr.last = recordedRequest{
+		header:   r.Header.Clone(),
+		host:     r.Host,
+		path:     r.URL.Path,
+		rawQuery: r.URL.RawQuery,
+	}
 }
 
-// value returns the header the backend received, or "" if it received none.
-func (fr *forwardedRecorder) value(name string) string {
+// get returns the last request the backend received.
+func (fr *forwardedRecorder) get() recordedRequest {
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
-	return fr.header.Get(name)
+	return fr.last
 }
 
 // reset clears the recorder so a subtest cannot read values left by the
@@ -1544,7 +1563,7 @@ func (fr *forwardedRecorder) value(name string) string {
 func (fr *forwardedRecorder) reset() {
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
-	fr.header = nil
+	fr.last = recordedRequest{}
 }
 
 func TestHandler_ForwardedHeaders_HTTP(t *testing.T) {
@@ -1614,14 +1633,15 @@ func TestHandler_ForwardedHeaders_HTTP(t *testing.T) {
 
 			handler.ServeHTTP(httptest.NewRecorder(), req)
 
-			if got := rec.value("X-Forwarded-For"); got != tt.wantForwardedFor {
-				t.Errorf("X-Forwarded-For = %q, want %q", got, tt.wantForwardedFor)
+			got := rec.get()
+			if v := got.header.Get("X-Forwarded-For"); v != tt.wantForwardedFor {
+				t.Errorf("X-Forwarded-For = %q, want %q", v, tt.wantForwardedFor)
 			}
-			if got := rec.value("X-Real-IP"); got != tt.wantRealIP {
-				t.Errorf("X-Real-IP = %q, want %q", got, tt.wantRealIP)
+			if v := got.header.Get("X-Real-IP"); v != tt.wantRealIP {
+				t.Errorf("X-Real-IP = %q, want %q", v, tt.wantRealIP)
 			}
-			if got := rec.value("Forwarded"); got != "" {
-				t.Errorf("Forwarded = %q, want it dropped", got)
+			if v := got.header.Get("Forwarded"); v != "" {
+				t.Errorf("Forwarded = %q, want it dropped", v)
 			}
 		})
 	}
@@ -1671,11 +1691,12 @@ func TestHandler_ForwardedHeaders_GRPC(t *testing.T) {
 			if w.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 			}
-			if got := rec.value("X-Forwarded-For"); got != tt.want {
-				t.Errorf("X-Forwarded-For = %q, want %q", got, tt.want)
+			got := rec.get()
+			if v := got.header.Get("X-Forwarded-For"); v != tt.want {
+				t.Errorf("X-Forwarded-For = %q, want %q", v, tt.want)
 			}
-			if got := rec.value("X-Real-IP"); got != tt.want {
-				t.Errorf("X-Real-IP = %q, want %q", got, tt.want)
+			if v := got.header.Get("X-Real-IP"); v != tt.want {
+				t.Errorf("X-Real-IP = %q, want %q", v, tt.want)
 			}
 		})
 	}
@@ -1721,10 +1742,141 @@ func TestHandler_ForwardedHeaders_WebSocket(t *testing.T) {
 	}
 	defer conn.Close()
 
-	if got := rec.value("X-Forwarded-For"); got != "::1" {
-		t.Errorf("X-Forwarded-For = %q, want %q", got, "::1")
+	got := rec.get()
+	if v := got.header.Get("X-Forwarded-For"); v != "::1" {
+		t.Errorf("X-Forwarded-For = %q, want %q", v, "::1")
 	}
-	if got := rec.value("X-Real-IP"); got != "::1" {
-		t.Errorf("X-Real-IP = %q, want %q", got, "::1")
+	if v := got.header.Get("X-Real-IP"); v != "::1" {
+		t.Errorf("X-Real-IP = %q, want %q", v, "::1")
+	}
+}
+
+// TestHandler_ProxiedRequest_HTTP covers what the Rewrite hook has to get
+// right beyond the client IP: the Host the backend is addressed with, the
+// forwarded scheme, and path prefix stripping.
+func TestHandler_ProxiedRequest_HTTP(t *testing.T) {
+	rec := &forwardedRecorder{}
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r)
+	}))
+	defer backendServer.Close()
+
+	router := NewRouter()
+	addBackendFor(t, router, "proxied.localhost", backendServer.URL, "/api")
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	req := httptest.NewRequest("GET", "https://proxied.localhost/api/users", nil)
+	req.Host = "proxied.localhost"
+	req.RemoteAddr = "127.0.0.1:54321"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	got := rec.get()
+	// The client's hostname reaches the backend, not the backend's own address:
+	// dev servers key on it for virtual hosts and host allowlists.
+	if got.host != "proxied.localhost" {
+		t.Errorf("Host = %q, want %q", got.host, "proxied.localhost")
+	}
+	if got.path != "/users" {
+		t.Errorf("path = %q, want %q (prefix stripped)", got.path, "/users")
+	}
+	if v := got.header.Get("X-Forwarded-Host"); v != "proxied.localhost" {
+		t.Errorf("X-Forwarded-Host = %q, want %q", v, "proxied.localhost")
+	}
+	// roji terminates TLS in front of the backend, so the scheme is https even
+	// though this test drives the handler over a plain connection.
+	if v := got.header.Get("X-Forwarded-Proto"); v != "https" {
+		t.Errorf("X-Forwarded-Proto = %q, want %q", v, "https")
+	}
+}
+
+// TestHandler_ProxiedRequest_GRPC checks the gRPC path addresses the backend
+// by its own host, which is what the :authority pseudo-header has to carry.
+func TestHandler_ProxiedRequest_GRPC(t *testing.T) {
+	rec := &forwardedRecorder{}
+	backendServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r)
+		w.Header().Set("Content-Type", "application/grpc")
+	}))
+	backendServer.Config.Protocols = new(http.Protocols)
+	backendServer.Config.Protocols.SetUnencryptedHTTP2(true)
+	backendServer.Start()
+	defer backendServer.Close()
+
+	router := NewRouter()
+	addBackendFor(t, router, "grpc-host.localhost", backendServer.URL)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	backendURL, err := url.Parse(backendServer.URL)
+	if err != nil {
+		t.Fatalf("parse backend URL: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "https://grpc-host.localhost/chat.ChatService/GetUsers?q=50%&page=2", nil)
+	req.Host = "grpc-host.localhost"
+	req.Header.Set("Content-Type", "application/grpc")
+	req.Header.Set("TE", "trailers")
+	req.RemoteAddr = "127.0.0.1:54321"
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	got := rec.get()
+	if got.host != backendURL.Host {
+		t.Errorf("Host = %q, want %q", got.host, backendURL.Host)
+	}
+	if v := got.header.Get("X-Forwarded-Host"); v != "grpc-host.localhost" {
+		t.Errorf("X-Forwarded-Host = %q, want %q", v, "grpc-host.localhost")
+	}
+	if v := got.header.Get("X-Forwarded-Proto"); v != "https" {
+		t.Errorf("X-Forwarded-Proto = %q, want %q", v, "https")
+	}
+	// The query has to survive this path too, not just the HTTP one
+	if got.rawQuery != "q=50%&page=2" {
+		t.Errorf("RawQuery = %q, want %q (forwarded verbatim)", got.rawQuery, "q=50%&page=2")
+	}
+}
+
+// TestHandler_ProxiedRequest_PreservesRawQuery guards against the query
+// mangling httputil.ReverseProxy applies on the Rewrite path: it drops
+// parameters it cannot parse before the rewrite hook runs.
+func TestHandler_ProxiedRequest_PreservesRawQuery(t *testing.T) {
+	rec := &forwardedRecorder{}
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r)
+	}))
+	defer backendServer.Close()
+
+	router := NewRouter()
+	addBackendFor(t, router, "query.localhost", backendServer.URL)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	tests := []struct {
+		name     string
+		rawQuery string
+	}{
+		{"ordinary query", "name=foo&x=1"},
+		{"bare percent sign", "q=50%&page=2"},
+		{"semicolon separator", "a=1;b=2"},
+		{"empty", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec.reset()
+
+			req := httptest.NewRequest("GET", "https://query.localhost/search", nil)
+			req.URL.RawQuery = tt.rawQuery
+			req.Host = "query.localhost"
+			req.RemoteAddr = "127.0.0.1:54321"
+
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			if got := rec.get().rawQuery; got != tt.rawQuery {
+				t.Errorf("RawQuery = %q, want %q (forwarded verbatim)", got, tt.rawQuery)
+			}
+		})
 	}
 }

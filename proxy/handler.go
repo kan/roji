@@ -108,37 +108,80 @@ func hostForURL(host string) string {
 	return host
 }
 
-// setForwardedHeaders replaces the forwarding headers of an outbound request
-// with values derived from the inbound request r. Whatever the client sent is
-// discarded, including the RFC 7239 Forwarded header, so a backend can trust
-// what it receives. Only headers roji itself sets are replaced; a backend that
-// reads other conventions (X-Forwarded-Port, True-Client-IP) still sees the
-// client's own values.
+// stripPathPrefix removes a route's path prefix from a request path, leaving
+// "/" when the prefix was the whole path.
+func stripPathPrefix(path, prefix string) string {
+	if prefix == "" {
+		return path
+	}
+	path = strings.TrimPrefix(path, prefix)
+	if path == "" {
+		return "/"
+	}
+	return path
+}
+
+// setProtoAndRealIP sets the two forwarding headers neither httputil's
+// SetXForwarded nor roji's own scrubbing gets right on its own.
 //
-// X-Forwarded-For is only set when setForwardedFor is true. Requests proxied
-// through httputil.ReverseProxy leave it to the proxy, which appends the
-// client address itself once the director returns, deriving it from RemoteAddr
-// the same way clientIP does. Setting it here as well would forward the
-// address twice ("::1, ::1").
-func setForwardedHeaders(out http.Header, r *http.Request, setForwardedFor bool) {
+// The scheme is always https: roji terminates TLS in front of every backend,
+// and its HTTP listener only redirects, so what the inbound connection used
+// does not matter. X-Real-IP is not a standard header, so it is replaced here
+// rather than left to the client.
+func setProtoAndRealIP(out http.Header, remoteAddr string) {
+	out.Set("X-Forwarded-Proto", "https")
+
+	out.Del("X-Real-IP")
+	if ip := clientIP(remoteAddr); ip != "" {
+		out.Set("X-Real-IP", ip)
+	}
+}
+
+// setForwardedHeaders replaces the forwarding headers of a request proxied
+// without httputil.ReverseProxy — the WebSocket path, which dials the backend
+// itself. Whatever the client sent is discarded, including the RFC 7239
+// Forwarded header, so a backend can trust what it receives. Only headers roji
+// itself sets are replaced; a backend that reads other conventions
+// (X-Forwarded-Port, True-Client-IP) still sees the client's own values.
+//
+// See rewriteForwardedHeaders for the paths that do go through ReverseProxy.
+func setForwardedHeaders(out http.Header, r *http.Request) {
 	// Security: drop client-supplied values to prevent spoofing.
-	// Forwarded is the RFC 7239 equivalent of the X-Forwarded-* set; roji does
-	// not emit it, and httputil.ReverseProxy only strips it on the Rewrite path.
+	// setProtoAndRealIP replaces the other two.
 	out.Del("Forwarded")
 	out.Del("X-Forwarded-For")
 	out.Del("X-Forwarded-Host")
-	out.Del("X-Forwarded-Proto")
-	out.Del("X-Real-IP")
 
 	out.Set("X-Forwarded-Host", r.Host)
-	out.Set("X-Forwarded-Proto", "https")
-
 	if ip := clientIP(r.RemoteAddr); ip != "" {
-		if setForwardedFor {
-			out.Set("X-Forwarded-For", ip)
-		}
-		out.Set("X-Real-IP", ip)
+		out.Set("X-Forwarded-For", ip)
 	}
+	setProtoAndRealIP(out, r.RemoteAddr)
+}
+
+// preserveRawQuery restores the query string the client sent.
+//
+// httputil.ReverseProxy drops query parameters it cannot parse before calling
+// a Rewrite func, so a search for "50%" ("?q=50%&page=2") would reach the
+// backend as "?page=2", and a semicolon-separated query would arrive empty.
+// roji forwards to local dev servers and has to be transparent about what the
+// browser sent, so the raw value wins.
+func preserveRawQuery(pr *httputil.ProxyRequest) {
+	pr.Out.URL.RawQuery = pr.In.URL.RawQuery
+}
+
+// rewriteForwardedHeaders sets the forwarding headers of a request proxied
+// through httputil.ReverseProxy.
+//
+// ReverseProxy strips the client's Forwarded and X-Forwarded-* headers before
+// calling a Rewrite func, and SetXForwarded fills them back in from the
+// inbound request — including X-Forwarded-For as a bare client IP, dropped
+// entirely when RemoteAddr does not parse.
+//
+// See setForwardedHeaders for the WebSocket path, which dials backends itself.
+func rewriteForwardedHeaders(pr *httputil.ProxyRequest) {
+	pr.SetXForwarded()
+	setProtoAndRealIP(pr.Out.Header, pr.In.RemoteAddr)
 }
 
 // checkBasicAuth validates basic authentication credentials.
@@ -369,28 +412,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create reverse proxy for this request
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	proxy := &httputil.ReverseProxy{
+		// Use shared transport for connection pooling
+		Transport: sharedTransport,
+		// SSE support: flush responses immediately (disable buffering)
+		FlushInterval: -1,
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(targetURL)
+			// SetURL points the outbound Host header at the backend. Keep the
+			// hostname the client asked for instead: dev servers routinely key
+			// on it for virtual hosts and host allowlists.
+			pr.Out.Host = pr.In.Host
+			preserveRawQuery(pr)
 
-	// Use shared transport for connection pooling
-	proxy.Transport = sharedTransport
+			pr.Out.URL.Path = stripPathPrefix(pr.Out.URL.Path, route.PathPrefix)
 
-	// SSE support: flush responses immediately (disable buffering)
-	proxy.FlushInterval = -1
-
-	// Customize the director to handle path prefixes
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-
-		// Strip path prefix if configured
-		if route.PathPrefix != "" {
-			req.URL.Path = strings.TrimPrefix(req.URL.Path, route.PathPrefix)
-			if req.URL.Path == "" {
-				req.URL.Path = "/"
-			}
-		}
-
-		setForwardedHeaders(req.Header, r, false) // X-Forwarded-For added by ReverseProxy
+			rewriteForwardedHeaders(pr)
+		},
 	}
 
 	// Error handler
@@ -1024,14 +1062,7 @@ func (h *Handler) findMockRoute(route *Route, method, path string) *config.MockR
 		return nil
 	}
 
-	// Strip path prefix if configured
-	checkPath := path
-	if route.PathPrefix != "" {
-		checkPath = strings.TrimPrefix(path, route.PathPrefix)
-		if checkPath == "" {
-			checkPath = "/"
-		}
-	}
+	checkPath := stripPathPrefix(path, route.PathPrefix)
 
 	for _, mock := range route.Backend.MockRoutes {
 		if mock.Method == method && mock.Path == checkPath {
@@ -1155,13 +1186,7 @@ func (h *Handler) serveWebSocket(w http.ResponseWriter, r *http.Request, targetU
 		RawQuery: r.URL.RawQuery,
 	}
 
-	// Strip path prefix if configured
-	if route.PathPrefix != "" {
-		backendURL.Path = strings.TrimPrefix(backendURL.Path, route.PathPrefix)
-		if backendURL.Path == "" {
-			backendURL.Path = "/"
-		}
-	}
+	backendURL.Path = stripPathPrefix(backendURL.Path, route.PathPrefix)
 
 	// Prepare headers for backend connection
 	requestHeader := http.Header{}
@@ -1173,9 +1198,8 @@ func (h *Handler) serveWebSocket(w http.ResponseWriter, r *http.Request, targetU
 	if protocols := r.Header.Get("Sec-WebSocket-Protocol"); protocols != "" {
 		requestHeader.Set("Sec-WebSocket-Protocol", protocols)
 	}
-	// Set X-Forwarded headers. Nothing else fills in X-Forwarded-For here:
-	// the backend connection is dialed directly, not through ReverseProxy.
-	setForwardedHeaders(requestHeader, r, true)
+	// Set X-Forwarded headers
+	setForwardedHeaders(requestHeader, r)
 
 	// Connect to backend WebSocket
 	slog.Debug("websocket connecting to backend", "url", backendURL.String())
@@ -1290,27 +1314,21 @@ func (h *Handler) serveGRPC(w http.ResponseWriter, r *http.Request, targetURL *u
 	proxy := &httputil.ReverseProxy{
 		Transport:     http2Transport,
 		FlushInterval: -1, // Flush immediately for streaming
-		Director: func(req *http.Request) {
-			req.URL.Scheme = "http"
-			req.URL.Host = targetURL.Host
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			// SetURL also points the outbound Host header at the backend, which
+			// is what gRPC wants: the :authority pseudo-header names the server
+			// being dialed, not the hostname the client typed.
+			pr.SetURL(targetURL)
+			preserveRawQuery(pr)
 
-			// Strip path prefix if configured
-			if route.PathPrefix != "" {
-				req.URL.Path = strings.TrimPrefix(req.URL.Path, route.PathPrefix)
-				if req.URL.Path == "" {
-					req.URL.Path = "/"
-				}
-			}
+			pr.Out.URL.Path = stripPathPrefix(pr.Out.URL.Path, route.PathPrefix)
 
 			// Preserve the original path for gRPC service routing
-			if req.URL.RawPath == "" {
-				req.URL.RawPath = req.URL.Path
+			if pr.Out.URL.RawPath == "" {
+				pr.Out.URL.RawPath = pr.Out.URL.Path
 			}
 
-			// Set host header
-			req.Host = targetURL.Host
-
-			setForwardedHeaders(req.Header, r, false) // X-Forwarded-For added by ReverseProxy
+			rewriteForwardedHeaders(pr)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			slog.Error("grpc proxy error",
