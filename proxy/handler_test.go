@@ -2,11 +2,13 @@ package proxy
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -217,6 +219,20 @@ func TestRedirectHandler(t *testing.T) {
 			host:        "api.localhost:80",
 			path:        "/",
 			expectedURL: "https://api.localhost/",
+		},
+		{
+			name:        "IPv6 host keeps its brackets",
+			httpsPort:   443,
+			host:        "[::1]",
+			path:        "/",
+			expectedURL: "https://[::1]/",
+		},
+		{
+			name:        "IPv6 host with port",
+			httpsPort:   8443,
+			host:        "[::1]:80",
+			path:        "/users",
+			expectedURL: "https://[::1]:8443/users",
 		},
 	}
 
@@ -606,25 +622,9 @@ func TestHandler_WebSocketProxy(t *testing.T) {
 	}))
 	defer backendServer.Close()
 
-	// Parse backend URL
-	backendURL, _ := url.Parse(backendServer.URL)
-
 	// Setup router with route to backend
 	router := NewRouter()
-	backend := &docker.Backend{
-		ContainerID:   "ws-test",
-		ContainerName: "ws-test",
-		ServiceName:   "ws-test",
-		Host:          backendURL.Hostname(),
-		Port:          8080, // Will be overridden
-		Hostname:      "ws.localhost",
-	}
-	// Parse port from backend URL
-	if port := backendURL.Port(); port != "" {
-		p, _ := strconv.Atoi(port)
-		backend.Port = p
-	}
-	router.AddBackend(backend)
+	addBackendFor(t, router, "ws.localhost", backendServer.URL)
 
 	// Create handler
 	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
@@ -801,13 +801,13 @@ func TestHandler_GRPCProxy_BackendUnavailable(t *testing.T) {
 
 func TestCheckBasicAuth(t *testing.T) {
 	tests := []struct {
-		name           string
-		auth           *config.BasicAuth
-		reqUser        string
-		reqPass        string
-		expectSuccess  bool
-		expectStatus   int
-		expectHeader   string
+		name          string
+		auth          *config.BasicAuth
+		reqUser       string
+		reqPass       string
+		expectSuccess bool
+		expectStatus  int
+		expectHeader  string
 	}{
 		{
 			name:          "no auth required",
@@ -1108,8 +1108,8 @@ func TestHandler_ProjectOperation_RouteDispatch(t *testing.T) {
 		expectedStatus int
 	}{
 		// Valid project names with hyphens and dots
-		{"hyphenated name", "/_api/projects/my-app/up", http.StatusServiceUnavailable},     // no docker client
-		{"dotted name", "/_api/projects/my.project/up", http.StatusServiceUnavailable},     // no docker client
+		{"hyphenated name", "/_api/projects/my-app/up", http.StatusServiceUnavailable}, // no docker client
+		{"dotted name", "/_api/projects/my.project/up", http.StatusServiceUnavailable}, // no docker client
 		// Invalid paths
 		{"no action", "/_api/projects/myapp/", http.StatusBadRequest},
 		{"unknown action", "/_api/projects/myapp/unknown", http.StatusBadRequest},
@@ -1426,5 +1426,305 @@ func TestHandler_NotFound_NoMatchForUnknownHost(t *testing.T) {
 	body := w.Body.String()
 	if strings.Contains(body, "project-start\">") {
 		t.Errorf("body should NOT contain project-start section for unmatched hostname")
+	}
+}
+
+func TestClientIP(t *testing.T) {
+	tests := []struct {
+		name       string
+		remoteAddr string
+		want       string
+	}{
+		{"IPv6 loopback", "[::1]:54321", "::1"},
+		{"IPv6 address", "[2001:db8::17]:443", "2001:db8::17"},
+		{"IPv6 zone", "[fe80::1%eth0]:8080", "fe80::1%eth0"},
+		{"IPv4", "127.0.0.1:54321", "127.0.0.1"},
+		{"empty", "", ""},
+		{"no port", "127.0.0.1", ""},
+		{"malformed", "not-an-address", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := clientIP(tt.remoteAddr); got != tt.want {
+				t.Errorf("clientIP(%q) = %q, want %q", tt.remoteAddr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHostWithoutPort(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+		want string
+	}{
+		{"hostname with port", "api.localhost:8443", "api.localhost"},
+		{"hostname without port", "api.localhost", "api.localhost"},
+		{"IPv6 with port", "[::1]:443", "::1"},
+		{"IPv6 without port", "[::1]", "::1"},
+		{"IPv4 with port", "127.0.0.1:8443", "127.0.0.1"},
+		{"empty", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hostWithoutPort(tt.host); got != tt.want {
+				t.Errorf("hostWithoutPort(%q) = %q, want %q", tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHostForURL(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+		want string
+	}{
+		{"hostname", "api.localhost", "api.localhost"},
+		{"IPv4", "127.0.0.1", "127.0.0.1"},
+		{"IPv6", "::1", "[::1]"},
+		{"empty", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hostForURL(tt.host); got != tt.want {
+				t.Errorf("hostForURL(%q) = %q, want %q", tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
+// addBackendFor registers a route pointing at the given test server URL.
+func addBackendFor(t *testing.T, router *Router, hostname, serverURL string) {
+	t.Helper()
+
+	u, err := url.Parse(serverURL)
+	if err != nil {
+		t.Fatalf("parse backend URL: %v", err)
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatalf("parse backend port: %v", err)
+	}
+
+	router.AddBackend(&docker.Backend{
+		ContainerID:   hostname,
+		ContainerName: hostname,
+		ServiceName:   hostname,
+		Host:          u.Hostname(),
+		Port:          port,
+		Hostname:      hostname,
+	})
+}
+
+// forwardedRecorder captures the headers a backend receives.
+type forwardedRecorder struct {
+	mu     sync.Mutex
+	header http.Header
+}
+
+func (fr *forwardedRecorder) record(r *http.Request) {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	fr.header = r.Header.Clone()
+}
+
+// value returns the header the backend received, or "" if it received none.
+func (fr *forwardedRecorder) value(name string) string {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	return fr.header.Get(name)
+}
+
+// reset clears the recorder so a subtest cannot read values left by the
+// previous one when a request never reaches the backend.
+func (fr *forwardedRecorder) reset() {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	fr.header = nil
+}
+
+func TestHandler_ForwardedHeaders_HTTP(t *testing.T) {
+	rec := &forwardedRecorder{}
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r)
+	}))
+	defer backendServer.Close()
+
+	router := NewRouter()
+	addBackendFor(t, router, "xff.localhost", backendServer.URL)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	tests := []struct {
+		name             string
+		remoteAddr       string
+		spoofedForwarded string
+		wantForwardedFor string
+		wantRealIP       string
+	}{
+		{
+			name:             "IPv6 client has no brackets",
+			remoteAddr:       "[::1]:54321",
+			wantForwardedFor: "::1",
+			wantRealIP:       "::1",
+		},
+		{
+			name:             "IPv6 global address",
+			remoteAddr:       "[2001:db8::17]:443",
+			wantForwardedFor: "2001:db8::17",
+			wantRealIP:       "2001:db8::17",
+		},
+		{
+			name:             "IPv4 client is forwarded once",
+			remoteAddr:       "127.0.0.1:54321",
+			wantForwardedFor: "127.0.0.1",
+			wantRealIP:       "127.0.0.1",
+		},
+		{
+			name:             "spoofed headers are replaced",
+			remoteAddr:       "[::1]:54321",
+			spoofedForwarded: "10.0.0.99",
+			wantForwardedFor: "::1",
+			wantRealIP:       "::1",
+		},
+		{
+			name:             "malformed RemoteAddr is skipped",
+			remoteAddr:       "not-an-address",
+			wantForwardedFor: "",
+			wantRealIP:       "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec.reset()
+
+			req := httptest.NewRequest("GET", "https://xff.localhost/", nil)
+			req.Host = "xff.localhost"
+			req.RemoteAddr = tt.remoteAddr
+			if tt.spoofedForwarded != "" {
+				req.Header.Set("X-Forwarded-For", tt.spoofedForwarded)
+				req.Header.Set("X-Real-IP", tt.spoofedForwarded)
+				// RFC 7239 equivalent, which roji never emits itself
+				req.Header.Set("Forwarded", "for="+tt.spoofedForwarded+";host=evil.example;proto=http")
+			}
+
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			if got := rec.value("X-Forwarded-For"); got != tt.wantForwardedFor {
+				t.Errorf("X-Forwarded-For = %q, want %q", got, tt.wantForwardedFor)
+			}
+			if got := rec.value("X-Real-IP"); got != tt.wantRealIP {
+				t.Errorf("X-Real-IP = %q, want %q", got, tt.wantRealIP)
+			}
+			if got := rec.value("Forwarded"); got != "" {
+				t.Errorf("Forwarded = %q, want it dropped", got)
+			}
+		})
+	}
+}
+
+func TestHandler_ForwardedHeaders_GRPC(t *testing.T) {
+	rec := &forwardedRecorder{}
+	backendServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r)
+		w.Header().Set("Content-Type", "application/grpc")
+	}))
+	// gRPC backends speak HTTP/2; serve unencrypted HTTP/2 so the proxy's
+	// HTTP/2 transport connects.
+	backendServer.Config.Protocols = new(http.Protocols)
+	backendServer.Config.Protocols.SetUnencryptedHTTP2(true)
+	backendServer.Start()
+	defer backendServer.Close()
+
+	router := NewRouter()
+	addBackendFor(t, router, "grpc-xff.localhost", backendServer.URL)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	tests := []struct {
+		name       string
+		remoteAddr string
+		want       string
+	}{
+		{"IPv6 client has no brackets", "[::1]:54321", "::1"},
+		{"IPv4 client is forwarded once", "127.0.0.1:54321", "127.0.0.1"},
+		{"malformed RemoteAddr is skipped", "not-an-address", ""},
+	}
+	// X-Real-IP carries the same value on every protocol path.
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec.reset()
+
+			req := httptest.NewRequest("POST", "https://grpc-xff.localhost/chat.ChatService/GetUsers", nil)
+			req.Host = "grpc-xff.localhost"
+			req.Header.Set("Content-Type", "application/grpc")
+			req.Header.Set("TE", "trailers")
+			req.RemoteAddr = tt.remoteAddr
+
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+			}
+			if got := rec.value("X-Forwarded-For"); got != tt.want {
+				t.Errorf("X-Forwarded-For = %q, want %q", got, tt.want)
+			}
+			if got := rec.value("X-Real-IP"); got != tt.want {
+				t.Errorf("X-Real-IP = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHandler_ForwardedHeaders_WebSocket(t *testing.T) {
+	rec := &forwardedRecorder{}
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r)
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Logf("backend upgrade error: %v", err)
+			return
+		}
+		conn.Close()
+	}))
+	defer backendServer.Close()
+
+	router := NewRouter()
+	addBackendFor(t, router, "ws-xff.localhost", backendServer.URL)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	// The websocket path needs a hijackable connection, so RemoteAddr comes from
+	// a real client. Listen on IPv6 loopback to exercise the bracketed form.
+	listener, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	proxyServer := httptest.NewUnstartedServer(handler)
+	proxyServer.Listener.Close()
+	proxyServer.Listener = listener
+	proxyServer.Start()
+	defer proxyServer.Close()
+
+	header := http.Header{}
+	header.Set("Host", "ws-xff.localhost")
+	conn, _, err := websocket.DefaultDialer.Dial("ws://"+listener.Addr().String()+"/ws", header)
+	if err != nil {
+		t.Fatalf("WebSocket dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	if got := rec.value("X-Forwarded-For"); got != "::1" {
+		t.Errorf("X-Forwarded-For = %q, want %q", got, "::1")
+	}
+	if got := rec.value("X-Real-IP"); got != "::1" {
+		t.Errorf("X-Real-IP = %q, want %q", got, "::1")
 	}
 }

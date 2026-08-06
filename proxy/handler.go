@@ -69,6 +69,78 @@ func isWebSocketRequest(r *http.Request) bool {
 		strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
 }
 
+// clientIP extracts the bare client IP from an http.Request RemoteAddr,
+// or an empty string when RemoteAddr cannot be parsed.
+//
+// Go reports IPv6 peers as "[::1]:54321", and the X-Forwarded-* headers carry
+// bare addresses by convention, so the brackets have to go.
+func clientIP(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return ""
+	}
+	return host
+}
+
+// hostWithoutPort strips the port from a Host header value, always returning a
+// bare host: an IPv6 literal loses its brackets ("[::1]:443" -> "::1"), so use
+// hostForURL to put one back in a URL.
+//
+// Unlike RemoteAddr, a Host header carrying no port is normal rather than
+// malformed, so such a value is kept.
+func hostWithoutPort(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	// No port to split off; an IPv6 literal is still bracketed here.
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		return host[1 : len(host)-1]
+	}
+	return host
+}
+
+// hostForURL wraps a bare IPv6 address, as returned by hostWithoutPort, in the
+// brackets a URL authority requires. Other hosts are returned unchanged.
+func hostForURL(host string) string {
+	if strings.Contains(host, ":") {
+		return "[" + host + "]"
+	}
+	return host
+}
+
+// setForwardedHeaders replaces the forwarding headers of an outbound request
+// with values derived from the inbound request r. Whatever the client sent is
+// discarded, including the RFC 7239 Forwarded header, so a backend can trust
+// what it receives. Only headers roji itself sets are replaced; a backend that
+// reads other conventions (X-Forwarded-Port, True-Client-IP) still sees the
+// client's own values.
+//
+// X-Forwarded-For is only set when setForwardedFor is true. Requests proxied
+// through httputil.ReverseProxy leave it to the proxy, which appends the
+// client address itself once the director returns, deriving it from RemoteAddr
+// the same way clientIP does. Setting it here as well would forward the
+// address twice ("::1, ::1").
+func setForwardedHeaders(out http.Header, r *http.Request, setForwardedFor bool) {
+	// Security: drop client-supplied values to prevent spoofing.
+	// Forwarded is the RFC 7239 equivalent of the X-Forwarded-* set; roji does
+	// not emit it, and httputil.ReverseProxy only strips it on the Rewrite path.
+	out.Del("Forwarded")
+	out.Del("X-Forwarded-For")
+	out.Del("X-Forwarded-Host")
+	out.Del("X-Forwarded-Proto")
+	out.Del("X-Real-IP")
+
+	out.Set("X-Forwarded-Host", r.Host)
+	out.Set("X-Forwarded-Proto", "https")
+
+	if ip := clientIP(r.RemoteAddr); ip != "" {
+		if setForwardedFor {
+			out.Set("X-Forwarded-For", ip)
+		}
+		out.Set("X-Real-IP", ip)
+	}
+}
+
 // checkBasicAuth validates basic authentication credentials.
 // Returns true if authentication is successful or not required.
 // If authentication fails, it writes the 401 response and returns false.
@@ -162,11 +234,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
 	// Extract hostname (remove port if present)
-	hostname := r.Host
-	if idx := strings.LastIndex(hostname, ":"); idx != -1 {
-		hostname = hostname[:idx]
-	}
-	hostname = strings.ToLower(hostname)
+	hostname := strings.ToLower(hostWithoutPort(r.Host))
 
 	// Check if this is a dashboard-related host
 	isDashboardHost := h.dashboardHost != "" && hostname == h.dashboardHost
@@ -322,22 +390,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Security: Remove existing X-Forwarded-* headers to prevent spoofing
-		// Clients could send malicious headers that backends might trust
-		req.Header.Del("X-Forwarded-For")
-		req.Header.Del("X-Forwarded-Host")
-		req.Header.Del("X-Forwarded-Proto")
-		req.Header.Del("X-Real-IP")
-
-		// Set X-Forwarded-* headers with trusted values
-		req.Header.Set("X-Forwarded-Host", r.Host)
-		req.Header.Set("X-Forwarded-Proto", "https")
-		if r.RemoteAddr != "" {
-			if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
-				req.Header.Set("X-Forwarded-For", r.RemoteAddr[:idx])
-			}
-		}
-		req.Header.Set("X-Real-IP", req.Header.Get("X-Forwarded-For"))
+		setForwardedHeaders(req.Header, r, false) // X-Forwarded-For added by ReverseProxy
 	}
 
 	// Error handler
@@ -1080,10 +1133,7 @@ type RedirectHandler struct {
 
 // ServeHTTP implements http.Handler for HTTP->HTTPS redirect
 func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	host := r.Host
-	if idx := strings.LastIndex(host, ":"); idx != -1 {
-		host = host[:idx]
-	}
+	host := hostForURL(hostWithoutPort(r.Host))
 
 	targetURL := fmt.Sprintf("https://%s", host)
 	if h.HTTPSPort != 443 {
@@ -1123,14 +1173,9 @@ func (h *Handler) serveWebSocket(w http.ResponseWriter, r *http.Request, targetU
 	if protocols := r.Header.Get("Sec-WebSocket-Protocol"); protocols != "" {
 		requestHeader.Set("Sec-WebSocket-Protocol", protocols)
 	}
-	// Set X-Forwarded headers
-	requestHeader.Set("X-Forwarded-Host", r.Host)
-	requestHeader.Set("X-Forwarded-Proto", "https")
-	if r.RemoteAddr != "" {
-		if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
-			requestHeader.Set("X-Forwarded-For", r.RemoteAddr[:idx])
-		}
-	}
+	// Set X-Forwarded headers. Nothing else fills in X-Forwarded-For here:
+	// the backend connection is dialed directly, not through ReverseProxy.
+	setForwardedHeaders(requestHeader, r, true)
 
 	// Connect to backend WebSocket
 	slog.Debug("websocket connecting to backend", "url", backendURL.String())
@@ -1265,20 +1310,7 @@ func (h *Handler) serveGRPC(w http.ResponseWriter, r *http.Request, targetURL *u
 			// Set host header
 			req.Host = targetURL.Host
 
-			// Security: Remove existing X-Forwarded-* headers to prevent spoofing
-			req.Header.Del("X-Forwarded-For")
-			req.Header.Del("X-Forwarded-Host")
-			req.Header.Del("X-Forwarded-Proto")
-			req.Header.Del("X-Real-IP")
-
-			// Set X-Forwarded-* headers with trusted values
-			req.Header.Set("X-Forwarded-Host", r.Host)
-			req.Header.Set("X-Forwarded-Proto", "https")
-			if r.RemoteAddr != "" {
-				if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
-					req.Header.Set("X-Forwarded-For", r.RemoteAddr[:idx])
-				}
-			}
+			setForwardedHeaders(req.Header, r, false) // X-Forwarded-For added by ReverseProxy
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			slog.Error("grpc proxy error",
