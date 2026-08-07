@@ -549,3 +549,107 @@ func TestRouter_RootPathLabelIsHostnameRoute(t *testing.T) {
 		t.Errorf("/anything went to %q, want %q", route.Backend.ContainerID, "plain")
 	}
 }
+
+// TestRouter_SamePrefixConflict covers two backends claiming one hostname *and*
+// one path prefix.
+//
+// The routing key is the pair, so this is the same collision as two prefix-less
+// backends on a hostname. It used to go unnoticed because the check asked
+// whether the backend had a prefix rather than whether its key was taken: both
+// routes were stored, one answered by sort order, and the other was unreachable
+// while still looking healthy on the dashboard.
+func TestRouter_SamePrefixConflict(t *testing.T) {
+	router := NewRouter()
+	first := &docker.Backend{
+		ContainerID: "api-v1", ContainerName: "api-v1", ServiceName: "api-v1",
+		Host: "172.17.0.2", Port: 8080,
+		Hostname: "app.localhost", PathPrefix: "/api",
+	}
+	second := &docker.Backend{
+		ContainerID: "api-v2", ContainerName: "api-v2", ServiceName: "api-v2",
+		Host: "172.17.0.3", Port: 8080,
+		Hostname: "app.localhost", PathPrefix: "/api",
+	}
+	router.AddBackend(first)
+	router.AddBackend(second)
+
+	// The message names the path: two backends on one hostname with different
+	// prefixes are a normal setup, so "hostname conflict" alone would not say
+	// what collided. The opening stays, since handleRouteWarning matches on it.
+	if want := "hostname conflict on /api: overwrites api-v1"; second.Warning != want {
+		t.Errorf("Warning = %q, want %q", second.Warning, want)
+	}
+	if got := len(router.ListRoutes()); got != 1 {
+		t.Errorf("router holds %d routes, want 1 — the key is claimed once", got)
+	}
+
+	route := router.Lookup("app.localhost", "/api/users")
+	if route == nil || route.Backend == nil {
+		t.Fatal("expected a route with a Docker backend, got nil")
+	}
+	if route.Backend.ContainerID != "api-v2" {
+		t.Errorf("/api/users went to %q, want %q (the later backend wins, as it does without a prefix)",
+			route.Backend.ContainerID, "api-v2")
+	}
+}
+
+// TestRouter_DifferentPrefixesDoNotConflict is the other half: one hostname,
+// two prefixes, no collision. TestRouter_PathBasedRouting already covers that
+// each is routed to; what matters here is that widening the check did not
+// start reporting them as a conflict.
+func TestRouter_DifferentPrefixesDoNotConflict(t *testing.T) {
+	router := NewRouter()
+	router.AddBackend(&docker.Backend{
+		ContainerID: "api", ContainerName: "api", ServiceName: "api",
+		Host: "172.17.0.2", Port: 8080,
+		Hostname: "app.localhost", PathPrefix: "/api",
+	})
+	admin := &docker.Backend{
+		ContainerID: "admin", ContainerName: "admin", ServiceName: "admin",
+		Host: "172.17.0.3", Port: 8080,
+		Hostname: "app.localhost", PathPrefix: "/admin",
+	}
+	router.AddBackend(admin)
+
+	if admin.Warning != "" {
+		t.Errorf("Warning = %q, want none — the prefixes differ", admin.Warning)
+	}
+}
+
+// TestRouter_ReAddingPrefixedBackendUpdates checks that AddBackend updates,
+// which is what its name promises. A prefixed route used to be appended, so a
+// second add left two entries with one of them stale and unreachable.
+func TestRouter_ReAddingPrefixedBackendUpdates(t *testing.T) {
+	router := NewRouter()
+	backend := &docker.Backend{
+		ContainerID: "api", ContainerName: "api", ServiceName: "api",
+		Host: "172.17.0.2", Port: 8080,
+		Hostname: "app.localhost", PathPrefix: "/api",
+	}
+	router.AddBackend(backend)
+
+	// A distinct Backend value, not the same one mutated: the route holds the
+	// pointer it was given, so editing that would be visible even if the
+	// re-add stored nothing.
+	updated := &docker.Backend{
+		ContainerID: "api", ContainerName: "api", ServiceName: "api",
+		Host: "172.17.0.2", Port: 9090,
+		Hostname: "app.localhost", PathPrefix: "/api",
+	}
+	router.AddBackend(updated)
+
+	if got := len(router.ListRoutes()); got != 1 {
+		t.Errorf("router holds %d routes after re-adding one container, want 1", got)
+	}
+	if updated.Warning != "" {
+		t.Errorf("Warning = %q, want none — it is the same container", updated.Warning)
+	}
+
+	route := router.Lookup("app.localhost", "/api")
+	if route == nil || route.Backend == nil {
+		t.Fatal("expected a route with a Docker backend, got nil")
+	}
+	if route.Backend.Port != 9090 {
+		t.Errorf("port = %d, want %d — the re-add has to update the route", route.Backend.Port, 9090)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -58,6 +59,46 @@ func NewRouter() *Router {
 	}
 }
 
+// claimedRoute returns the route already serving this hostname and prefix, or
+// nil when nothing does. The caller holds r.mu.
+//
+// The pair is the routing key. A prefix-less backend claims the hostname; a
+// prefixed one claims the hostname and that prefix together. Two backends
+// sharing a key collide — two on one hostname with different prefixes do not.
+func (r *Router) claimedRoute(hostname, prefix string) *Route {
+	if prefix == "" {
+		return r.routes[hostname]
+	}
+	for _, route := range r.pathRoutes[hostname] {
+		if route.PathPrefix == prefix {
+			return route
+		}
+	}
+	return nil
+}
+
+// setPathRoute stores a path-based route, replacing whatever claims the same
+// prefix rather than adding a second entry for it. The caller holds r.mu. AddBackend updates existing
+// routes as well as adding new ones, and a Docker event can re-add a container
+// that is already routed.
+func (r *Router) setPathRoute(hostname string, route *Route) {
+	routes := r.pathRoutes[hostname]
+	idx := slices.IndexFunc(routes, func(e *Route) bool {
+		return e.PathPrefix == route.PathPrefix
+	})
+	if idx >= 0 {
+		// Same prefix, so the order Lookup relies on does not change.
+		routes[idx] = route
+	} else {
+		routes = append(routes, route)
+		// Longest prefix first, so Lookup answers with the most specific match.
+		slices.SortFunc(routes, func(a, b *Route) int {
+			return len(b.PathPrefix) - len(a.PathPrefix)
+		})
+	}
+	r.pathRoutes[hostname] = routes
+}
+
 // AddBackend adds or updates a route for a backend
 func (r *Router) AddBackend(backend *docker.Backend) {
 	r.mu.Lock()
@@ -65,23 +106,28 @@ func (r *Router) AddBackend(backend *docker.Backend) {
 
 	hostname := strings.ToLower(backend.Hostname)
 
-	// Check for hostname conflict with different container
-	if backend.PathPrefix == "" {
-		if existing, ok := r.routes[hostname]; ok {
-			if existing.Backend.ContainerID != backend.ContainerID {
-				// Conflict detected - different container is using the same hostname
-				conflictMsg := fmt.Sprintf("hostname conflict: overwrites %s", existing.Backend.ServiceName)
-				if backend.Warning != "" {
-					backend.Warning += "; " + conflictMsg
-				} else {
-					backend.Warning = conflictMsg
-				}
-				slog.Warn("hostname conflict detected",
-					"hostname", hostname,
-					"new_service", backend.ServiceName,
-					"existing_service", existing.Backend.ServiceName)
-			}
+	// Replace whatever already holds this routing key.
+	if existing := r.claimedRoute(hostname, backend.PathPrefix); existing != nil &&
+		existing.Backend.ContainerID != backend.ContainerID {
+		// Name the path, since two backends on one hostname with different
+		// prefixes are a normal setup and do not collide. The "hostname
+		// conflict" opening stays: handleRouteWarning matches on it to pick
+		// the warning page.
+		what := "hostname conflict"
+		if backend.PathPrefix != "" {
+			what += " on " + backend.PathPrefix
 		}
+		conflictMsg := fmt.Sprintf("%s: overwrites %s", what, existing.Backend.ServiceName)
+		if backend.Warning != "" {
+			backend.Warning += "; " + conflictMsg
+		} else {
+			backend.Warning = conflictMsg
+		}
+		slog.Warn("hostname conflict detected",
+			"hostname", hostname,
+			"path", backend.PathPrefix,
+			"new_service", backend.ServiceName,
+			"existing_service", existing.Backend.ServiceName)
 	}
 
 	route := &Route{
@@ -91,14 +137,8 @@ func (r *Router) AddBackend(backend *docker.Backend) {
 	}
 
 	if backend.PathPrefix != "" {
-		// Path-based routing
-		r.pathRoutes[hostname] = append(r.pathRoutes[hostname], route)
-		// Sort by path length descending (longest match first)
-		sort.Slice(r.pathRoutes[hostname], func(i, j int) bool {
-			return len(r.pathRoutes[hostname][i].PathPrefix) > len(r.pathRoutes[hostname][j].PathPrefix)
-		})
+		r.setPathRoute(hostname, route)
 	} else {
-		// Simple hostname routing
 		r.routes[hostname] = route
 	}
 

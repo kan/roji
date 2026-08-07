@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
+	"github.com/kan/roji/i18n"
 	"github.com/kan/roji/project"
 )
 
@@ -2230,5 +2231,46 @@ func TestHandler_WebSocketBackendSwitchesWrongProtocol(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadGateway)
+	}
+}
+
+// TestHandler_RouteWarningClassifiesPrefixConflict pins a coupling that is easy
+// to break: handleRouteWarning picks the warning page by matching the text of
+// Backend.Warning, so Router.AddBackend's wording is load-bearing.
+//
+// A conflict on a path prefix has to reach the same page as one on a bare
+// hostname; rewording it to drop "hostname conflict" silently downgrades the
+// page to the unknown-warning variant.
+func TestHandler_RouteWarningClassifiesPrefixConflict(t *testing.T) {
+	router := NewRouter()
+	router.AddBackend(&docker.Backend{
+		ContainerID: "api-v1", ContainerName: "api-v1", ServiceName: "api-v1",
+		Host: "172.17.0.2", Port: 8080,
+		Hostname: "app.localhost", PathPrefix: "/api",
+	})
+	second := &docker.Backend{
+		ContainerID: "api-v2", ContainerName: "api-v2", ServiceName: "api-v2",
+		Host: "172.17.0.3", Port: 8080,
+		Hostname: "app.localhost", PathPrefix: "/api",
+	}
+	router.AddBackend(second)
+
+	if !strings.Contains(second.Warning, "hostname conflict") {
+		t.Fatalf("Warning = %q; handleRouteWarning classifies on %q",
+			second.Warning, "hostname conflict")
+	}
+
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "https://app.localhost/api/users", nil)
+	req.Host = "app.localhost"
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
+	}
+	// The conflict page carries a hint the unknown-warning page does not.
+	if hint := i18n.Messages("en")["warning.conflict.hint"]; !strings.Contains(w.Body.String(), hint) {
+		t.Error("the warning page is not the conflict one")
 	}
 }
