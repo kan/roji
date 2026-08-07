@@ -35,6 +35,17 @@ static_sites:
 - `index: true` (default) — Shows an Apache/nginx-style directory listing when no `index.html` is found
 - `index: false` — Returns 403 Forbidden for directory access without `index.html`
 
+### Precedence over Docker routes
+
+A static site holds its hostname. If a container is also routed to that
+hostname — with or without a path prefix — the static site serves it, and roji
+logs which Docker route is hidden.
+
+The rule is that a hostname you declare in the config file is yours; Docker
+routes are discovered, so a container starting later cannot take a name you
+have already claimed. Give the container a different `roji.host`, or drop the
+static site, if you meant the other way round.
+
 ## Applying Changes
 
 No restart needed. Use either:
