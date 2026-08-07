@@ -60,6 +60,13 @@ labels:
 
 Requests to `https://myapp.dev.localhost/api/*` will be routed to this service.
 
+A prefix only matches on a path-segment boundary: `/api` covers `/api` and
+`/api/users`, but not `/apifoo` or `/api-docs`, which fall through to whatever
+route serves the hostname without a prefix.
+
+`roji.path=/` means the same as leaving the label out — the service takes the
+whole hostname rather than a prefix of it.
+
 ## `roji.mock.*`
 
 Define mock responses without a real backend:

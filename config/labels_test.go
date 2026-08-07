@@ -121,8 +121,11 @@ func TestParseLabels_PathTraversal(t *testing.T) {
 		{"double dots only", "..", ""},
 		{"complex traversal", "/api/v1/../../admin", ""},
 		{"clean path", "/api/v1/users", "/api/v1/users"},
-		{"root path", "/", "/"},
-		{"empty path", "", "/"},
+		// A label naming the root means the same as no label at all, and is
+		// spelled the same way.
+		{"root path", "/", ""},
+		{"root path with extra slashes", "///", ""},
+		{"empty path", "", ""},
 	}
 
 	for _, tt := range tests {
@@ -265,10 +268,10 @@ func TestParseMethodPath(t *testing.T) {
 		{"POST./api/users", "POST", "/api/users"},
 		{"DELETE./api/users/1", "DELETE", "/api/users/1"},
 		{"get./test", "GET", "/test"},
-		{"GET/invalid", "", ""},      // missing dot before slash
-		{"GET.", "", ""},             // no path after dot
-		{"./api", "", ""},            // no method
-		{"", "", ""},                 // empty string
+		{"GET/invalid", "", ""}, // missing dot before slash
+		{"GET.", "", ""},        // no path after dot
+		{"./api", "", ""},       // no method
+		{"", "", ""},            // empty string
 	}
 
 	for _, tt := range tests {

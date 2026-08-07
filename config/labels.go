@@ -22,8 +22,8 @@ const (
 	LabelPath = LabelPrefix + "path" // Path prefix for routing (optional)
 
 	// Mock labels prefix
-	LabelMockPrefix       = LabelPrefix + "mock."        // roji.mock.GET./path = response body
-	LabelMockStatusPrefix = LabelMockPrefix + "status."  // roji.mock.status.GET./path = status code
+	LabelMockPrefix       = LabelPrefix + "mock."       // roji.mock.GET./path = response body
+	LabelMockStatusPrefix = LabelMockPrefix + "status." // roji.mock.status.GET./path = status code
 
 	// Basic auth labels
 	LabelAuthBasicUser  = LabelPrefix + "auth.basic.user"  // Basic auth username
@@ -48,9 +48,12 @@ type BasicAuth struct {
 
 // RouteConfig holds the configuration for a single route
 type RouteConfig struct {
-	Host       string       // e.g., "myapp.localhost"
-	Port       int          // Target port
-	PathPrefix string       // e.g., "/api" (optional)
+	Host string // e.g., "myapp.localhost"
+	Port int    // Target port
+	// PathPrefix is empty, or a rooted path with no trailing slash ("/api").
+	// Empty is the only spelling of "no prefix": a label naming the root gives
+	// an empty prefix rather than "/".
+	PathPrefix string
 	MockRoutes []*MockRoute // Mock responses for this container
 	BasicAuth  *BasicAuth   // Basic authentication (optional)
 }
@@ -71,15 +74,19 @@ func ParseLabels(labels map[string]string) *RouteConfig {
 
 	if rawPath, ok := labels[LabelPath]; ok {
 		trimmed := strings.TrimSpace(rawPath)
-		// Path traversal prevention: reject if ".." is present in original input
-		if strings.Contains(trimmed, "..") {
-			// Dangerous path, leave PathPrefix empty (default behavior)
-		} else {
+		// Path traversal prevention: reject any path containing "..".
+		if !strings.Contains(trimmed, "..") {
 			// Normalize the path. This is a URL path, so path.Clean rather
 			// than filepath.Clean: the latter rewrites every slash to the
 			// OS separator, turning "/api" into "\api" on Windows and
 			// leaving the route unable to match any request.
-			cfg.PathPrefix = path.Clean("/" + trimmed)
+			//
+			// Clean gives "/" for a label naming the root, which means the
+			// same as having no prefix. Dropping it keeps one spelling, so a
+			// consumer testing PathPrefix against "" sees every such route.
+			if cleaned := path.Clean("/" + trimmed); cleaned != "/" {
+				cfg.PathPrefix = cleaned
+			}
 		}
 	}
 

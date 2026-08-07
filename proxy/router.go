@@ -261,10 +261,11 @@ func (r *Router) ClearStaticSites() {
 // it without the prefix. The remainder is always rooted, so the prefix on its
 // own yields "/" rather than an empty path.
 //
-// An empty prefix — and "/", which config.ParseLabels produces for a label
-// naming the root — matches every path and leaves it untouched.
+// An empty prefix means no prefix: it matches every path and leaves it
+// untouched. There is no other exception — "/" is a prefix like any other and
+// covers "/" alone, which is why config.RouteConfig.PathPrefix spells "no
+// prefix" as the empty string.
 func matchPathPrefix(path, prefix string) (rest string, ok bool) {
-	prefix = strings.TrimSuffix(prefix, "/")
 	if prefix == "" {
 		return path, true
 	}

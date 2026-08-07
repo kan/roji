@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
 )
 
@@ -484,11 +485,10 @@ func TestMatchPathPrefix(t *testing.T) {
 		{"/api-docs", "/api", "", false},
 		{"/apiv2/users", "/api", "", false},
 		{"/other", "/api", "", false},
-		// An empty prefix — and "/", which config.ParseLabels produces for a
-		// label naming the root — leaves the path alone.
+		// An empty prefix leaves the path alone. It is the only spelling of
+		// "no prefix": config.ParseLabels gives an empty prefix for a label
+		// naming the root, so "/" never reaches here.
 		{"/anything", "", "/anything", true},
-		{"/anything", "/", "/anything", true},
-		{"/", "/", "/", true},
 	}
 
 	for _, tt := range tests {
@@ -499,5 +499,52 @@ func TestMatchPathPrefix(t *testing.T) {
 					tt.path, tt.prefix, rest, ok, tt.wantRest, tt.wantOK)
 			}
 		})
+	}
+}
+
+// TestRouter_RootPathLabelIsHostnameRoute ties the label parser to the router:
+// roji.path=/ means the same as no roji.path at all, and has to reach the
+// router that way.
+//
+// Before config.ParseLabels normalized it away, such a route carried
+// PathPrefix "/" and sat in the path-routing table, which Lookup consults
+// first. Real prefixes were unaffected — AddBackend sorts by prefix length and
+// "/" sorts last — but the prefix-less route on that hostname became
+// unreachable, and AddBackend runs its collision check only for a prefix-less
+// backend, so nothing warned about it.
+func TestRouter_RootPathLabelIsHostnameRoute(t *testing.T) {
+	rootCfg := config.ParseLabels(map[string]string{"roji.path": "/"})
+	if rootCfg.PathPrefix != "" {
+		t.Fatalf("ParseLabels(roji.path=/) gave PathPrefix %q, want empty", rootCfg.PathPrefix)
+	}
+
+	router := NewRouter()
+	router.AddBackend(&docker.Backend{
+		ContainerID: "root", ContainerName: "root", ServiceName: "root",
+		Host: "172.17.0.2", Port: 80,
+		Hostname:   "app.localhost",
+		PathPrefix: rootCfg.PathPrefix,
+	})
+
+	// A later backend claiming the same hostname with no prefix at all has to
+	// collide with the root-path one, and win — the same as any two prefix-less
+	// backends. Both went unnoticed while the root-path route lived in the
+	// other table.
+	plain := &docker.Backend{
+		ContainerID: "plain", ContainerName: "plain", ServiceName: "plain",
+		Host: "172.17.0.3", Port: 80,
+		Hostname: "app.localhost",
+	}
+	router.AddBackend(plain)
+
+	if plain.Warning == "" {
+		t.Error("expected a hostname conflict warning, got none")
+	}
+	route := router.Lookup("app.localhost", "/anything")
+	if route == nil {
+		t.Fatal("no route for /anything")
+	}
+	if route.Backend.ContainerID != "plain" {
+		t.Errorf("/anything went to %q, want %q", route.Backend.ContainerID, "plain")
 	}
 }

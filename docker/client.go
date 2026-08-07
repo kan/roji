@@ -48,7 +48,7 @@ type Backend struct {
 	Host          string // Container IP in the shared network
 	Port          int
 	Hostname      string              // The hostname to route to this backend
-	PathPrefix    string              // Optional path prefix
+	PathPrefix    string              // Optional path prefix; see config.RouteConfig.PathPrefix
 	Warning       string              // Warning message (e.g., "no port exposed")
 	Network       string              // Docker network name this container was found on
 	MockRoutes    []*config.MockRoute // Mock responses defined via labels
