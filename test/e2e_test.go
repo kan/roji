@@ -49,11 +49,11 @@ func stopContainers() error {
 }
 
 const (
-	e2eNetwork      = "roji-test"
-	e2eBaseDomain   = "test.localhost"
+	e2eNetwork       = "roji-test"
+	e2eBaseDomain    = "test.localhost"
 	e2eDashboardHost = "roji.test.localhost"
-	e2eHTTPPort     = 18080
-	e2eHTTPSPort    = 18443
+	e2eHTTPPort      = 18080
+	e2eHTTPSPort     = 18443
 )
 
 var (

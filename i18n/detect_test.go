@@ -68,7 +68,7 @@ func TestDetectCLI_English(t *testing.T) {
 
 			got := DetectCLI()
 			if got != "en" {
-				t.Errorf("DetectCLI() = %q, want \"en\"", got, )
+				t.Errorf("DetectCLI() = %q, want \"en\"", got)
 			}
 		})
 	}
@@ -101,10 +101,10 @@ func TestDetectHTTP(t *testing.T) {
 		{"ja", "ja"},
 		{"ja-JP,ja;q=0.9,en;q=0.8", "ja"},
 		{"en-US,en;q=0.9,ja;q=0.8", "en"},
-		{"fr-FR,fr;q=0.9", "en"},       // unsupported -> English
-		{"ja;q=0.5,en;q=0.9", "en"},     // English has higher quality
-		{"ja;q=0.9,en;q=0.5", "ja"},     // Japanese has higher quality
-		{"*", "en"},                       // wildcard -> default (English)
+		{"fr-FR,fr;q=0.9", "en"},    // unsupported -> English
+		{"ja;q=0.5,en;q=0.9", "en"}, // English has higher quality
+		{"ja;q=0.9,en;q=0.5", "ja"}, // Japanese has higher quality
+		{"*", "en"},                 // wildcard -> default (English)
 	}
 
 	for _, tt := range tests {

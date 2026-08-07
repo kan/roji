@@ -158,11 +158,11 @@ func TestRouteDiscovery(t *testing.T) {
 		shouldExist bool
 		hasWarning  bool
 	}{
-		{"web-test.test.localhost", true, false},    // No custom label, uses {service}-{project}
-		{"api.test.localhost", true, false},          // Has roji.host label
-		{"app-test.test.localhost", true, false},     // No custom label, uses {service}-{project}
-		{"noport.test.localhost", true, true},        // Has roji.host, but no port = warning
-		{"mock.test.localhost", true, true},          // Has roji.host, no port = warning (but mocks work)
+		{"web-test.test.localhost", true, false}, // No custom label, uses {service}-{project}
+		{"api.test.localhost", true, false},      // Has roji.host label
+		{"app-test.test.localhost", true, false}, // No custom label, uses {service}-{project}
+		{"noport.test.localhost", true, true},    // Has roji.host, but no port = warning
+		{"mock.test.localhost", true, true},      // Has roji.host, no port = warning (but mocks work)
 	}
 
 	routeMap := make(map[string]proxy.RouteInfo)

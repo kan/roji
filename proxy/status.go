@@ -124,15 +124,15 @@ func determineHealth(status *StatusResponse) string {
 
 	// CA certificate expiring within 30 days -> degraded
 	if status.Certificates.CA != nil &&
-	   status.Certificates.CA.DaysRemaining != nil &&
-	   *status.Certificates.CA.DaysRemaining < 30 {
+		status.Certificates.CA.DaysRemaining != nil &&
+		*status.Certificates.CA.DaysRemaining < 30 {
 		return "degraded"
 	}
 
 	// Server certificate expiring within 30 days -> degraded
 	if status.Certificates.Server != nil &&
-	   status.Certificates.Server.DaysRemaining != nil &&
-	   *status.Certificates.Server.DaysRemaining < 30 {
+		status.Certificates.Server.DaysRemaining != nil &&
+		*status.Certificates.Server.DaysRemaining < 30 {
 		return "degraded"
 	}
 

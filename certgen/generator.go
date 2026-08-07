@@ -186,10 +186,10 @@ func (g *Generator) generateServerCert(caCert *x509.Certificate, caKey *ecdsa.Pr
 		"*." + g.baseDomain, // *.roji.localhost for services
 		g.baseDomain,        // roji.localhost for dashboard
 	}
-	
+
 	// Add localhost for compatibility
 	dnsNames = append(dnsNames, "localhost")
-	
+
 	// Add nested wildcard for complex setups if needed
 	// (e.g., *.*.roji.localhost for multi-level subdomains)
 	if g.baseDomain != "localhost" {
