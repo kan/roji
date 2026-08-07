@@ -77,6 +77,18 @@ func (r *Router) claimedRoute(hostname, prefix string) *Route {
 	return nil
 }
 
+// dockerRouteOn returns a Docker route serving this hostname, whatever path it
+// claims, or nil when none does. The caller holds r.mu.
+func (r *Router) dockerRouteOn(hostname string) *Route {
+	if route := r.claimedRoute(hostname, ""); route != nil {
+		return route
+	}
+	if routes := r.pathRoutes[hostname]; len(routes) > 0 {
+		return routes[0]
+	}
+	return nil
+}
+
 // setPathRoute stores a path-based route, replacing whatever claims the same
 // prefix rather than adding a second entry for it. The caller holds r.mu. AddBackend updates existing
 // routes as well as adding new ones, and a Docker event can re-add a container
@@ -232,13 +244,19 @@ func (r *Router) AddStaticSite(site *StaticBackend) {
 
 	hostname := strings.ToLower(site.Hostname)
 
-	// Check for conflict with Docker routes
-	if existing, ok := r.routes[hostname]; ok {
-		slog.Warn("static site conflicts with Docker route, Docker route takes priority",
+	// A declared static site takes the hostname. Docker routes are discovered,
+	// so a container appearing on a hostname the config file already names must
+	// not displace it — LookupStatic runs first for the same reason.
+	//
+	// Reporting rather than refusing: registration used to return here, so a
+	// config reload dropped any static site whose hostname a container had
+	// since taken, and it stayed gone until roji restarted.
+	if hidden := r.dockerRouteOn(hostname); hidden != nil {
+		slog.Warn("static site hides a Docker route on the same hostname",
 			"hostname", hostname,
-			"docker_service", existing.Backend.ServiceName,
+			"docker_service", hidden.Backend.ServiceName,
+			"docker_path", hidden.PathPrefix,
 			"static_root", site.Root)
-		return
 	}
 
 	route := &Route{

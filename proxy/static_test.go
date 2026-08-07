@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/kan/roji/config"
+	"github.com/kan/roji/docker"
 )
 
 func TestServeStaticFile(t *testing.T) {
@@ -460,5 +461,68 @@ func TestDirectoryListing_EscapesHrefs(t *testing.T) {
 		if got := w.Body.String(); got != tt.want {
 			t.Errorf("GET %s: body = %q, want %q", tt.path, got, tt.want)
 		}
+	}
+}
+
+// TestRouter_StaticSiteTakesTheHostname pins the priority rule: a static site
+// named in the config file holds its hostname, and a container discovered on
+// that hostname does not displace it.
+func TestRouter_StaticSiteTakesTheHostname(t *testing.T) {
+	tests := []struct {
+		name       string
+		pathPrefix string
+	}{
+		{"docker route on the bare hostname", ""},
+		{"docker route on a path prefix", "/api"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := NewRouter()
+			router.AddBackend(&docker.Backend{
+				ContainerID: "api", ContainerName: "api", ServiceName: "api",
+				Host: "172.17.0.2", Port: 8080,
+				Hostname: "docs.dev.localhost", PathPrefix: tt.pathPrefix,
+			})
+			router.AddStaticSite(&StaticBackend{
+				Hostname: "docs.dev.localhost",
+				Root:     "/var/www/docs",
+				Index:    true,
+			})
+
+			if router.LookupStatic("docs.dev.localhost") == nil {
+				t.Error("the static site was not registered, so the Docker route would serve the hostname")
+			}
+		})
+	}
+}
+
+// TestRouter_ConfigReloadKeepsStaticSite covers what `roji config reload` does:
+// ClearStaticSites, then register everything from the file again.
+//
+// Registration used to refuse a hostname a Docker route already held, so a
+// reload silently dropped such a site and it stayed gone until roji restarted.
+// Nothing about the config had changed.
+func TestRouter_ConfigReloadKeepsStaticSite(t *testing.T) {
+	router := NewRouter()
+	site := func() *StaticBackend {
+		return &StaticBackend{Hostname: "docs.dev.localhost", Root: "/var/www/docs", Index: true}
+	}
+
+	router.AddStaticSite(site())
+	router.AddBackend(&docker.Backend{
+		ContainerID: "api", ContainerName: "api", ServiceName: "api",
+		Host: "172.17.0.2", Port: 8080,
+		Hostname: "docs.dev.localhost",
+	})
+	if router.LookupStatic("docs.dev.localhost") == nil {
+		t.Fatal("the static site is missing before the reload")
+	}
+
+	router.ClearStaticSites()
+	router.AddStaticSite(site())
+
+	if router.LookupStatic("docs.dev.localhost") == nil {
+		t.Error("the reload dropped the static site")
 	}
 }
