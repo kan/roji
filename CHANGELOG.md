@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-08-07
+
+Bug fix release. Three routing defects that share a shape: a route was stored
+but could not be reached, and nothing said so.
+
+### Fixed
+
+- Two backends claiming the same hostname *and* the same path prefix both
+  joined the routing table without a warning. One answered by sort order and
+  the other was unreachable while still looking healthy on the dashboard. The
+  collision check asked whether a backend had a prefix rather than whether its
+  routing key — hostname and prefix together — was already taken. The same pair
+  without a prefix has always been reported.
+
+- `Router.AddBackend` did not update a route carrying a path prefix. Prefixed
+  routes were appended rather than replaced, so re-adding a container left a
+  second, stale entry behind (three adds gave three entries). Prefix-less routes
+  replaced correctly.
+
+- `roji config reload` silently dropped a static site whose hostname a container
+  had since taken, and it stayed gone until roji restarted, though nothing about
+  the configuration had changed. Reload clears the static sites and registers
+  them again, and registration refused a hostname a Docker route held.
+
+  A static site declared in the config file now keeps its hostname, which is
+  what request handling and startup ordering already did — only registration
+  disagreed. A Docker route hidden that way is reported in the log. See
+  [Static Sites](https://roji-proxy.dev/docs/guides/static-sites/).
+
 ## [1.1.0] - 2026-08-07
 
 Security and correctness release. roji now listens on loopback only, which is a
@@ -664,6 +693,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.1.1]: https://github.com/kan/roji/releases/tag/v1.1.1
 [1.1.0]: https://github.com/kan/roji/releases/tag/v1.1.0
 [1.0.8]: https://github.com/kan/roji/releases/tag/v1.0.8
 [1.0.7]: https://github.com/kan/roji/releases/tag/v1.0.7

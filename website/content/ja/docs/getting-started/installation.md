@@ -20,7 +20,7 @@ brew install kan/roji/roji
 Linux・macOS対応：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.1.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.1.1/install.sh | bash
 ```
 
 実行内容：
@@ -56,7 +56,7 @@ sudo ./bin/roji service install && sudo ./bin/roji service start
 インストールスクリプトを再実行すると、既存のインストールを検出して自動アップグレードします：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.1.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.1.1/install.sh | bash
 ```
 
 Homebrew の場合：
