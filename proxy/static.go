@@ -262,7 +262,8 @@ func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, e
 	}
 
 	// HTML template with roji-consistent styling
-	html := `<!DOCTYPE html>
+	var html strings.Builder
+	html.WriteString(`<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -369,7 +370,7 @@ func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, e
 </head>
 <body>
     <h1>📂 ` + template.HTMLEscapeString(t("static.index_of")) + ` <span class="path">` + template.HTMLEscapeString(displayPath) + `</span></h1>
-    <div class="listing">`
+    <div class="listing">`)
 
 	// Add parent directory link if not at root
 	if urlPath != "/" {
@@ -380,18 +381,18 @@ func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, e
 		if !strings.HasSuffix(parentPath, "/") {
 			parentPath += "/"
 		}
-		html += `
+		html.WriteString(`
         <a href="` + template.HTMLEscapeString(parentPath) + `" class="entry parent">
             <span class="icon">⬆️</span>
             <span class="name">..</span>
             <span class="size">-</span>
             <span class="date">` + template.HTMLEscapeString(t("static.parent_directory")) + `</span>
-        </a>`
+        </a>`)
 	}
 
 	if len(entries) == 0 && urlPath == "/" {
-		html += `
-        <div class="empty">📭 ` + template.HTMLEscapeString(t("static.empty_directory")) + `</div>`
+		html.WriteString(`
+        <div class="empty">📭 ` + template.HTMLEscapeString(t("static.empty_directory")) + `</div>`)
 	}
 
 	for _, entry := range entries {
@@ -408,28 +409,28 @@ func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, e
 			sizeStr = "-"
 		}
 
-		html += `
+		html.WriteString(`
         <a href="` + href + `" class="entry">
             <span class="icon">` + entry.Icon + `</span>
             <span class="` + nameClass + `">` + template.HTMLEscapeString(entry.Name) + `</span>
             <span class="size">` + sizeStr + `</span>
             <span class="date">` + entry.ModTime + `</span>
-        </a>`
+        </a>`)
 	}
 
-	html += `
+	html.WriteString(`
     </div>
-    <div class="footer">`
+    <div class="footer">`)
 
 	if dashboardHost != "" {
-		html += `<a href="https://` + template.HTMLEscapeString(dashboardHost) + `">` + template.HTMLEscapeString(t("static.dashboard")) + `</a> · `
+		html.WriteString(`<a href="https://` + template.HTMLEscapeString(dashboardHost) + `">` + template.HTMLEscapeString(t("static.dashboard")) + `</a> · `)
 	}
 
-	html += template.HTMLEscapeString(t("static.served_by")) + ` <a href="https://github.com/kan/roji">roji</a></div>
+	html.WriteString(template.HTMLEscapeString(t("static.served_by")) + ` <a href="https://github.com/kan/roji">roji</a></div>
 </body>
-</html>`
+</html>`)
 
-	w.Write([]byte(html))
+	io.WriteString(w, html.String())
 }
 
 // serveIndexDisabledPage shows a helpful page when directory listing is disabled
