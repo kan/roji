@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -396,7 +397,11 @@ func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, e
 	}
 
 	for _, entry := range entries {
-		href := template.HTMLEscapeString(entry.Name)
+		// PathEscape first, then HTML-escape: a name is a path segment in the
+		// href, so "?" and "#" have to stop being a query and a fragment before
+		// the result is put in an attribute. HTMLEscapeString alone leaves
+		// "notes?draft.md" linking to "notes" with a query string.
+		href := template.HTMLEscapeString(url.PathEscape(entry.Name))
 		if entry.IsDir {
 			href += "/"
 		}

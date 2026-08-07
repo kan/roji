@@ -409,3 +409,56 @@ func TestHandler_BasicAuth_StaticRoute(t *testing.T) {
 		})
 	}
 }
+
+// TestDirectoryListing_EscapesHrefs checks that a name reaches the browser as a
+// path segment rather than as a URL with structure.
+//
+// "?" and "#" end a path in a URL, so a listing that only HTML-escapes them
+// links to a truncated path with a query string or fragment attached, and the
+// file cannot be opened from the listing at all.
+func TestDirectoryListing_EscapesHrefs(t *testing.T) {
+	tmpDir := t.TempDir()
+	names := []string{"notes?draft.md", "a#b.txt", "plain.txt"}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "https://docs.dev.localhost/", nil)
+	ServeStaticFile(w, req, tmpDir, true, "roji.dev.localhost")
+
+	body := w.Body.String()
+	for _, tt := range []struct{ href, name string }{
+		{"notes%3Fdraft.md", "notes?draft.md"},
+		{"a%23b.txt", "a#b.txt"},
+		{"plain.txt", "plain.txt"},
+	} {
+		if !strings.Contains(body, `<a href="`+tt.href+`"`) {
+			t.Errorf("listing has no href %q", tt.href)
+		}
+		// The visible name stays readable; only the href is escaped.
+		if !strings.Contains(body, ">"+tt.name+"</span>") {
+			t.Errorf("listing does not show the name %q", tt.name)
+		}
+	}
+
+	// The escaped href has to resolve back to the file it names.
+	for _, tt := range []struct{ path, want string }{
+		{"/notes%3Fdraft.md", "notes?draft.md"},
+		{"/a%23b.txt", "a#b.txt"},
+	} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "https://docs.dev.localhost"+tt.path, nil)
+		ServeStaticFile(w, req, tmpDir, true, "")
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s: status = %d, want %d", tt.path, w.Code, http.StatusOK)
+			continue
+		}
+		if got := w.Body.String(); got != tt.want {
+			t.Errorf("GET %s: body = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}
