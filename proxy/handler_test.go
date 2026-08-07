@@ -153,8 +153,8 @@ func TestHandler_ServeHTTP_RouteExists(t *testing.T) {
 
 	// Verify the route exists (actual proxy test requires real network)
 	route := router.Lookup("web.localhost", "/")
-	if route == nil {
-		t.Fatal("route should exist")
+	if route == nil || route.Backend == nil {
+		t.Fatal("expected a route with a Docker backend, got nil")
 	}
 	if route.Backend.Host != "172.17.0.2" {
 		t.Errorf("backend host = %q, want %q", route.Backend.Host, "172.17.0.2")
@@ -1520,21 +1520,6 @@ func newWSProxy(t *testing.T, hostname string, pathPrefix ...string) (*forwarded
 	rec := &forwardedRecorder{}
 	backendServer := newWSRecorderBackend(t, rec)
 	return rec, newProxyFor(t, hostname, backendServer.URL, pathPrefix...)
-}
-
-// dialWS opens a WebSocket through the proxy, addressing it by hostname.
-func dialWS(t *testing.T, proxyServer *httptest.Server, hostname, path string) *websocket.Conn {
-	t.Helper()
-
-	header := http.Header{}
-	header.Set("Host", hostname)
-	conn, _, err := websocket.DefaultDialer.Dial(
-		"ws://"+proxyServer.Listener.Addr().String()+path, header)
-	if err != nil {
-		t.Fatalf("WebSocket dial failed: %v", err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	return conn
 }
 
 // dialWSExpectingFailure returns the response to a handshake the backend, or

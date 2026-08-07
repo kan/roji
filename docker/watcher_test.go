@@ -18,7 +18,8 @@ func TestNewWatcher(t *testing.T) {
 	watcher := NewWatcher(client)
 
 	if watcher == nil {
-		t.Error("NewWatcher() = nil, want non-nil")
+		// Fatal, not Error: the next check dereferences it.
+		t.Fatal("NewWatcher() = nil, want non-nil")
 	}
 	if watcher.client != client {
 		t.Error("NewWatcher() client not set correctly")
@@ -266,10 +267,9 @@ func TestWatcher_Watch(t *testing.T) {
 		errCh <- nil
 
 		select {
-		case _, ok := <-outCh:
-			if ok {
-				// It's okay if a stray event arrives; we only care that the channel closes
-			}
+		case <-outCh:
+			// Either a stray event or the close; this test only cares that the
+			// receive does not block.
 		case <-time.After(3 * time.Second):
 			// Acceptable: Watch uses a 5-second reconnect delay, so the goroutine
 			// may still be in time.After. The important thing is no deadlock.

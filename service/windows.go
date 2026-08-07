@@ -27,10 +27,6 @@ type WindowsOptions struct {
 	User string // Not used for Windows (runs as LocalSystem or specified account)
 }
 
-func newWindowsManager() (*windowsManager, error) {
-	return newWindowsManagerWithOptions(WindowsOptions{})
-}
-
 func newWindowsManagerWithOptions(opts WindowsOptions) (*windowsManager, error) {
 	// Find NSSM
 	nssmPath, err := findNSSM()

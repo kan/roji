@@ -9,10 +9,6 @@ type LaunchdOptions struct {
 	User string
 }
 
-func newLaunchdManager() (*launchdManager, error) {
-	return nil, fmt.Errorf("launchd is only available on macOS")
-}
-
 func newLaunchdManagerWithOptions(opts LaunchdOptions) (*launchdManager, error) {
 	return nil, fmt.Errorf("launchd is only available on macOS")
 }

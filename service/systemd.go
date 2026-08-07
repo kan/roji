@@ -52,10 +52,6 @@ type ServiceOptions struct {
 	User string // User to run service as (empty = auto-detect)
 }
 
-func newSystemdManager() (*systemdManager, error) {
-	return newSystemdManagerWithOptions(ServiceOptions{})
-}
-
 func newSystemdManagerWithOptions(opts ServiceOptions) (*systemdManager, error) {
 	if !commandExists("systemctl") {
 		return nil, fmt.Errorf("systemctl not found - systemd is required")

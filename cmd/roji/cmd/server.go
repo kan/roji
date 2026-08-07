@@ -98,10 +98,16 @@ func rotateLogFile(logPath string) {
 		return // File is small enough
 	}
 
-	// Rename current log to .old (overwrite any existing .old file)
+	// Rename current log to .old (overwrite any existing .old file). Remove
+	// first because Windows will not rename onto an existing file; a missing
+	// .old is the normal case, so its error says nothing.
 	oldPath := logPath + ".old"
-	os.Remove(oldPath)
-	os.Rename(logPath, oldPath)
+	_ = os.Remove(oldPath)
+	if err := os.Rename(logPath, oldPath); err != nil {
+		// Logging is set up after this runs, so there is nowhere to report it
+		// but stderr. Silence would leave the log growing without bound.
+		fmt.Fprintf(os.Stderr, "warning: cannot rotate log file %s: %v\n", logPath, err)
+	}
 }
 
 func run(ctx context.Context, cfg Config) error {

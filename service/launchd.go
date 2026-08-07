@@ -58,10 +58,6 @@ const launchdTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `
 
-func newLaunchdManager() (*launchdManager, error) {
-	return newLaunchdManagerWithOptions(LaunchdOptions{})
-}
-
 // LaunchdOptions contains options for launchd service
 type LaunchdOptions struct {
 	User string // Not used for launchd (always runs as current user)

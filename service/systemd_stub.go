@@ -9,10 +9,6 @@ type ServiceOptions struct {
 	User string
 }
 
-func newSystemdManager() (*systemdManager, error) {
-	return nil, fmt.Errorf("systemd is only available on Linux")
-}
-
 func newSystemdManagerWithOptions(opts ServiceOptions) (*systemdManager, error) {
 	return nil, fmt.Errorf("systemd is only available on Linux")
 }

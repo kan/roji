@@ -106,15 +106,18 @@ func followLog(logPath string, initialLines int) error {
 		return fmt.Errorf("failed to read log file: %w", err)
 	}
 
-	// Print last n lines
-	start := max(len(lines)-initialLines, 0)
+	// Print the last n lines, or every line for 0 — the same meaning --lines
+	// carries in printLogTail and in the flag's own help.
+	start := 0
+	if initialLines > 0 {
+		start = max(len(lines)-initialLines, 0)
+	}
 	for _, line := range lines[start:] {
 		fmt.Println(line)
 	}
 
-	// Get current position for following
-	pos, err := file.Seek(0, io.SeekEnd)
-	if err != nil {
+	// Follow from the end, so only new output is printed.
+	if _, err := file.Seek(0, io.SeekEnd); err != nil {
 		return fmt.Errorf("failed to seek: %w", err)
 	}
 
@@ -130,14 +133,19 @@ func followLog(logPath string, initialLines int) error {
 
 		if n > 0 {
 			os.Stdout.Write(buf[:n])
-			pos += int64(n)
 		} else {
-			// Check if file was truncated (rotated)
-			info, err := file.Stat()
-			if err == nil && info.Size() < pos {
-				// File was truncated, seek to beginning
-				file.Seek(0, io.SeekStart)
-				pos = 0
+			// The server rotates by renaming (see rotateLogFile), so the handle
+			// held here follows the renamed file and simply stops producing
+			// output. Watching its size cannot detect that: nothing truncates
+			// it, and Stat on the handle reports the renamed inode. Compare the
+			// path against what is held instead, and reopen when they differ.
+			reopened, err := reopenIfRotated(file, logPath)
+			if err != nil {
+				return err
+			}
+			if reopened != nil {
+				file.Close()
+				file = reopened
 				fmt.Printf("\n%s\n", i18n.T("cmd.log.rotated"))
 			}
 
@@ -146,6 +154,29 @@ func followLog(logPath string, initialLines int) error {
 			sleepMs(100)
 		}
 	}
+}
+
+// reopenIfRotated returns a handle on logPath when it is no longer the file
+// that open refers to, or nil when nothing has changed.
+//
+// A missing path is not an error: the server recreates the log on its next
+// write, so the caller keeps following the old handle until it appears.
+func reopenIfRotated(open *os.File, logPath string) (*os.File, error) {
+	held, err := open.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat log file: %w", err)
+	}
+
+	current, err := os.Stat(logPath)
+	if err != nil || os.SameFile(held, current) {
+		return nil, nil
+	}
+
+	reopened, err := os.Open(logPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reopen log file after rotation: %w", err)
+	}
+	return reopened, nil
 }
 
 // sleepMs sleeps for the specified number of milliseconds

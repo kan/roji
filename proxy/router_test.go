@@ -25,8 +25,10 @@ func TestRouter_AddAndLookup(t *testing.T) {
 
 	// Test lookup
 	route := router.Lookup("web.localhost", "/")
-	if route == nil {
-		t.Fatal("expected route, got nil")
+	// Route.Backend is nil for a static-site route, so checking the route
+	// alone does not establish what this test goes on to read.
+	if route == nil || route.Backend == nil {
+		t.Fatal("expected a route with a Docker backend, got nil")
 	}
 	if route.Backend.ContainerID != "abc123" {
 		t.Errorf("ContainerID = %q, want %q", route.Backend.ContainerID, "abc123")
@@ -437,8 +439,8 @@ func TestRouter_HostnameConflict(t *testing.T) {
 
 	// The route should now point to the second backend
 	route := router.Lookup("app.localhost", "/")
-	if route == nil {
-		t.Fatal("expected route, got nil")
+	if route == nil || route.Backend == nil {
+		t.Fatal("expected a route with a Docker backend, got nil")
 	}
 	if route.Backend.ContainerID != "api1" {
 		t.Errorf("route points to %q, want %q", route.Backend.ContainerID, "api1")

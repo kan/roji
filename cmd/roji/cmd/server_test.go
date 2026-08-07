@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -151,4 +154,75 @@ func TestListenAll_FailsWhenNoLoopbackAddressBinds(t *testing.T) {
 	if !strings.Contains(err.Error(), "127.0.0.2,127.0.0.3") {
 		t.Errorf("error = %q, want it to name the addresses that were tried", err)
 	}
+}
+
+// TestReopenIfRotated covers how `roji log` notices a rotation.
+//
+// rotateLogFile renames the log and the server recreates it, so a handle held
+// by a follower keeps referring to the renamed file. Watching its size cannot
+// see that: nothing truncates it, and Stat on the handle reports the renamed
+// inode, so the size never goes backwards.
+func TestReopenIfRotated(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "roji.log")
+	if err := os.WriteFile(logPath, []byte("first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	held, err := os.Open(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+
+	t.Run("nothing has changed", func(t *testing.T) {
+		reopened, err := reopenIfRotated(held, logPath)
+		if err != nil {
+			t.Fatalf("reopenIfRotated: %v", err)
+		}
+		if reopened != nil {
+			reopened.Close()
+			t.Error("reopened a file that was not rotated")
+		}
+	})
+
+	t.Run("path is gone", func(t *testing.T) {
+		// The server recreates the log on its next write, so the follower has
+		// to keep the handle it holds rather than fail.
+		gone := filepath.Join(dir, "missing.log")
+		reopened, err := reopenIfRotated(held, gone)
+		if err != nil {
+			t.Fatalf("reopenIfRotated: %v", err)
+		}
+		if reopened != nil {
+			reopened.Close()
+			t.Error("reopened a path that does not exist")
+		}
+	})
+
+	t.Run("rotated", func(t *testing.T) {
+		if err := os.Rename(logPath, logPath+".old"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(logPath, []byte("second\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		reopened, err := reopenIfRotated(held, logPath)
+		if err != nil {
+			t.Fatalf("reopenIfRotated: %v", err)
+		}
+		if reopened == nil {
+			t.Fatal("did not reopen after a rotation")
+		}
+		defer reopened.Close()
+
+		got, err := io.ReadAll(reopened)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "second\n" {
+			t.Errorf("reopened file holds %q, want %q", got, "second\n")
+		}
+	})
 }
