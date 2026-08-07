@@ -172,6 +172,71 @@ func setForwardedHeaders(out http.Header, r *http.Request) {
 	setProtoAndRealIP(out, r.RemoteAddr)
 }
 
+// hopByHopHeaders are scoped to a single connection and must not be passed on,
+// per RFC 7230 section 6.1. httputil.ReverseProxy removes this set for the HTTP
+// and gRPC paths; the WebSocket path dials the backend itself and has to.
+var hopByHopHeaders = []string{
+	"Connection",
+	"Proxy-Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Te",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+// wsHandshakeHeaders are the handshake headers gorilla's dialer writes itself.
+// Passing any of them in makes Dial fail with "duplicate header not allowed".
+//
+// Sec-WebSocket-Protocol is deliberately absent: the dialer only rejects it
+// when it has Subprotocols of its own, and roji's does not, so the client's
+// value rides along with the rest.
+var wsHandshakeHeaders = []string{
+	"Sec-Websocket-Key",
+	"Sec-Websocket-Version",
+	"Sec-Websocket-Extensions",
+}
+
+// backendUpgradeHeader builds the headers for a WebSocket upgrade roji dials at
+// the backend: what the client sent, minus what cannot be reused.
+//
+// Forwarding by exception is what ReverseProxy does for the other two paths.
+// Naming the headers to keep instead drops Cookie and Authorization, so a
+// WebSocket behind session or token auth is refused the upgrade on a page that
+// loads fine over roji.
+func backendUpgradeHeader(r *http.Request) http.Header {
+	out := r.Header.Clone()
+
+	// A client may name further headers in Connection; naming them there is
+	// what makes them hop-by-hop.
+	for _, field := range out.Values("Connection") {
+		for name := range strings.SplitSeq(field, ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				out.Del(name)
+			}
+		}
+	}
+	for _, h := range hopByHopHeaders {
+		out.Del(h)
+	}
+	for _, h := range wsHandshakeHeaders {
+		out.Del(h)
+	}
+
+	// gorilla's dialer takes Host from this header and otherwise from the URL,
+	// which would name the backend itself. Send the hostname the client asked
+	// for, as the HTTP path does: Vite and webpack check the upgrade request's
+	// Host against their allowed-hosts config, so a page that loads fine over
+	// roji would still be refused HMR.
+	out.Set("Host", r.Host)
+
+	// Last, so a client cannot spoof the values roji vouches for.
+	setForwardedHeaders(out, r)
+	return out
+}
+
 // preserveRawQuery restores the query string the client sent.
 //
 // httputil.ReverseProxy drops query parameters it cannot parse before calling
@@ -1207,24 +1272,7 @@ func (h *Handler) serveWebSocket(w http.ResponseWriter, r *http.Request, targetU
 
 	stripURLPathPrefix(backendURL, route.PathPrefix)
 
-	// Prepare headers for backend connection
-	requestHeader := http.Header{}
-	// gorilla's dialer takes Host from this header and otherwise from the URL,
-	// which would name the backend itself. Send the hostname the client asked
-	// for, as the HTTP path does: Vite and webpack check the upgrade request's
-	// Host against their allowed-hosts config, so a page that loads fine over
-	// roji would still be refused HMR.
-	requestHeader.Set("Host", r.Host)
-	// Forward relevant headers
-	if origin := r.Header.Get("Origin"); origin != "" {
-		requestHeader.Set("Origin", origin)
-	}
-	// Forward subprotocols if present
-	if protocols := r.Header.Get("Sec-WebSocket-Protocol"); protocols != "" {
-		requestHeader.Set("Sec-WebSocket-Protocol", protocols)
-	}
-	// Set X-Forwarded headers
-	setForwardedHeaders(requestHeader, r)
+	requestHeader := backendUpgradeHeader(r)
 
 	// Connect to backend WebSocket
 	slog.Debug("websocket connecting to backend", "url", backendURL.String())

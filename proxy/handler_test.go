@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"net"
 	"net/http"
@@ -1570,6 +1571,24 @@ func (fr *forwardedRecorder) reset() {
 	fr.last = recordedRequest{}
 }
 
+// newWSProxy puts roji in front of a recording WebSocket backend and returns
+// both, for tests that care about what an upgrade looks like by the time it
+// reaches the backend.
+func newWSProxy(t *testing.T, hostname string, pathPrefix ...string) (*forwardedRecorder, *httptest.Server) {
+	t.Helper()
+
+	rec := &forwardedRecorder{}
+	backendServer := newWSRecorderBackend(t, rec)
+
+	router := NewRouter()
+	addBackendFor(t, router, hostname, backendServer.URL, pathPrefix...)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	proxyServer := httptest.NewServer(handler)
+	t.Cleanup(proxyServer.Close)
+	return rec, proxyServer
+}
+
 // newWSRecorderBackend starts a WebSocket backend that records the upgrade
 // request and then closes the connection, for tests that only care about what
 // reached the backend rather than about the messages that follow.
@@ -1905,15 +1924,7 @@ func TestHandler_ProxiedRequest_PreservesRawQuery(t *testing.T) {
 // Vite and webpack check it against their allowed-hosts config, so a mismatch
 // refuses HMR on a page that otherwise loads fine.
 func TestHandler_ProxiedRequest_WebSocket(t *testing.T) {
-	rec := &forwardedRecorder{}
-	backendServer := newWSRecorderBackend(t, rec)
-
-	router := NewRouter()
-	addBackendFor(t, router, "ws-host.localhost", backendServer.URL, "/api")
-	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
-
-	proxyServer := httptest.NewServer(handler)
-	defer proxyServer.Close()
+	rec, proxyServer := newWSProxy(t, "ws-host.localhost", "/api")
 
 	tests := []struct {
 		name           string
@@ -1992,5 +2003,146 @@ func TestHandler_ProxiedRequest_PreservesEncodedPath(t *testing.T) {
 				t.Errorf("backend RequestURI = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestHandler_WebSocketForwardsClientHeaders checks the upgrade request carries
+// what the client sent. The WebSocket path dials the backend itself rather than
+// going through httputil.ReverseProxy, so nothing forwards headers for it.
+func TestHandler_WebSocketForwardsClientHeaders(t *testing.T) {
+	rec, proxyServer := newWSProxy(t, "ws-hdr.localhost")
+
+	header := http.Header{}
+	header.Set("Host", "ws-hdr.localhost")
+	// Cookie and Authorization are the ones that matter: a WebSocket behind
+	// session or token auth is refused the upgrade without them.
+	header.Set("Cookie", "session=abc123")
+	header.Set("Authorization", "Bearer tok")
+	header.Set("Accept-Language", "ja")
+	header.Set("X-Custom", "kept")
+	header.Set("Origin", "https://ws-hdr.localhost")
+	// Client-supplied forwarding headers must not survive: roji vouches for
+	// these, so a client cannot be allowed to state them.
+	header.Set("X-Forwarded-For", "203.0.113.9")
+	header.Set("X-Forwarded-Host", "evil.example")
+	header.Set("X-Real-IP", "203.0.113.9")
+	header.Set("Forwarded", "for=203.0.113.9")
+	header.Set("Keep-Alive", "timeout=5") // hop-by-hop
+
+	conn, _, err := websocket.DefaultDialer.Dial(
+		"ws://"+proxyServer.Listener.Addr().String()+"/ws", header)
+	if err != nil {
+		t.Fatalf("WebSocket dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	got := rec.get()
+
+	for _, tt := range []struct{ name, want string }{
+		{"Cookie", "session=abc123"},
+		{"Authorization", "Bearer tok"},
+		{"Accept-Language", "ja"},
+		{"X-Custom", "kept"},
+		{"Origin", "https://ws-hdr.localhost"},
+	} {
+		if v := got.header.Get(tt.name); v != tt.want {
+			t.Errorf("%s = %q, want %q (forwarded)", tt.name, v, tt.want)
+		}
+	}
+
+	// The handshake headers gorilla writes itself must reach the backend, and
+	// exactly once: passing them in makes Dial fail outright.
+	for _, name := range []string{"Sec-Websocket-Key", "Sec-Websocket-Version", "Upgrade", "Connection"} {
+		if n := len(got.header.Values(name)); n != 1 {
+			t.Errorf("%s appears %d times, want 1", name, n)
+		}
+	}
+
+	// The forwarding headers carry roji's values, not the client's. The proxy
+	// listens on 127.0.0.1, so that is the client address it observes.
+	for _, tt := range []struct{ name, want string }{
+		{"Keep-Alive", ""},
+		{"Forwarded", ""},
+		{"X-Forwarded-Host", "ws-hdr.localhost"},
+		{"X-Forwarded-For", "127.0.0.1"},
+		{"X-Real-IP", "127.0.0.1"},
+		{"X-Forwarded-Proto", "https"},
+	} {
+		if v := got.header.Get(tt.name); v != tt.want {
+			t.Errorf("%s = %q, want %q", tt.name, v, tt.want)
+		}
+	}
+}
+
+// TestHandler_WebSocketDropsUnforwardableHeaders covers what must not reach the
+// backend: the hop-by-hop set, whatever the client names in its own Connection
+// field, and the handshake headers gorilla's dialer writes itself. Passing one
+// of that last group to Dial fails the upgrade outright, so forwarding
+// Sec-WebSocket-Extensions answers every browser WebSocket with 502.
+func TestHandler_WebSocketDropsUnforwardableHeaders(t *testing.T) {
+	rec, proxyServer := newWSProxy(t, "ws-conn.localhost")
+
+	// The dial has to be hand-written: gorilla's dialer sets Connection and the
+	// handshake headers itself and rejects them being passed in, which is the
+	// whole point of the group under test.
+	conn, err := net.Dial("tcp", proxyServer.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	// Without a deadline, a regression that hangs before replying would run the
+	// package to its timeout and report as a panic rather than a failure.
+	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+
+	req := "GET /ws HTTP/1.1\r\n" +
+		"Host: ws-conn.localhost\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade, X-Scoped\r\n" +
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+		"Sec-WebSocket-Version: 13\r\n" +
+		"Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n" +
+		"Keep-Alive: timeout=5\r\n" +
+		"Proxy-Connection: keep-alive\r\n" +
+		"Proxy-Authorization: Basic Zm9vOmJhcg==\r\n" +
+		"Te: trailers\r\n" +
+		"Trailer: Expires\r\n" +
+		"X-Scoped: dropped\r\n" +
+		"X-Kept: kept\r\n" +
+		"\r\n"
+	if _, err := conn.Write([]byte(req)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	defer resp.Body.Close()
+	// A handshake header that survived would fail the dial to the backend, so
+	// this alone catches the 502 a browser would get.
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusSwitchingProtocols)
+	}
+
+	got := rec.get()
+	dropped := []struct{ name, why string }{
+		{"X-Scoped", "named in the client's Connection header"},
+		{"Keep-Alive", "hop-by-hop"},
+		{"Proxy-Connection", "hop-by-hop"},
+		{"Proxy-Authorization", "hop-by-hop"},
+		{"Te", "hop-by-hop"},
+		{"Trailer", "hop-by-hop"},
+		{"Sec-Websocket-Extensions", "the dialer negotiates its own"},
+	}
+	for _, tt := range dropped {
+		if v := got.header.Get(tt.name); v != "" {
+			t.Errorf("%s = %q, want it dropped (%s)", tt.name, v, tt.why)
+		}
+	}
+
+	if v := got.header.Get("X-Kept"); v != "kept" {
+		t.Errorf("X-Kept = %q, want %q", v, "kept")
 	}
 }
