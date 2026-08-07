@@ -7,7 +7,7 @@
 package config
 
 import (
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -69,14 +69,17 @@ func ParseLabels(labels map[string]string) *RouteConfig {
 		}
 	}
 
-	if path, ok := labels[LabelPath]; ok {
-		trimmed := strings.TrimSpace(path)
+	if rawPath, ok := labels[LabelPath]; ok {
+		trimmed := strings.TrimSpace(rawPath)
 		// Path traversal prevention: reject if ".." is present in original input
 		if strings.Contains(trimmed, "..") {
 			// Dangerous path, leave PathPrefix empty (default behavior)
 		} else {
-			// Normalize the path
-			cfg.PathPrefix = filepath.Clean("/" + trimmed)
+			// Normalize the path. This is a URL path, so path.Clean rather
+			// than filepath.Clean: the latter rewrites every slash to the
+			// OS separator, turning "/api" into "\api" on Windows and
+			// leaving the route unable to match any request.
+			cfg.PathPrefix = path.Clean("/" + trimmed)
 		}
 	}
 
