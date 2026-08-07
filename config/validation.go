@@ -66,6 +66,7 @@ func ValidateConfigYAML(data []byte) *ValidationResult {
 var validTopLevelKeys = map[string]string{
 	"network":      "string",
 	"domain":       "string",
+	"bind":         "string",
 	"http_port":    "int",
 	"https_port":   "int",
 	"certs_dir":    "string",

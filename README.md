@@ -117,6 +117,7 @@ Configuration file: `~/.config/roji/config.yaml`
 ```yaml
 network: roji                          # Docker network(s) to watch (comma-separated)
 domain: dev.localhost                  # Base domain
+bind: 127.0.0.1,::1                    # Listen address(es); empty for all interfaces
 http_port: 80                          # HTTP port (redirect to HTTPS)
 https_port: 443                        # HTTPS port
 certs_dir: ~/.local/share/roji/certs   # Certificate directory

@@ -15,6 +15,7 @@ toc: true
 |------|------|-----------|
 | `ROJI_NETWORK` | 監視するDockerネットワーク（カンマ区切り） | `roji` |
 | `ROJI_DOMAIN` | サービスホスト名のベースドメイン | `dev.localhost` |
+| `ROJI_BIND` | 待ち受けアドレス（カンマ区切り、空で全インターフェース） | `127.0.0.1,::1` |
 | `ROJI_HTTP_PORT` | HTTPポート（HTTPSにリダイレクト） | `80` |
 | `ROJI_HTTPS_PORT` | HTTPSポート | `443` |
 | `ROJI_CERTS_DIR` | TLS証明書のディレクトリ | `~/.local/share/roji/certs` |

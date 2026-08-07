@@ -18,6 +18,7 @@ rojiは設定ファイル、環境変数、CLIフラグで設定できます。
 ```yaml
 network: roji                          # 監視するDockerネットワーク（カンマ区切り）
 domain: dev.localhost                  # ベースドメイン
+bind: 127.0.0.1,::1                    # 待ち受けアドレス（空で全インターフェース）
 http_port: 80                          # HTTPポート（HTTPSにリダイレクト）
 https_port: 443                        # HTTPSポート
 certs_dir: ~/.local/share/roji/certs   # 証明書ディレクトリ
@@ -46,6 +47,7 @@ roji config edit     # $EDITORで開く
 |------|------|-----------|
 | `ROJI_NETWORK` | 監視するDockerネットワーク（カンマ区切り） | `roji` |
 | `ROJI_DOMAIN` | ベースドメイン | `dev.localhost` |
+| `ROJI_BIND` | 待ち受けアドレス（カンマ区切り、空で全インターフェース） | `127.0.0.1,::1` |
 | `ROJI_HTTP_PORT` | HTTPポート | `80` |
 | `ROJI_HTTPS_PORT` | HTTPSポート | `443` |
 | `ROJI_CERTS_DIR` | 証明書ディレクトリ | `~/.local/share/roji/certs` |
@@ -53,6 +55,43 @@ roji config edit     # $EDITORで開く
 | `ROJI_DASHBOARD` | ダッシュボードホスト名 | `roji.{domain}` |
 | `ROJI_LOG_LEVEL` | ログレベル | `info` |
 | `ROJI_AUTO_CERT` | 証明書の自動生成 | `true` |
+
+## 待ち受けアドレス
+
+roji はデフォルトで両方のループバックアドレスを待ち受けるため、動作している
+マシン自身からしか到達できない。
+
+```yaml
+bind: 127.0.0.1,::1
+```
+
+roji はラベルを付けなくてもネットワーク上の全コンテナを公開し、ダッシュボードの
+Docker Compose エンドポイント（`/_api/projects/{name}/up|down|restart`）には
+認証がない。roji に到達できる相手はコンテナを起動・停止できる。
+
+ループバックアドレスを 2 つ挙げているのは、ブラウザが `*.localhost` を解決する
+際にどちらを選ぶか分からないため。バインドできないアドレスは警告を出して
+スキップするので、IPv6 を無効化したマシンでも `127.0.0.1` だけで起動する。
+
+### 別の端末から roji に到達する
+
+同一ネットワーク上のスマートフォンや別マシンから確認したい場合は、その
+インターフェースも待ち受けに加える。
+
+```yaml
+bind: 127.0.0.1,::1,192.168.1.5   # LAN アドレスを追加
+```
+
+全インターフェースで待ち受けることもできる（v1.1.0 より前の挙動）。
+
+```yaml
+bind: ""
+```
+
+相手の端末側にも `*.localhost` を解決するための DNS 設定が必要で、かつ
+自分と同じだけの無認証アクセス権をコンテナに対して持つことになる。
+`roji doctor` は待ち受けアドレスを常に表示するので、ネットワークから到達可能な
+状態かどうかは一目で分かる。
 
 ## 設定の優先順位
 

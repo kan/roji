@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,8 +35,9 @@ func (c *Ports) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult 
 	httpPort := cfg.Settings.HTTPPort
 	httpsPort := cfg.Settings.HTTPSPort
 
-	httpAvailable := c.isPortAvailable(httpPort)
-	httpsAvailable := c.isPortAvailable(httpsPort)
+	binds := cfg.Settings.BindAddrs()
+	httpAvailable := c.isPortAvailable(binds, httpPort)
+	httpsAvailable := c.isPortAvailable(binds, httpsPort)
 
 	// If ports are available, pass
 	if httpAvailable && httpsAvailable {
@@ -84,14 +86,33 @@ func (c *Ports) Fix(ctx context.Context, cfg *doctor.Config) error {
 	return nil
 }
 
-func (c *Ports) isPortAvailable(port int) bool {
-	addr := fmt.Sprintf(":%d", port)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return false
+// isPortAvailable reports whether roji could start on this port, applying the
+// same rule the server does when it opens its listeners: a loopback address
+// that will not bind is skipped, any other address is required, and at least
+// one has to succeed.
+//
+// Answering any other way makes doctor disagree with startup. Requiring every
+// address would report "port in use" on a machine with IPv6 disabled, which
+// cannot bind the default's ::1 but starts fine on 127.0.0.1; accepting any one
+// success would call a port free when a configured LAN address is taken, which
+// stops the server.
+//
+// Testing the wildcard instead, as this did before roji had a bind setting,
+// fails whenever anything holds the port on an interface roji does not use.
+func (c *Ports) isPortAvailable(binds []string, port int) bool {
+	bound := 0
+	for _, bind := range binds {
+		ln, err := net.Listen("tcp", net.JoinHostPort(bind, strconv.Itoa(port)))
+		if err != nil {
+			if config.IsLoopbackAddr(bind) {
+				continue
+			}
+			return false
+		}
+		ln.Close()
+		bound++
 	}
-	ln.Close()
-	return true
+	return bound > 0
 }
 
 // isRojiRunning checks if roji is already listening on the configured HTTPS

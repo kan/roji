@@ -17,6 +17,7 @@ var (
 	// Config flags (values from CLI)
 	networkName   string
 	baseDomain    string
+	bindAddr      string
 	httpPort      int
 	httpsPort     int
 	certsDir      string
@@ -48,6 +49,8 @@ func init() {
 		"Docker network name(s) to watch (comma-separated for multiple)")
 	rootCmd.Flags().StringVarP(&baseDomain, "domain", "d", "",
 		"Base domain for auto-generated hostnames")
+	rootCmd.Flags().StringVar(&bindAddr, "bind", "",
+		"Address(es) to listen on (comma-separated; empty for all interfaces)")
 	rootCmd.Flags().IntVar(&httpPort, "http-port", 0,
 		"HTTP port (for redirect)")
 	rootCmd.Flags().IntVar(&httpsPort, "https-port", 0,
@@ -76,6 +79,7 @@ func updateCommandMessages() {
 	rootCmd.Long = i18n.T("cmd.root.long")
 	rootCmd.Flags().Lookup("network").Usage = i18n.T("cmd.root.flag.network")
 	rootCmd.Flags().Lookup("domain").Usage = i18n.T("cmd.root.flag.domain")
+	rootCmd.Flags().Lookup("bind").Usage = i18n.T("cmd.root.flag.bind")
 	rootCmd.Flags().Lookup("http-port").Usage = i18n.T("cmd.root.flag.http_port")
 	rootCmd.Flags().Lookup("https-port").Usage = i18n.T("cmd.root.flag.https_port")
 	rootCmd.Flags().Lookup("certs-dir").Usage = i18n.T("cmd.root.flag.certs_dir")
@@ -160,6 +164,8 @@ func collectCLIOverrides(cmd *cobra.Command) map[string]any {
 			overrides["network"] = networkName
 		case "domain":
 			overrides["domain"] = baseDomain
+		case "bind":
+			overrides["bind"] = bindAddr
 		case "http-port":
 			overrides["http_port"] = httpPort
 		case "https-port":
@@ -203,6 +209,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	cfg := Config{
 		Networks:      settings.Networks(),
 		BaseDomain:    settings.Domain,
+		BindAddrs:     settings.BindAddrs(),
 		HTTPPort:      settings.HTTPPort,
 		HTTPSPort:     settings.HTTPSPort,
 		CertsDir:      settings.CertsDir,

@@ -73,6 +73,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	d.AddCheck(&checks.DockerSocket{})
 	d.AddCheck(&checks.Network{})
 	d.AddCheck(&checks.Ports{})
+	d.AddCheck(&checks.Bind{})
 	d.AddCheck(&checks.CACert{})
 	d.AddCheck(&checks.CAInstall{})
 	d.AddCheck(&checks.ServerCert{})

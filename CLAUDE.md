@@ -99,6 +99,7 @@ roji/
 |----------|------|-----------|
 | `ROJI_NETWORK` | 監視するDockerネットワーク（カンマ区切り） | `roji` |
 | `ROJI_DOMAIN` | ベースドメイン | `dev.localhost` |
+| `ROJI_BIND` | 待ち受けアドレス（カンマ区切り、空で全インターフェース） | `127.0.0.1,::1` |
 | `ROJI_CERTS_DIR` | 証明書ディレクトリ | `~/.local/share/roji/certs` |
 | `ROJI_DATA_DIR` | データディレクトリ | `~/.local/share/roji` |
 | `ROJI_DASHBOARD` | ダッシュボードホスト名 | `roji.{domain}` |
@@ -327,6 +328,7 @@ v0.8.0 Architecture (Native Mode)
 # ~/.config/roji/config.yaml
 network: roji
 domain: dev.localhost
+bind: 127.0.0.1,::1
 certs_dir: ~/.local/share/roji/certs
 data_dir: ~/.local/share/roji
 dashboard: dev.localhost

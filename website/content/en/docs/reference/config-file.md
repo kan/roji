@@ -26,6 +26,11 @@ network: roji
 # Services get {service}.{domain} hostnames
 domain: dev.localhost
 
+# Address(es) to listen on (comma-separated)
+# Both loopback addresses by default, so nothing outside this machine can
+# reach roji. Set to an empty string to listen on every interface.
+bind: 127.0.0.1,::1
+
 # HTTP port (all requests redirect to HTTPS)
 http_port: 80
 

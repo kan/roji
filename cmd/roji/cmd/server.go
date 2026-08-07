@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,17 +25,18 @@ import (
 
 // Config holds the server configuration
 type Config struct {
-	Networks      []string              // Docker networks to watch (e.g., ["roji", "custom"])
+	Networks      []string // Docker networks to watch (e.g., ["roji", "custom"])
 	BaseDomain    string
+	BindAddrs     []string // Addresses to listen on; a single "" means every interface
 	HTTPPort      int
 	HTTPSPort     int
 	CertsDir      string
 	AutoCert      bool
 	DashboardHost string
 	LogLevel      string
-	DataDir       string                // Directory for persistent data (project history)
-	StaticSites   []config.StaticSite   // Static file hosting sites
-	ConfigPath    string                // Path to config file (for reload)
+	DataDir       string              // Directory for persistent data (project history)
+	StaticSites   []config.StaticSite // Static file hosting sites
+	ConfigPath    string              // Path to config file (for reload)
 }
 
 const (
@@ -223,20 +226,71 @@ func run(ctx context.Context, cfg Config) error {
 	return nil
 }
 
+// closeListeners closes every listener, for giving up on a partially opened set.
+func closeListeners(listeners []net.Listener) {
+	for _, ln := range listeners {
+		ln.Close()
+	}
+}
+
+// listenAll opens one listener per bind address on port.
+//
+// A loopback address that will not bind is logged and skipped: the default
+// names both 127.0.0.1 and ::1, and a machine with IPv6 disabled still serves
+// the same intent — reachable from here and nowhere else — over the other one.
+//
+// Any other address was asked for deliberately and nothing else stands in for
+// it, so failing to bind it is an error rather than a quieter startup.
+func listenAll(binds []string, port int, name string) ([]net.Listener, error) {
+	var listeners []net.Listener
+	for _, bind := range binds {
+		addr := net.JoinHostPort(bind, strconv.Itoa(port))
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			if config.IsLoopbackAddr(bind) {
+				slog.Warn("cannot listen, skipping", "server", name, "address", addr, "error", err)
+				continue
+			}
+			closeListeners(listeners)
+			return nil, fmt.Errorf("%s server: cannot listen on %s: %w", name, addr, err)
+		}
+		listeners = append(listeners, ln)
+	}
+
+	if len(listeners) == 0 {
+		return nil, fmt.Errorf("%s server: no address in %q could be bound on port %d",
+			name, strings.Join(binds, ","), port)
+	}
+	return listeners, nil
+}
+
+// startHTTPServer starts the HTTP to HTTPS redirect server, or returns nil when
+// it cannot listen.
+//
+// The redirect is a convenience: without it an http:// URL fails instead of
+// being sent to https://. Another server already holding port 80 should not
+// stop the proxy roji exists to run, so this reports the problem and carries on.
 func startHTTPServer(cfg Config) *http.Server {
+	listeners, err := listenAll(cfg.BindAddrs, cfg.HTTPPort, "HTTP")
+	if err != nil {
+		slog.Error("HTTP redirect server unavailable, continuing without it", "error", err)
+		return nil
+	}
+
 	httpServer := &http.Server{
-		Addr:        fmt.Sprintf(":%d", cfg.HTTPPort),
 		Handler:     &proxy.RedirectHandler{HTTPSPort: cfg.HTTPSPort},
 		ReadTimeout: 10 * time.Second, // Short timeout for redirect server
 		IdleTimeout: 60 * time.Second,
 	}
 
-	go func() {
-		slog.Info("starting HTTP redirect server", "port", cfg.HTTPPort)
-		if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
-			slog.Error("HTTP server error", "error", err)
-		}
-	}()
+	for _, ln := range listeners {
+		slog.Info("starting HTTP redirect server", "address", ln.Addr())
+		go func() {
+			if err := httpServer.Serve(ln); err != http.ErrServerClosed {
+				slog.Error("HTTP server error", "address", ln.Addr(), "error", err)
+			}
+		}()
+	}
 
 	return httpServer
 }
@@ -248,11 +302,10 @@ func startHTTPSServer(cfg Config, handler http.Handler) (*http.Server, error) {
 	}
 
 	httpsServer := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.HTTPSPort),
 		Handler:      handler,
 		TLSConfig:    tlsConfig,
-		ReadTimeout:  0,                  // No limit (support large uploads)
-		WriteTimeout: 0,                  // No limit (support SSE/Long Polling)
+		ReadTimeout:  0, // No limit (support large uploads)
+		WriteTimeout: 0, // No limit (support SSE/Long Polling)
 		IdleTimeout:  120 * time.Second,
 	}
 
@@ -261,12 +314,19 @@ func startHTTPSServer(cfg Config, handler http.Handler) (*http.Server, error) {
 		return nil, fmt.Errorf("failed to configure HTTP/2: %w", err)
 	}
 
-	go func() {
-		slog.Info("starting HTTPS server", "port", cfg.HTTPSPort, "http2", true)
-		if err := httpsServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
-			slog.Error("HTTPS server error", "error", err)
-		}
-	}()
+	listeners, err := listenAll(cfg.BindAddrs, cfg.HTTPSPort, "HTTPS")
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ln := range listeners {
+		slog.Info("starting HTTPS server", "address", ln.Addr(), "http2", true)
+		go func() {
+			if err := httpsServer.ServeTLS(ln, "", ""); err != http.ErrServerClosed {
+				slog.Error("HTTPS server error", "address", ln.Addr(), "error", err)
+			}
+		}()
+	}
 
 	return httpsServer, nil
 }
@@ -275,7 +335,9 @@ func shutdownServers(ctx context.Context, httpServer, httpsServer *http.Server) 
 	shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer shutdownCancel()
 
-	httpServer.Shutdown(shutdownCtx)
+	if httpServer != nil {
+		httpServer.Shutdown(shutdownCtx)
+	}
 	httpsServer.Shutdown(shutdownCtx)
 }
 

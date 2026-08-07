@@ -1,6 +1,9 @@
 package i18n
 
 import (
+	"bytes"
+	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -123,4 +126,96 @@ func TestSetLang_UnknownLanguage(t *testing.T) {
 		t.Errorf("After SetLang(\"fr\"), T should fall back to English, got %q", got)
 	}
 	SetLang("en") // restore
+}
+
+// TestMessageFiles_NoDuplicateKeys guards the message files against a key
+// being defined twice. encoding/json keeps the last one, so a duplicate is
+// invisible at runtime while silently discarding whichever text came first.
+func TestMessageFiles_NoDuplicateKeys(t *testing.T) {
+	for _, lang := range messageLangs(t) {
+		t.Run(lang, func(t *testing.T) {
+			data, err := messagesFS.ReadFile("messages/" + lang + ".json")
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+
+			dec := json.NewDecoder(bytes.NewReader(data))
+			if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+				t.Fatalf("expected a JSON object, got %v (%v)", tok, err)
+			}
+
+			seen := map[string]bool{}
+			for dec.More() {
+				tok, err := dec.Token()
+				if err != nil {
+					t.Fatalf("read key: %v", err)
+				}
+				key, ok := tok.(string)
+				if !ok {
+					t.Fatalf("expected a string key, got %T", tok)
+				}
+				if seen[key] {
+					t.Errorf("duplicate key %q", key)
+				}
+				seen[key] = true
+
+				if _, err := dec.Token(); err != nil {
+					t.Fatalf("read value for %q: %v", key, err)
+				}
+			}
+		})
+	}
+}
+
+// TestMessageFiles_SameKeys keeps the translations in step: a key present in
+// one file and missing from another falls back silently, so the gap only shows
+// up as English text in a Japanese session.
+//
+// English is the reference because it is what every other language falls back
+// to. Languages come from the embedded files, so adding one is covered without
+// touching this test.
+func TestMessageFiles_SameKeys(t *testing.T) {
+	const reference = "en"
+	refMsgs := Messages(reference)
+	if len(refMsgs) == 0 {
+		t.Fatalf("no messages for the reference language %q", reference)
+	}
+
+	for _, lang := range messageLangs(t) {
+		if lang == reference {
+			continue
+		}
+		t.Run(lang, func(t *testing.T) {
+			msgs := Messages(lang)
+			for key := range refMsgs {
+				if _, ok := msgs[key]; !ok {
+					t.Errorf("key %q is in %s.json but missing from %s.json", key, reference, lang)
+				}
+			}
+			for key := range msgs {
+				if _, ok := refMsgs[key]; !ok {
+					t.Errorf("key %q is in %s.json but missing from %s.json", key, lang, reference)
+				}
+			}
+		})
+	}
+}
+
+// messageLangs returns the language codes of the embedded message files.
+func messageLangs(t *testing.T) []string {
+	t.Helper()
+
+	entries, err := messagesFS.ReadDir("messages")
+	if err != nil {
+		t.Fatalf("read messages dir: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no message files found")
+	}
+
+	langs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		langs = append(langs, strings.TrimSuffix(entry.Name(), ".json"))
+	}
+	return langs
 }

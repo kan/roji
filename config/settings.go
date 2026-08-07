@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -39,17 +40,25 @@ func (s *StaticSite) GetBasicAuth() *BasicAuth {
 	return s.Auth.Basic
 }
 
+// DefaultBind is the address set roji listens on when nothing else is
+// configured: both loopback addresses, and nothing beyond the machine itself.
+//
+// Both are needed because the wildcard listener this replaced accepted IPv4 and
+// IPv6 alike, and a browser resolving a *.localhost name may pick either.
+const DefaultBind = "127.0.0.1,::1"
+
 // Settings holds all configuration settings for roji
 type Settings struct {
-	Network     string       `yaml:"network"`               // Docker network name(s) (comma-separated)
-	Domain      string       `yaml:"domain"`                // Base domain (e.g., dev.localhost)
-	HTTPPort    int          `yaml:"http_port"`             // HTTP port (for redirect)
-	HTTPSPort   int          `yaml:"https_port"`            // HTTPS port
-	CertsDir    string       `yaml:"certs_dir"`             // Directory for TLS certificates
-	DataDir     string       `yaml:"data_dir"`              // Directory for persistent data
-	Dashboard   string       `yaml:"dashboard"`             // Dashboard hostname
-	LogLevel    string       `yaml:"log_level"`             // Log level (debug, info, warn, error)
-	AutoCert    bool         `yaml:"auto_cert"`             // Auto-generate certificates
+	Network     string       `yaml:"network"`                // Docker network name(s) (comma-separated)
+	Domain      string       `yaml:"domain"`                 // Base domain (e.g., dev.localhost)
+	Bind        string       `yaml:"bind"`                   // Listen address(es) (comma-separated); empty means all interfaces
+	HTTPPort    int          `yaml:"http_port"`              // HTTP port (for redirect)
+	HTTPSPort   int          `yaml:"https_port"`             // HTTPS port
+	CertsDir    string       `yaml:"certs_dir"`              // Directory for TLS certificates
+	DataDir     string       `yaml:"data_dir"`               // Directory for persistent data
+	Dashboard   string       `yaml:"dashboard"`              // Dashboard hostname
+	LogLevel    string       `yaml:"log_level"`              // Log level (debug, info, warn, error)
+	AutoCert    bool         `yaml:"auto_cert"`              // Auto-generate certificates
 	StaticSites []StaticSite `yaml:"static_sites,omitempty"` // Static file hosting sites
 }
 
@@ -59,6 +68,7 @@ func Defaults() *Settings {
 	return &Settings{
 		Network:   "roji",
 		Domain:    "dev.localhost",
+		Bind:      DefaultBind,
 		HTTPPort:  80,
 		HTTPSPort: 443,
 		CertsDir:  paths.CertsDir,
@@ -132,6 +142,9 @@ func (s *Settings) loadFromFile(path string) error {
 	if _, ok := rawMap["domain"]; ok {
 		s.Domain = fileSettings.Domain
 	}
+	if _, ok := rawMap["bind"]; ok {
+		s.Bind = fileSettings.Bind
+	}
 	if _, ok := rawMap["http_port"]; ok {
 		s.HTTPPort = fileSettings.HTTPPort
 	}
@@ -164,7 +177,6 @@ func (s *Settings) loadFromFile(path string) error {
 	return nil
 }
 
-
 // applyEnvVars applies environment variables to settings
 func (s *Settings) applyEnvVars() {
 	if v := os.Getenv("ROJI_NETWORK"); v != "" {
@@ -172,6 +184,11 @@ func (s *Settings) applyEnvVars() {
 	}
 	if v := os.Getenv("ROJI_DOMAIN"); v != "" {
 		s.Domain = v
+	}
+	// LookupEnv rather than Getenv: an empty ROJI_BIND is a meaningful value,
+	// asking for every interface rather than leaving the default alone.
+	if v, ok := os.LookupEnv("ROJI_BIND"); ok {
+		s.Bind = v
 	}
 	if v := os.Getenv("ROJI_HTTP_PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil {
@@ -212,6 +229,9 @@ func (s *Settings) applyOverrides(overrides map[string]any) {
 	if v, ok := overrides["domain"].(string); ok {
 		s.Domain = v
 	}
+	if v, ok := overrides["bind"].(string); ok {
+		s.Bind = v
+	}
 	if v, ok := overrides["http_port"].(int); ok {
 		s.HTTPPort = v
 	}
@@ -235,19 +255,88 @@ func (s *Settings) applyOverrides(overrides map[string]any) {
 	}
 }
 
-// Networks returns the network names as a slice
-func (s *Settings) Networks() []string {
-	var networks []string
-	for _, n := range strings.Split(s.Network, ",") {
-		n = strings.TrimSpace(n)
-		if n != "" {
-			networks = append(networks, n)
+// splitCSV splits a comma-separated setting into trimmed, non-empty parts.
+func splitCSV(s string) []string {
+	var parts []string
+	for v := range strings.SplitSeq(s, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			parts = append(parts, v)
 		}
 	}
+	return parts
+}
+
+// Networks returns the network names as a slice
+func (s *Settings) Networks() []string {
+	networks := splitCSV(s.Network)
 	if len(networks) == 0 {
-		networks = []string{"roji"}
+		return []string{"roji"}
 	}
 	return networks
+}
+
+// IsWildcardAddr reports whether addr is the wildcard. The bind setting spells
+// it as the empty string, which net.JoinHostPort turns into ":443" — the
+// address that accepts connections on every interface.
+func IsWildcardAddr(addr string) bool {
+	return addr == ""
+}
+
+// IsLoopbackAddr reports whether addr names the machine roji runs on and
+// nothing else.
+//
+// A hostname is not judged here: deciding what it points at means resolving
+// it, which belongs to whoever is about to connect or listen. The wildcard is
+// not loopback either, since it accepts connections from anywhere.
+func IsLoopbackAddr(addr string) bool {
+	ip := net.ParseIP(addr)
+	return ip != nil && ip.IsLoopback()
+}
+
+// BindAddrs returns the addresses to listen on, one per listener.
+//
+// An empty setting means every interface, returned as a single wildcard entry;
+// it is the only case where the list holds one, since parsing drops empty
+// parts.
+func (s *Settings) BindAddrs() []string {
+	addrs := splitCSV(s.Bind)
+	if len(addrs) == 0 {
+		return []string{""}
+	}
+	return addrs
+}
+
+// ListensBeyondLoopback reports whether any listener accepts connections from
+// outside the machine. That matters because roji publishes every container on
+// its network without requiring a label, and the dashboard's Compose endpoints
+// have no authentication: reaching roji is enough to control containers.
+func (s *Settings) ListensBeyondLoopback() bool {
+	for _, a := range s.BindAddrs() {
+		if !IsLoopbackAddr(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// LocalAddr returns an address this machine can reach the server on.
+//
+// Loopback is preferred because a connection to it never leaves the machine.
+// The wildcard has no address of its own, so localhost stands in. Otherwise any
+// configured address will do: the server bound it, so it names an interface
+// here. Order within the setting is not meaningful, so nothing depends on it
+// beyond that last case, where every candidate is equivalent.
+func (s *Settings) LocalAddr() string {
+	addrs := s.BindAddrs()
+	for _, a := range addrs {
+		if IsLoopbackAddr(a) {
+			return a
+		}
+	}
+	if IsWildcardAddr(addrs[0]) {
+		return "localhost"
+	}
+	return addrs[0]
 }
 
 // ToYAML returns the settings as YAML string

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -186,7 +187,7 @@ func TestNetworks(t *testing.T) {
 		{"roji", []string{"roji"}},
 		{"net1,net2", []string{"net1", "net2"}},
 		{"net1, net2, net3", []string{"net1", "net2", "net3"}},
-		{"", []string{"roji"}},       // Empty defaults to roji
+		{"", []string{"roji"}},         // Empty defaults to roji
 		{"  ,  ,  ", []string{"roji"}}, // Only whitespace
 	}
 
@@ -292,12 +293,12 @@ func containsHelper(s, substr string) bool {
 func TestStaticSiteAuth(t *testing.T) {
 	// Test GetBasicAuth
 	tests := []struct {
-		name     string
-		site     StaticSite
-		hasAuth  bool
-		user     string
-		pass     string
-		realm    string
+		name    string
+		site    StaticSite
+		hasAuth bool
+		user    string
+		pass    string
+		realm   string
 	}{
 		{
 			name:    "no auth",
@@ -399,5 +400,113 @@ func TestLoadStaticSiteWithAuth(t *testing.T) {
 	}
 	if auth.Realm != "Documentation" {
 		t.Errorf("Realm = %q, want %q", auth.Realm, "Documentation")
+	}
+}
+
+func TestBindAddrs(t *testing.T) {
+	tests := []struct {
+		bind     string
+		expected []string
+	}{
+		{DefaultBind, []string{"127.0.0.1", "::1"}},
+		{"127.0.0.1", []string{"127.0.0.1"}},
+		{"127.0.0.1, ::1 ", []string{"127.0.0.1", "::1"}},
+		// An empty setting asks for every interface, which is one listener on
+		// the wildcard address rather than none.
+		{"", []string{""}},
+		{"  ,  ", []string{""}},
+	}
+
+	for _, tt := range tests {
+		s := &Settings{Bind: tt.bind}
+		if got := s.BindAddrs(); !slices.Equal(got, tt.expected) {
+			t.Errorf("BindAddrs(%q) = %v, want %v", tt.bind, got, tt.expected)
+		}
+	}
+}
+
+func TestListensBeyondLoopback(t *testing.T) {
+	tests := []struct {
+		bind string
+		want bool
+	}{
+		{DefaultBind, false},
+		{"127.0.0.1", false},
+		{"::1", false},
+		{"127.0.0.2", false}, // the whole 127/8 block is loopback
+		{"", true},           // wildcard
+		{"0.0.0.0", true},
+		{"::", true},
+		{"192.168.1.5", true},
+		{"127.0.0.1,192.168.1.5", true}, // one exposed address is enough
+		// A hostname cannot be judged without resolving it, so it counts as
+		// exposed rather than being waved through.
+		{"localhost", true},
+	}
+
+	for _, tt := range tests {
+		s := &Settings{Bind: tt.bind}
+		if got := s.ListensBeyondLoopback(); got != tt.want {
+			t.Errorf("ListensBeyondLoopback(%q) = %v, want %v", tt.bind, got, tt.want)
+		}
+	}
+}
+
+func TestLoadBindFromEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		set  bool
+		env  string
+		want string
+	}{
+		{"unset leaves the default", false, "", DefaultBind},
+		{"a value replaces the default", true, "127.0.0.1", "127.0.0.1"},
+		// An empty ROJI_BIND is a value, not an absence: it asks for every
+		// interface. Reading it with os.Getenv would silently keep the default.
+		{"an empty value means all interfaces", true, "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.set {
+				t.Setenv("ROJI_BIND", tt.env)
+			} else {
+				os.Unsetenv("ROJI_BIND")
+			}
+
+			settings, err := Load(filepath.Join(t.TempDir(), "missing.yaml"), nil)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if settings.Bind != tt.want {
+				t.Errorf("Bind = %q, want %q", settings.Bind, tt.want)
+			}
+		})
+	}
+}
+
+func TestLocalAddr(t *testing.T) {
+	tests := []struct {
+		bind string
+		want string
+	}{
+		// The wildcard has no address of its own to connect to.
+		{"", "localhost"},
+		{"127.0.0.1", "127.0.0.1"},
+		{"::1", "::1"},
+		// Loopback wins wherever it appears, so reordering the setting — which
+		// is documented as an unordered list — does not change the answer.
+		{"127.0.0.1,::1", "127.0.0.1"},
+		{"192.168.1.5,127.0.0.1", "127.0.0.1"},
+		{"127.0.0.1,192.168.1.5", "127.0.0.1"},
+		// Without loopback, any bound address reaches the server from here.
+		{"192.168.1.5", "192.168.1.5"},
+	}
+
+	for _, tt := range tests {
+		s := &Settings{Bind: tt.bind}
+		if got := s.LocalAddr(); got != tt.want {
+			t.Errorf("LocalAddr(%q) = %q, want %q", tt.bind, got, tt.want)
+		}
 	}
 }

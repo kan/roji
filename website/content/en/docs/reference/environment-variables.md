@@ -14,6 +14,7 @@ toc: true
 |----------|-------------|---------|
 | `ROJI_NETWORK` | Docker network(s) to watch (comma-separated) | `roji` |
 | `ROJI_DOMAIN` | Base domain for service hostnames | `dev.localhost` |
+| `ROJI_BIND` | Address(es) to listen on (comma-separated; empty for all interfaces) | `127.0.0.1,::1` |
 | `ROJI_HTTP_PORT` | HTTP port (redirects to HTTPS) | `80` |
 | `ROJI_HTTPS_PORT` | HTTPS port | `443` |
 | `ROJI_CERTS_DIR` | Directory for TLS certificates | `~/.local/share/roji/certs` |
