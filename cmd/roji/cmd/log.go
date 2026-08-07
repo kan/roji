@@ -42,6 +42,12 @@ func runLog(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("log file not found: %s\nIs roji server running?", logPath)
 	}
 
+	// A negative count would make the tail start past the end of the file,
+	// which panics on the slice rather than showing anything.
+	if logLines < 0 {
+		return fmt.Errorf("--lines must not be negative, got %d (0 shows every line)", logLines)
+	}
+
 	if logNoFollow {
 		return printLogTail(logPath, logLines)
 	}
