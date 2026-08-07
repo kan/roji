@@ -37,7 +37,7 @@ Install roji:
 brew install kan/roji/roji
 
 # Linux / macOS (one-liner)
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.8/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.1.0/install.sh | bash
 ```
 
 Add your app to the `roji` network:
@@ -72,7 +72,7 @@ brew install kan/roji/roji
 ### One-liner Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.8/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.1.0/install.sh | bash
 ```
 
 This will:
@@ -96,7 +96,7 @@ curl -fsSL ... | bash -s -- --upgrade      # Skip upgrade prompts
 Re-run the install script. It detects existing installations and upgrades automatically:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.8/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.1.0/install.sh | bash
 ```
 
 ### Manual Installation

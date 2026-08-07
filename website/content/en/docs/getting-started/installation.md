@@ -19,7 +19,7 @@ brew install kan/roji/roji
 Works on Linux and macOS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.8/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.1.0/install.sh | bash
 ```
 
 This will:
@@ -55,7 +55,7 @@ sudo ./bin/roji service install && sudo ./bin/roji service start
 Re-run the install script. It detects existing installations and upgrades automatically:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.0.8/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.1.0/install.sh | bash
 ```
 
 Or with Homebrew:

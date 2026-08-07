@@ -5,6 +5,81 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-08-07
+
+Security and correctness release. roji now listens on loopback only, which is a
+breaking change for anyone reaching it from another device. Alongside that, six
+routing and WebSocket defects found by review, and the linting that would have
+caught several of them.
+
+### Changed
+
+- **Breaking:** roji listens on `127.0.0.1` and `::1` instead of every
+  interface. Until now anyone on the same network segment — a shared office LAN,
+  a cafe network, a guest VLAN — could reach ports 80 and 443 on the developer's
+  machine, and through them every container on the roji network plus the
+  dashboard. The Docker Compose endpoints (`/_api/projects/{name}/up|down|restart`)
+  have no authentication, so that was container control rather than information
+  disclosure.
+
+  To go back to the previous behavior, or to reach roji from a phone on the same
+  network, set `bind` to the addresses you want or to an empty string for all of
+  them. See [Configuration](https://roji-proxy.dev/docs/guides/configuration/).
+
+- WebSocket upgrades go through `httputil.ReverseProxy` rather than a
+  hand-rolled dialer. Two consequences beyond the fixes below: `permessage-deflate`
+  is negotiated end to end, where roji previously stripped the offer and left
+  every connection uncompressed; and a backend that refuses the upgrade now has
+  its own response — status, headers and body — reach the client instead of a
+  plain-text error.
+
+### Added
+
+- `bind` setting, as a comma-separated list, with `ROJI_BIND` and `--bind`.
+  A loopback address that cannot be bound is skipped with a warning, so a
+  machine with IPv6 disabled still starts on `127.0.0.1`; any other configured
+  address is required, since nothing substitutes for it.
+- `roji doctor` reports which addresses roji listens on.
+
+### Fixed
+
+- Path prefix routes matched without a segment boundary, so a `/api` route also
+  captured `/apifoo` and `/api-docs`. The request reached the backend with a
+  relative path and was rejected with 400; a prefix producing a valid-looking
+  remainder would have been misrouted silently.
+- Stripping a path prefix rewrote only the decoded path, so `/api/files/a%2Fb`
+  reached the backend as `/files/a/b` — one path segment turned into two. Only
+  routes carrying a `roji.path` label were affected.
+- WebSocket upgrades reached the backend with the backend's own address in
+  `Host`, while ordinary requests on the same route carried the hostname the
+  client used. Vite and webpack check the upgrade request's `Host` against their
+  allowed-hosts configuration, so HMR could be refused on a page that loaded
+  fine.
+- WebSocket upgrades dropped the client's headers, `Cookie` and `Authorization`
+  among them. A WebSocket behind session or token authentication was refused the
+  upgrade while the page itself loaded.
+- `roji.path=/` produced a path prefix of `/` rather than no prefix at all,
+  which left a prefix-less route on the same hostname unreachable and
+  unannounced by the hostname collision check.
+- `roji.path` was normalized with `filepath.Clean`, which rewrites slashes to
+  the OS separator. On Windows `/api` became `\api` and matched nothing, so
+  path-based routing failed entirely.
+- `roji log` did not notice a log rotation. The server rotates by renaming, so
+  the handle a follower holds keeps pointing at the renamed file; roji watched
+  its size, which never shrinks. The follower silently tailed a detached file
+  and printed nothing more.
+- `roji log -n 0` printed no history in follow mode, though the flag documents
+  `0` as "show every line", and `roji log -n` with a negative count panicked.
+- Directory listing links were HTML-escaped but not URL-escaped, so a file whose
+  name contained `?` or `#` could not be opened from the listing.
+
+### Internal
+
+- `go fix` modernizers applied, `gofmt` run over the files that had drifted, and
+  `golangci-lint` added to CI along with a `gofmt` check. The linter runs once
+  per `GOOS`, because the `service` and `certgen` packages are split by build
+  tag and a single Linux run never compiles the macOS and Windows files.
+
 ## [1.0.8] - 2026-08-01
 
 Bug fix release. The `roji routes` and `roji health` commands ignored the
@@ -589,6 +664,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.1.0]: https://github.com/kan/roji/releases/tag/v1.1.0
 [1.0.8]: https://github.com/kan/roji/releases/tag/v1.0.8
 [1.0.7]: https://github.com/kan/roji/releases/tag/v1.0.7
 [1.0.6]: https://github.com/kan/roji/releases/tag/v1.0.6
