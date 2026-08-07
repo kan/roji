@@ -341,10 +341,17 @@ func shutdownServers(ctx context.Context, httpServer, httpsServer *http.Server) 
 	shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer shutdownCancel()
 
+	// A Shutdown error means the deadline passed with connections still open,
+	// so roji is about to drop them. Worth saying, since the alternative
+	// reading of a slow exit is that roji hung.
 	if httpServer != nil {
-		httpServer.Shutdown(shutdownCtx)
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("HTTP server did not shut down cleanly", "error", err)
+		}
 	}
-	httpsServer.Shutdown(shutdownCtx)
+	if err := httpsServer.Shutdown(shutdownCtx); err != nil {
+		slog.Warn("HTTPS server did not shut down cleanly", "error", err)
+	}
 }
 
 func loadTLSConfig(certsDir string) (*tls.Config, error) {

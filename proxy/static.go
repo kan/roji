@@ -435,7 +435,7 @@ func generateDirectoryHTML(w http.ResponseWriter, urlPath, displayPath string, e
 </body>
 </html>`)
 
-	io.WriteString(w, html.String())
+	_, _ = io.WriteString(w, html.String())
 }
 
 // serveIndexDisabledPage shows a helpful page when directory listing is disabled
@@ -594,7 +594,7 @@ static_sites:
 </body>
 </html>`
 
-	w.Write([]byte(html))
+	_, _ = w.Write([]byte(html))
 }
 
 // formatSize formats a file size in human-readable format

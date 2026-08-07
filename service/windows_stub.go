@@ -10,7 +10,7 @@ type WindowsOptions struct {
 }
 
 func newWindowsManagerWithOptions(opts WindowsOptions) (*windowsManager, error) {
-	return nil, fmt.Errorf("Windows service management is only available on Windows")
+	return nil, fmt.Errorf("service management is only available on Windows")
 }
 
 type windowsManager struct{}

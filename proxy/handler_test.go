@@ -2133,7 +2133,7 @@ func TestHandler_WebSocketNegotiatesCompression(t *testing.T) {
 		if err != nil {
 			return
 		}
-		conn.WriteMessage(messageType, message)
+		_ = conn.WriteMessage(messageType, message)
 	}))
 	defer backendServer.Close()
 
@@ -2178,7 +2178,7 @@ func TestHandler_WebSocketPassesThroughRefusedUpgrade(t *testing.T) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="socket"`)
 		w.Header().Set("X-Reason", "no session cookie")
 		w.WriteHeader(http.StatusUnauthorized)
-		io.WriteString(w, "please log in")
+		_, _ = io.WriteString(w, "please log in")
 	}))
 	defer backendServer.Close()
 
@@ -2218,7 +2218,7 @@ func TestHandler_WebSocketBackendSwitchesWrongProtocol(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		buf.WriteString("HTTP/1.1 101 Switching Protocols\r\n" +
+		_, _ = buf.WriteString("HTTP/1.1 101 Switching Protocols\r\n" +
 			"Upgrade: h2c\r\n" +
 			"Connection: Upgrade\r\n\r\n")
 		buf.Flush()

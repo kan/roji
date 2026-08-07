@@ -51,13 +51,16 @@ func NewManager() (Manager, error) {
 
 // NewManagerWithOptions returns a platform-specific service manager with options
 func NewManagerWithOptions(opts Options) (Manager, error) {
+	// Converting rather than copying field by field: if Options grows a field
+	// the platform type does not have, this stops compiling instead of silently
+	// dropping it.
 	switch runtime.GOOS {
 	case "linux":
-		return newSystemdManagerWithOptions(ServiceOptions{User: opts.User})
+		return newSystemdManagerWithOptions(ServiceOptions(opts))
 	case "darwin":
-		return newLaunchdManagerWithOptions(LaunchdOptions{User: opts.User})
+		return newLaunchdManagerWithOptions(LaunchdOptions(opts))
 	case "windows":
-		return newWindowsManagerWithOptions(WindowsOptions{User: opts.User})
+		return newWindowsManagerWithOptions(WindowsOptions(opts))
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}

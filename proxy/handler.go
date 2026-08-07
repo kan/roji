@@ -595,7 +595,7 @@ func (h *Handler) serveAsset(w http.ResponseWriter, r *http.Request) {
 	// Cache for 1 hour (static asset)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 
-	w.Write(content)
+	_, _ = w.Write(content)
 }
 
 func (h *Handler) serveRoutesAPI(w http.ResponseWriter, r *http.Request) {
@@ -611,7 +611,7 @@ func (h *Handler) serveRoutesAPI(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) serveProjectsAPI(w http.ResponseWriter, r *http.Request) {
 	if h.projectStore == nil {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"active":[],"inactive":[]}`))
+		_, _ = w.Write([]byte(`{"active":[],"inactive":[]}`))
 		return
 	}
 
@@ -679,7 +679,7 @@ func (h *Handler) serveContainerRestart(w http.ResponseWriter, r *http.Request) 
 
 	// Return success response
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status":    "restarted",
 		"container": containerID,
 	})
@@ -818,7 +818,7 @@ func (h *Handler) serveConfigReload(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to reload config", "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "error",
 			"error":  err.Error(),
 		})
@@ -828,7 +828,7 @@ func (h *Handler) serveConfigReload(w http.ResponseWriter, r *http.Request) {
 	slog.Info("configuration reloaded")
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status": "reloaded",
 	})
 }
@@ -1095,7 +1095,7 @@ func (h *Handler) serveMockResponse(w http.ResponseWriter, r *http.Request, mock
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Roji-Mock", "true")
 	w.WriteHeader(mock.StatusCode)
-	w.Write([]byte(body))
+	_, _ = w.Write([]byte(body))
 
 	// Log the mock response
 	duration := time.Since(startTime)
@@ -1352,7 +1352,7 @@ func (h *Handler) serveProjectUp(w http.ResponseWriter, r *http.Request, name st
 			"error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "error",
 			"error":  err.Error(),
 			"output": output,
@@ -1363,7 +1363,7 @@ func (h *Handler) serveProjectUp(w http.ResponseWriter, r *http.Request, name st
 	slog.Info("project started", "project", name)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status":  "started",
 		"project": name,
 		"output":  output,
@@ -1391,7 +1391,7 @@ func (h *Handler) serveProjectDown(w http.ResponseWriter, r *http.Request, name 
 			"error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "error",
 			"error":  err.Error(),
 			"output": output,
@@ -1402,7 +1402,7 @@ func (h *Handler) serveProjectDown(w http.ResponseWriter, r *http.Request, name 
 	slog.Info("project stopped", "project", name)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status":  "stopped",
 		"project": name,
 		"output":  output,
@@ -1430,7 +1430,7 @@ func (h *Handler) serveProjectRestart(w http.ResponseWriter, r *http.Request, na
 			"error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "error",
 			"error":  err.Error(),
 			"output": output,
@@ -1441,7 +1441,7 @@ func (h *Handler) serveProjectRestart(w http.ResponseWriter, r *http.Request, na
 	slog.Info("project restarted", "project", name)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status":  "restarted",
 		"project": name,
 		"output":  output,
@@ -1474,7 +1474,7 @@ func (h *Handler) serveProjectDelete(w http.ResponseWriter, r *http.Request, nam
 	slog.Info("project removed from history", "project", name)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status":  "deleted",
 		"project": name,
 	})

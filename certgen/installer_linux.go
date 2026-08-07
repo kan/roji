@@ -203,7 +203,7 @@ func (i *FirefoxInstaller) Uninstall(caCertPath string) error {
 			"-d", "sql:"+profile)
 
 		// Ignore errors (cert might not exist in this profile)
-		cmd.Run()
+		_ = cmd.Run()
 	}
 
 	return nil
