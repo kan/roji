@@ -253,6 +253,35 @@ func (r *Router) ClearStaticSites() {
 	go r.notifySubscribers()
 }
 
+// matchPathPrefix reports whether path falls under prefix, and returns what
+// remains of the path once the prefix is removed.
+//
+// A prefix only matches on a segment boundary: "/api" covers "/api" and
+// "/api/users" but not "/apifoo", which belongs to whatever route would serve
+// it without the prefix. The remainder is always rooted, so the prefix on its
+// own yields "/" rather than an empty path.
+//
+// An empty prefix — and "/", which config.ParseLabels produces for a label
+// naming the root — matches every path and leaves it untouched.
+func matchPathPrefix(path, prefix string) (rest string, ok bool) {
+	prefix = strings.TrimSuffix(prefix, "/")
+	if prefix == "" {
+		return path, true
+	}
+
+	rest, ok = strings.CutPrefix(path, prefix)
+	if !ok {
+		return "", false
+	}
+	if rest == "" {
+		return "/", true
+	}
+	if !strings.HasPrefix(rest, "/") {
+		return "", false
+	}
+	return rest, true
+}
+
 // Lookup finds a route for a given hostname and path
 func (r *Router) Lookup(hostname, path string) *Route {
 	r.mu.RLock()
@@ -263,7 +292,7 @@ func (r *Router) Lookup(hostname, path string) *Route {
 	// First check path-based routes
 	if routes, ok := r.pathRoutes[hostname]; ok {
 		for _, route := range routes {
-			if strings.HasPrefix(path, route.PathPrefix) {
+			if _, ok := matchPathPrefix(path, route.PathPrefix); ok {
 				return route
 			}
 		}

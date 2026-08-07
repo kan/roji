@@ -1528,10 +1528,13 @@ func addBackendFor(t *testing.T, router *Router, hostname, serverURL string, pat
 // recordedRequest is what a backend received. The zero value stands for
 // "no request arrived"; header.Get reads fine from a nil Header.
 type recordedRequest struct {
-	header   http.Header
-	host     string
-	path     string
-	rawQuery string
+	header http.Header
+	host   string
+	path   string
+	// requestURI is the request line as sent, so it shows the encoding the
+	// decoded path cannot: "/files/a%2Fb" against "/files/a/b".
+	requestURI string
+	rawQuery   string
 }
 
 // forwardedRecorder captures what a backend receives.
@@ -1544,10 +1547,11 @@ func (fr *forwardedRecorder) record(r *http.Request) {
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
 	fr.last = recordedRequest{
-		header:   r.Header.Clone(),
-		host:     r.Host,
-		path:     r.URL.Path,
-		rawQuery: r.URL.RawQuery,
+		header:     r.Header.Clone(),
+		host:       r.Host,
+		path:       r.URL.Path,
+		requestURI: r.RequestURI,
+		rawQuery:   r.URL.RawQuery,
 	}
 }
 
@@ -1827,6 +1831,11 @@ func TestHandler_ProxiedRequest_GRPC(t *testing.T) {
 	if got.host != backendURL.Host {
 		t.Errorf("Host = %q, want %q", got.host, backendURL.Host)
 	}
+	// The path carries the gRPC service and method the backend routes on, so
+	// it has to arrive byte for byte.
+	if got.path != "/chat.ChatService/GetUsers" {
+		t.Errorf("path = %q, want %q", got.path, "/chat.ChatService/GetUsers")
+	}
 	if v := got.header.Get("X-Forwarded-Host"); v != "grpc-host.localhost" {
 		t.Errorf("X-Forwarded-Host = %q, want %q", v, "grpc-host.localhost")
 	}
@@ -1876,6 +1885,48 @@ func TestHandler_ProxiedRequest_PreservesRawQuery(t *testing.T) {
 
 			if got := rec.get().rawQuery; got != tt.rawQuery {
 				t.Errorf("RawQuery = %q, want %q (forwarded verbatim)", got, tt.rawQuery)
+			}
+		})
+	}
+}
+
+// TestHandler_ProxiedRequest_PreservesEncodedPath checks that stripping a route's
+// path prefix does not re-escape the rest of the path. A stale RawPath makes
+// url.EscapedPath fall back to escaping Path, which decodes "%2F" into a real
+// separator and turns one path segment into two.
+func TestHandler_ProxiedRequest_PreservesEncodedPath(t *testing.T) {
+	rec := &forwardedRecorder{}
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r)
+	}))
+	defer backendServer.Close()
+
+	tests := []struct {
+		name       string
+		pathPrefix []string
+		requestURL string
+		want       string
+	}{
+		{"with prefix", []string{"/api"}, "https://enc.localhost/api/files/a%2Fb", "/files/a%2Fb"},
+		{"without prefix", nil, "https://enc.localhost/files/a%2Fb", "/files/a%2Fb"},
+		{"prefix is the whole path", []string{"/api"}, "https://enc.localhost/api", "/"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec.reset()
+
+			router := NewRouter()
+			addBackendFor(t, router, "enc.localhost", backendServer.URL, tt.pathPrefix...)
+			handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+			req := httptest.NewRequest("GET", tt.requestURL, nil)
+			req.Host = "enc.localhost"
+			req.RemoteAddr = "127.0.0.1:54321"
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			if got := rec.get().requestURI; got != tt.want {
+				t.Errorf("backend RequestURI = %q, want %q", got, tt.want)
 			}
 		})
 	}

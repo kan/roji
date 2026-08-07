@@ -108,17 +108,30 @@ func hostForURL(host string) string {
 	return host
 }
 
-// stripPathPrefix removes a route's path prefix from a request path, leaving
-// "/" when the prefix was the whole path.
-func stripPathPrefix(path, prefix string) string {
-	if prefix == "" {
-		return path
+// stripURLPathPrefix removes a route's path prefix from an outbound URL,
+// keeping the decoded and encoded forms of the path in step.
+//
+// url.URL holds the client's encoding in RawPath only while it agrees with
+// Path, and EscapedPath goes back to re-escaping Path once the two diverge.
+// Rewriting Path on its own therefore leaves a stale RawPath behind and the
+// backend receives a re-escaped path: "/api/files/a%2Fb" arrives as
+// "/files/a/b", with one segment turned into two.
+func stripURLPathPrefix(u *url.URL, prefix string) {
+	path, ok := matchPathPrefix(u.Path, prefix)
+	if !ok {
+		return
 	}
-	path = strings.TrimPrefix(path, prefix)
-	if path == "" {
-		return "/"
+	u.Path = path
+
+	// An empty RawPath means Path re-escapes to exactly what the client sent,
+	// so there is nothing to keep in step.
+	if u.RawPath == "" {
+		return
 	}
-	return path
+	// A RawPath the prefix does not match is encoded in some way this cannot
+	// follow. matchPathPrefix yields "" there, which falls back to escaping
+	// Path — what a route without a prefix does anyway.
+	u.RawPath, _ = matchPathPrefix(u.RawPath, prefix)
 }
 
 // setProtoAndRealIP sets the two forwarding headers neither httputil's
@@ -425,7 +438,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			pr.Out.Host = pr.In.Host
 			preserveRawQuery(pr)
 
-			pr.Out.URL.Path = stripPathPrefix(pr.Out.URL.Path, route.PathPrefix)
+			stripURLPathPrefix(pr.Out.URL, route.PathPrefix)
 
 			rewriteForwardedHeaders(pr)
 		},
@@ -1062,7 +1075,9 @@ func (h *Handler) findMockRoute(route *Route, method, path string) *config.MockR
 		return nil
 	}
 
-	checkPath := stripPathPrefix(path, route.PathPrefix)
+	// Router.Lookup already matched this path against the prefix, so the
+	// remainder is what mock paths are written against.
+	checkPath, _ := matchPathPrefix(path, route.PathPrefix)
 
 	for _, mock := range route.Backend.MockRoutes {
 		if mock.Method == method && mock.Path == checkPath {
@@ -1180,13 +1195,17 @@ func (h *Handler) serveWebSocket(w http.ResponseWriter, r *http.Request, targetU
 	// Build WebSocket URL for backend
 	wsScheme := "ws"
 	backendURL := &url.URL{
-		Scheme:   wsScheme,
-		Host:     targetURL.Host,
-		Path:     r.URL.Path,
+		Scheme: wsScheme,
+		Host:   targetURL.Host,
+		Path:   r.URL.Path,
+		// RawPath carries whatever encoding the client used, which Path alone
+		// cannot reproduce: without it "/ws/a%2Fb" would be dialed as
+		// "/ws/a/b".
+		RawPath:  r.URL.RawPath,
 		RawQuery: r.URL.RawQuery,
 	}
 
-	backendURL.Path = stripPathPrefix(backendURL.Path, route.PathPrefix)
+	stripURLPathPrefix(backendURL, route.PathPrefix)
 
 	// Prepare headers for backend connection
 	requestHeader := http.Header{}
@@ -1321,12 +1340,9 @@ func (h *Handler) serveGRPC(w http.ResponseWriter, r *http.Request, targetURL *u
 			pr.SetURL(targetURL)
 			preserveRawQuery(pr)
 
-			pr.Out.URL.Path = stripPathPrefix(pr.Out.URL.Path, route.PathPrefix)
-
-			// Preserve the original path for gRPC service routing
-			if pr.Out.URL.RawPath == "" {
-				pr.Out.URL.RawPath = pr.Out.URL.Path
-			}
+			// Keeps RawPath in step with Path, which the gRPC method name in
+			// the path depends on: it is what the backend routes on.
+			stripURLPathPrefix(pr.Out.URL, route.PathPrefix)
 
 			rewriteForwardedHeaders(pr)
 		},

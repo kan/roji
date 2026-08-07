@@ -88,8 +88,14 @@ func TestRouter_PathBasedRouting(t *testing.T) {
 	}{
 		{"/api/v2/users", "apiv2", "longest path match"},
 		{"/api/users", "api123", "shorter path match"},
+		{"/api", "api123", "prefix on its own"},
 		{"/", "web123", "fallback to hostname route"},
 		{"/other", "web123", "no path match, fallback"},
+		// A prefix only matches on a segment boundary, so these belong to the
+		// hostname route rather than to /api.
+		{"/apifoo", "web123", "prefix without segment boundary"},
+		{"/api-docs", "web123", "prefix followed by a hyphen"},
+		{"/apiv2/users", "web123", "prefix followed by the next prefix, unseparated"},
 	}
 
 	for _, tt := range tests {
@@ -460,5 +466,38 @@ func TestRouter_SameContainerNoConflict(t *testing.T) {
 	// Should not have a warning
 	if backend.Warning != "" {
 		t.Errorf("expected no warning for same container, got %q", backend.Warning)
+	}
+}
+
+func TestMatchPathPrefix(t *testing.T) {
+	tests := []struct {
+		path     string
+		prefix   string
+		wantRest string
+		wantOK   bool
+	}{
+		{"/api/users", "/api", "/users", true},
+		{"/api", "/api", "/", true},
+		// Without a segment boundary the path is not under the prefix, so
+		// stripping must not turn it into a relative path such as "foo".
+		{"/apifoo", "/api", "", false},
+		{"/api-docs", "/api", "", false},
+		{"/apiv2/users", "/api", "", false},
+		{"/other", "/api", "", false},
+		// An empty prefix — and "/", which config.ParseLabels produces for a
+		// label naming the root — leaves the path alone.
+		{"/anything", "", "/anything", true},
+		{"/anything", "/", "/anything", true},
+		{"/", "/", "/", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.prefix+" "+tt.path, func(t *testing.T) {
+			rest, ok := matchPathPrefix(tt.path, tt.prefix)
+			if ok != tt.wantOK || rest != tt.wantRest {
+				t.Errorf("matchPathPrefix(%q, %q) = (%q, %v), want (%q, %v)",
+					tt.path, tt.prefix, rest, ok, tt.wantRest, tt.wantOK)
+			}
+		})
 	}
 }
