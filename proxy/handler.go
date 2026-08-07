@@ -1209,6 +1209,12 @@ func (h *Handler) serveWebSocket(w http.ResponseWriter, r *http.Request, targetU
 
 	// Prepare headers for backend connection
 	requestHeader := http.Header{}
+	// gorilla's dialer takes Host from this header and otherwise from the URL,
+	// which would name the backend itself. Send the hostname the client asked
+	// for, as the HTTP path does: Vite and webpack check the upgrade request's
+	// Host against their allowed-hosts config, so a page that loads fine over
+	// roji would still be refused HMR.
+	requestHeader.Set("Host", r.Host)
 	// Forward relevant headers
 	if origin := r.Header.Get("Origin"); origin != "" {
 		requestHeader.Set("Origin", origin)

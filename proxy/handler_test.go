@@ -1570,6 +1570,28 @@ func (fr *forwardedRecorder) reset() {
 	fr.last = recordedRequest{}
 }
 
+// newWSRecorderBackend starts a WebSocket backend that records the upgrade
+// request and then closes the connection, for tests that only care about what
+// reached the backend rather than about the messages that follow.
+func newWSRecorderBackend(t *testing.T, rec *forwardedRecorder) *httptest.Server {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r)
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Logf("backend upgrade error: %v", err)
+			return
+		}
+		conn.Close()
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 func TestHandler_ForwardedHeaders_HTTP(t *testing.T) {
 	rec := &forwardedRecorder{}
 	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1708,19 +1730,7 @@ func TestHandler_ForwardedHeaders_GRPC(t *testing.T) {
 
 func TestHandler_ForwardedHeaders_WebSocket(t *testing.T) {
 	rec := &forwardedRecorder{}
-	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rec.record(r)
-		upgrader := websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
-		}
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			t.Logf("backend upgrade error: %v", err)
-			return
-		}
-		conn.Close()
-	}))
-	defer backendServer.Close()
+	backendServer := newWSRecorderBackend(t, rec)
 
 	router := NewRouter()
 	addBackendFor(t, router, "ws-xff.localhost", backendServer.URL)
@@ -1885,6 +1895,59 @@ func TestHandler_ProxiedRequest_PreservesRawQuery(t *testing.T) {
 
 			if got := rec.get().rawQuery; got != tt.rawQuery {
 				t.Errorf("RawQuery = %q, want %q (forwarded verbatim)", got, tt.rawQuery)
+			}
+		})
+	}
+}
+
+// TestHandler_ProxiedRequest_WebSocket checks the upgrade request reaches the
+// backend with the same Host as an ordinary HTTP request on the same route.
+// Vite and webpack check it against their allowed-hosts config, so a mismatch
+// refuses HMR on a page that otherwise loads fine.
+func TestHandler_ProxiedRequest_WebSocket(t *testing.T) {
+	rec := &forwardedRecorder{}
+	backendServer := newWSRecorderBackend(t, rec)
+
+	router := NewRouter()
+	addBackendFor(t, router, "ws-host.localhost", backendServer.URL, "/api")
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	proxyServer := httptest.NewServer(handler)
+	defer proxyServer.Close()
+
+	tests := []struct {
+		name           string
+		path           string
+		wantRequestURI string
+	}{
+		{"prefix stripped", "/api/socket", "/socket"},
+		// Building the backend URL from the decoded path alone would dial
+		// "/socket/a/b" here.
+		{"encoding preserved", "/api/socket/a%2Fb", "/socket/a%2Fb"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec.reset()
+
+			header := http.Header{}
+			header.Set("Host", "ws-host.localhost")
+			conn, _, err := websocket.DefaultDialer.Dial(
+				"ws://"+proxyServer.Listener.Addr().String()+tt.path, header)
+			if err != nil {
+				t.Fatalf("WebSocket dial failed: %v", err)
+			}
+			defer conn.Close()
+
+			got := rec.get()
+			if got.host != "ws-host.localhost" {
+				t.Errorf("Host = %q, want %q", got.host, "ws-host.localhost")
+			}
+			if got.requestURI != tt.wantRequestURI {
+				t.Errorf("RequestURI = %q, want %q", got.requestURI, tt.wantRequestURI)
+			}
+			if v := got.header.Get("X-Forwarded-Host"); v != "ws-host.localhost" {
+				t.Errorf("X-Forwarded-Host = %q, want %q", v, "ws-host.localhost")
 			}
 		})
 	}
