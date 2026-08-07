@@ -24,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
 	"github.com/kan/roji/i18n"
@@ -52,21 +51,6 @@ var http2Transport = &http2.Transport{
 func isGRPCRequest(r *http.Request) bool {
 	contentType := r.Header.Get("Content-Type")
 	return strings.HasPrefix(contentType, "application/grpc")
-}
-
-// wsUpgrader is used to upgrade HTTP connections to WebSocket
-var wsUpgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for local development
-	},
-}
-
-// isWebSocketRequest checks if the request is a WebSocket upgrade request
-func isWebSocketRequest(r *http.Request) bool {
-	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket") &&
-		strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
 }
 
 // clientIP extracts the bare client IP from an http.Request RemoteAddr,
@@ -150,91 +134,22 @@ func setProtoAndRealIP(out http.Header, remoteAddr string) {
 	}
 }
 
-// setForwardedHeaders replaces the forwarding headers of a request proxied
-// without httputil.ReverseProxy — the WebSocket path, which dials the backend
-// itself. Whatever the client sent is discarded, including the RFC 7239
-// Forwarded header, so a backend can trust what it receives. Only headers roji
-// itself sets are replaced; a backend that reads other conventions
-// (X-Forwarded-Port, True-Client-IP) still sees the client's own values.
-//
-// See rewriteForwardedHeaders for the paths that do go through ReverseProxy.
-func setForwardedHeaders(out http.Header, r *http.Request) {
-	// Security: drop client-supplied values to prevent spoofing.
-	// setProtoAndRealIP replaces the other two.
-	out.Del("Forwarded")
-	out.Del("X-Forwarded-For")
-	out.Del("X-Forwarded-Host")
+// backendRewrite states what a backend receives, once, for every path that
+// proxies to a Docker backend. serveGRPC calls it and then overrides the one
+// thing it needs differently.
+func backendRewrite(targetURL *url.URL, route *Route) func(*httputil.ProxyRequest) {
+	return func(pr *httputil.ProxyRequest) {
+		pr.SetURL(targetURL)
+		// SetURL points the outbound Host header at the backend. Keep the
+		// hostname the client asked for instead: dev servers routinely key on
+		// it for virtual hosts and host allowlists.
+		pr.Out.Host = pr.In.Host
+		preserveRawQuery(pr)
 
-	out.Set("X-Forwarded-Host", r.Host)
-	if ip := clientIP(r.RemoteAddr); ip != "" {
-		out.Set("X-Forwarded-For", ip)
+		stripURLPathPrefix(pr.Out.URL, route.PathPrefix)
+
+		rewriteForwardedHeaders(pr)
 	}
-	setProtoAndRealIP(out, r.RemoteAddr)
-}
-
-// hopByHopHeaders are scoped to a single connection and must not be passed on,
-// per RFC 7230 section 6.1. httputil.ReverseProxy removes this set for the HTTP
-// and gRPC paths; the WebSocket path dials the backend itself and has to.
-var hopByHopHeaders = []string{
-	"Connection",
-	"Proxy-Connection",
-	"Keep-Alive",
-	"Proxy-Authenticate",
-	"Proxy-Authorization",
-	"Te",
-	"Trailer",
-	"Transfer-Encoding",
-	"Upgrade",
-}
-
-// wsHandshakeHeaders are the handshake headers gorilla's dialer writes itself.
-// Passing any of them in makes Dial fail with "duplicate header not allowed".
-//
-// Sec-WebSocket-Protocol is deliberately absent: the dialer only rejects it
-// when it has Subprotocols of its own, and roji's does not, so the client's
-// value rides along with the rest.
-var wsHandshakeHeaders = []string{
-	"Sec-Websocket-Key",
-	"Sec-Websocket-Version",
-	"Sec-Websocket-Extensions",
-}
-
-// backendUpgradeHeader builds the headers for a WebSocket upgrade roji dials at
-// the backend: what the client sent, minus what cannot be reused.
-//
-// Forwarding by exception is what ReverseProxy does for the other two paths.
-// Naming the headers to keep instead drops Cookie and Authorization, so a
-// WebSocket behind session or token auth is refused the upgrade on a page that
-// loads fine over roji.
-func backendUpgradeHeader(r *http.Request) http.Header {
-	out := r.Header.Clone()
-
-	// A client may name further headers in Connection; naming them there is
-	// what makes them hop-by-hop.
-	for _, field := range out.Values("Connection") {
-		for name := range strings.SplitSeq(field, ",") {
-			if name = strings.TrimSpace(name); name != "" {
-				out.Del(name)
-			}
-		}
-	}
-	for _, h := range hopByHopHeaders {
-		out.Del(h)
-	}
-	for _, h := range wsHandshakeHeaders {
-		out.Del(h)
-	}
-
-	// gorilla's dialer takes Host from this header and otherwise from the URL,
-	// which would name the backend itself. Send the hostname the client asked
-	// for, as the HTTP path does: Vite and webpack check the upgrade request's
-	// Host against their allowed-hosts config, so a page that loads fine over
-	// roji would still be refused HMR.
-	out.Set("Host", r.Host)
-
-	// Last, so a client cannot spoof the values roji vouches for.
-	setForwardedHeaders(out, r)
-	return out
 }
 
 // preserveRawQuery restores the query string the client sent.
@@ -255,8 +170,6 @@ func preserveRawQuery(pr *httputil.ProxyRequest) {
 // calling a Rewrite func, and SetXForwarded fills them back in from the
 // inbound request — including X-Forwarded-For as a bare client IP, dropped
 // entirely when RemoteAddr does not parse.
-//
-// See setForwardedHeaders for the WebSocket path, which dials backends itself.
 func rewriteForwardedHeaders(pr *httputil.ProxyRequest) {
 	pr.SetXForwarded()
 	setProtoAndRealIP(pr.Out.Header, pr.In.RemoteAddr)
@@ -477,12 +390,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Host:   fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port),
 	}
 
-	// Handle WebSocket upgrade requests
-	if isWebSocketRequest(r) {
-		h.serveWebSocket(w, r, targetURL, route, hostname, startTime)
-		return
-	}
-
 	// Handle gRPC requests (HTTP/2)
 	if isGRPCRequest(r) {
 		h.serveGRPC(w, r, targetURL, route, hostname, startTime)
@@ -495,22 +402,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Transport: sharedTransport,
 		// SSE support: flush responses immediately (disable buffering)
 		FlushInterval: -1,
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(targetURL)
-			// SetURL points the outbound Host header at the backend. Keep the
-			// hostname the client asked for instead: dev servers routinely key
-			// on it for virtual hosts and host allowlists.
-			pr.Out.Host = pr.In.Host
-			preserveRawQuery(pr)
-
-			stripURLPathPrefix(pr.Out.URL, route.PathPrefix)
-
-			rewriteForwardedHeaders(pr)
-		},
+		Rewrite:       backendRewrite(targetURL, route),
 	}
+
+	// upgraded records that a WebSocket was established, which only the two
+	// hooks below can tell apart from an ordinary exchange.
+	upgraded := false
 
 	// Error handler
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		// Also reached after ModifyResponse: ReverseProxy refuses a 101 whose
+		// Upgrade token disagrees with the request's, and a ResponseWriter it
+		// cannot hijack.
+		upgraded = false
+
 		slog.Error("proxy error",
 			"hostname", hostname,
 			"path", r.URL.Path,
@@ -521,9 +426,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Log the request
 	proxy.ModifyResponse = func(resp *http.Response) error {
+		method := r.Method
+		if resp.StatusCode == http.StatusSwitchingProtocols {
+			// Labelled from the response rather than from sniffing the
+			// request: an upgrade the backend refuses is an ordinary HTTP
+			// exchange, and reads better logged as one.
+			method = "WS"
+			upgraded = true
+		}
+
 		duration := time.Since(startTime)
 		slog.Info("request",
-			"method", r.Method,
+			"method", method,
 			"host", hostname,
 			"path", r.URL.Path,
 			"status", resp.StatusCode,
@@ -533,7 +447,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Add to log buffer
 		h.logBuffer.Add(RequestLog{
 			Timestamp: startTime,
-			Method:    r.Method,
+			Method:    method,
 			Host:      hostname,
 			Path:      r.URL.Path,
 			Status:    resp.StatusCode,
@@ -544,6 +458,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proxy.ServeHTTP(w, r)
+
+	// ReverseProxy blocks until an upgraded connection closes in both
+	// directions, so this is the connection's lifetime rather than the
+	// handshake's.
+	if upgraded {
+		slog.Info("websocket disconnected",
+			"host", hostname,
+			"path", r.URL.Path,
+			"duration", time.Since(startTime).Round(time.Millisecond),
+			"target", route.Backend.ServiceName)
+	}
 }
 
 func (h *Handler) serveDashboard(w http.ResponseWriter, r *http.Request) {
@@ -1255,127 +1180,6 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, targetURL, http.StatusMovedPermanently)
 }
 
-// serveWebSocket handles WebSocket upgrade requests by proxying to backend
-func (h *Handler) serveWebSocket(w http.ResponseWriter, r *http.Request, targetURL *url.URL, route *Route, hostname string, startTime time.Time) {
-	// Build WebSocket URL for backend
-	wsScheme := "ws"
-	backendURL := &url.URL{
-		Scheme: wsScheme,
-		Host:   targetURL.Host,
-		Path:   r.URL.Path,
-		// RawPath carries whatever encoding the client used, which Path alone
-		// cannot reproduce: without it "/ws/a%2Fb" would be dialed as
-		// "/ws/a/b".
-		RawPath:  r.URL.RawPath,
-		RawQuery: r.URL.RawQuery,
-	}
-
-	stripURLPathPrefix(backendURL, route.PathPrefix)
-
-	requestHeader := backendUpgradeHeader(r)
-
-	// Connect to backend WebSocket
-	slog.Debug("websocket connecting to backend", "url", backendURL.String())
-	backendConn, resp, err := websocket.DefaultDialer.Dial(backendURL.String(), requestHeader)
-	if err != nil {
-		slog.Error("websocket backend connection failed",
-			"hostname", hostname,
-			"path", r.URL.Path,
-			"target", backendURL.String(),
-			"error", err)
-		if resp != nil {
-			http.Error(w, fmt.Sprintf("WebSocket backend error: %s", resp.Status), resp.StatusCode)
-		} else {
-			http.Error(w, "WebSocket backend connection failed", http.StatusBadGateway)
-		}
-		return
-	}
-	defer backendConn.Close()
-
-	// Get response headers from backend for client upgrade
-	responseHeader := http.Header{}
-	if protocols := resp.Header.Get("Sec-WebSocket-Protocol"); protocols != "" {
-		responseHeader.Set("Sec-WebSocket-Protocol", protocols)
-	}
-
-	// Upgrade client connection to WebSocket
-	clientConn, err := wsUpgrader.Upgrade(w, r, responseHeader)
-	if err != nil {
-		slog.Error("websocket client upgrade failed",
-			"hostname", hostname,
-			"path", r.URL.Path,
-			"error", err)
-		return
-	}
-	defer clientConn.Close()
-
-	slog.Info("websocket connected",
-		"host", hostname,
-		"path", r.URL.Path,
-		"target", route.Backend.ServiceName)
-
-	// Log the WebSocket connection
-	h.logBuffer.Add(RequestLog{
-		Timestamp: startTime,
-		Method:    "WS",
-		Host:      hostname,
-		Path:      r.URL.Path,
-		Status:    101, // Switching Protocols
-		Duration:  time.Since(startTime).Milliseconds(),
-		Service:   route.Backend.ServiceName,
-	})
-
-	// Create channels to signal completion
-	done := make(chan struct{})
-
-	// Proxy messages: client -> backend
-	go func() {
-		defer close(done)
-		for {
-			messageType, message, err := clientConn.ReadMessage()
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
-					slog.Debug("websocket client read error", "error", err)
-				}
-				return
-			}
-			slog.Debug("websocket proxy: client -> backend", "type", messageType, "len", len(message))
-			if err := backendConn.WriteMessage(messageType, message); err != nil {
-				slog.Debug("websocket backend write error", "error", err)
-				return
-			}
-		}
-	}()
-
-	// Proxy messages: backend -> client
-	go func() {
-		slog.Debug("websocket backend reader goroutine started")
-		for {
-			messageType, message, err := backendConn.ReadMessage()
-			if err != nil {
-				slog.Debug("websocket backend read error", "error", err)
-				clientConn.WriteMessage(websocket.CloseMessage,
-					websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-				return
-			}
-			slog.Debug("websocket proxy: backend -> client", "type", messageType, "len", len(message))
-			if err := clientConn.WriteMessage(messageType, message); err != nil {
-				slog.Debug("websocket client write error", "error", err)
-				return
-			}
-		}
-	}()
-
-	// Wait for either direction to close
-	<-done
-
-	slog.Info("websocket disconnected",
-		"host", hostname,
-		"path", r.URL.Path,
-		"duration", time.Since(startTime).Round(time.Millisecond),
-		"target", route.Backend.ServiceName)
-}
-
 // serveGRPC handles gRPC requests by proxying to backend using HTTP/2
 func (h *Handler) serveGRPC(w http.ResponseWriter, r *http.Request, targetURL *url.URL, route *Route, hostname string, startTime time.Time) {
 	slog.Debug("grpc request",
@@ -1383,22 +1187,17 @@ func (h *Handler) serveGRPC(w http.ResponseWriter, r *http.Request, targetURL *u
 		"path", r.URL.Path,
 		"content-type", r.Header.Get("Content-Type"))
 
+	rewrite := backendRewrite(targetURL, route)
+
 	// Create reverse proxy with HTTP/2 transport
 	proxy := &httputil.ReverseProxy{
 		Transport:     http2Transport,
 		FlushInterval: -1, // Flush immediately for streaming
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			// SetURL also points the outbound Host header at the backend, which
-			// is what gRPC wants: the :authority pseudo-header names the server
-			// being dialed, not the hostname the client typed.
-			pr.SetURL(targetURL)
-			preserveRawQuery(pr)
-
-			// Keeps RawPath in step with Path, which the gRPC method name in
-			// the path depends on: it is what the backend routes on.
-			stripURLPathPrefix(pr.Out.URL, route.PathPrefix)
-
-			rewriteForwardedHeaders(pr)
+			rewrite(pr)
+			// The one place gRPC differs: the :authority pseudo-header names
+			// the server being dialed, not the hostname the client typed.
+			pr.Out.Host = targetURL.Host
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			slog.Error("grpc proxy error",

@@ -7,6 +7,8 @@ tool github.com/air-verse/air
 require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/fatih/color v1.19.0
+	// Tests only: roji proxies WebSocket upgrades through httputil.ReverseProxy
+	// and links no WebSocket library. The tests dial and serve one.
 	github.com/gorilla/websocket v1.5.3
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.1

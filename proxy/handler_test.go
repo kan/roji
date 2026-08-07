@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -520,80 +521,6 @@ func TestHandler_DashboardHostNoRedirect(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "roji") {
 		t.Errorf("dashboard should contain 'roji'")
-	}
-}
-
-func TestIsWebSocketRequest(t *testing.T) {
-	tests := []struct {
-		name       string
-		headers    map[string]string
-		wantResult bool
-	}{
-		{
-			name: "valid websocket request",
-			headers: map[string]string{
-				"Upgrade":    "websocket",
-				"Connection": "Upgrade",
-			},
-			wantResult: true,
-		},
-		{
-			name: "valid websocket request (case insensitive)",
-			headers: map[string]string{
-				"Upgrade":    "WebSocket",
-				"Connection": "upgrade",
-			},
-			wantResult: true,
-		},
-		{
-			name: "connection with multiple values",
-			headers: map[string]string{
-				"Upgrade":    "websocket",
-				"Connection": "keep-alive, Upgrade",
-			},
-			wantResult: true,
-		},
-		{
-			name: "missing upgrade header",
-			headers: map[string]string{
-				"Connection": "Upgrade",
-			},
-			wantResult: false,
-		},
-		{
-			name: "missing connection header",
-			headers: map[string]string{
-				"Upgrade": "websocket",
-			},
-			wantResult: false,
-		},
-		{
-			name: "wrong upgrade value",
-			headers: map[string]string{
-				"Upgrade":    "h2c",
-				"Connection": "Upgrade",
-			},
-			wantResult: false,
-		},
-		{
-			name:       "no headers",
-			headers:    map[string]string{},
-			wantResult: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/ws", nil)
-			for k, v := range tt.headers {
-				req.Header.Set(k, v)
-			}
-
-			got := isWebSocketRequest(req)
-			if got != tt.wantResult {
-				t.Errorf("isWebSocketRequest() = %v, want %v", got, tt.wantResult)
-			}
-		})
 	}
 }
 
@@ -1571,6 +1498,19 @@ func (fr *forwardedRecorder) reset() {
 	fr.last = recordedRequest{}
 }
 
+// newProxyFor puts roji in front of an already-running backend.
+func newProxyFor(t *testing.T, hostname, backendURL string, pathPrefix ...string) *httptest.Server {
+	t.Helper()
+
+	router := NewRouter()
+	addBackendFor(t, router, hostname, backendURL, pathPrefix...)
+	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+
+	proxyServer := httptest.NewServer(handler)
+	t.Cleanup(proxyServer.Close)
+	return proxyServer
+}
+
 // newWSProxy puts roji in front of a recording WebSocket backend and returns
 // both, for tests that care about what an upgrade looks like by the time it
 // reaches the backend.
@@ -1579,14 +1519,42 @@ func newWSProxy(t *testing.T, hostname string, pathPrefix ...string) (*forwarded
 
 	rec := &forwardedRecorder{}
 	backendServer := newWSRecorderBackend(t, rec)
+	return rec, newProxyFor(t, hostname, backendServer.URL, pathPrefix...)
+}
 
-	router := NewRouter()
-	addBackendFor(t, router, hostname, backendServer.URL, pathPrefix...)
-	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
+// dialWS opens a WebSocket through the proxy, addressing it by hostname.
+func dialWS(t *testing.T, proxyServer *httptest.Server, hostname, path string) *websocket.Conn {
+	t.Helper()
 
-	proxyServer := httptest.NewServer(handler)
-	t.Cleanup(proxyServer.Close)
-	return rec, proxyServer
+	header := http.Header{}
+	header.Set("Host", hostname)
+	conn, _, err := websocket.DefaultDialer.Dial(
+		"ws://"+proxyServer.Listener.Addr().String()+path, header)
+	if err != nil {
+		t.Fatalf("WebSocket dial failed: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+// dialWSExpectingFailure returns the response to a handshake the backend, or
+// roji, refused. The caller closes nothing: the body is registered for cleanup.
+func dialWSExpectingFailure(t *testing.T, proxyServer *httptest.Server, hostname string) *http.Response {
+	t.Helper()
+
+	header := http.Header{}
+	header.Set("Host", hostname)
+	conn, resp, err := websocket.DefaultDialer.Dial(
+		"ws://"+proxyServer.Listener.Addr().String()+"/ws", header)
+	if err == nil {
+		conn.Close()
+		t.Fatal("expected the handshake to fail")
+	}
+	if resp == nil {
+		t.Fatalf("no response to inspect: %v", err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	return resp
 }
 
 // newWSRecorderBackend starts a WebSocket backend that records the upgrade
@@ -2007,8 +1975,9 @@ func TestHandler_ProxiedRequest_PreservesEncodedPath(t *testing.T) {
 }
 
 // TestHandler_WebSocketForwardsClientHeaders checks the upgrade request carries
-// what the client sent. The WebSocket path dials the backend itself rather than
-// going through httputil.ReverseProxy, so nothing forwards headers for it.
+// what the client sent. This path once assembled the outbound headers itself
+// and named three to keep, so Cookie and Authorization went missing and a
+// WebSocket behind session auth could not connect.
 func TestHandler_WebSocketForwardsClientHeaders(t *testing.T) {
 	rec, proxyServer := newWSProxy(t, "ws-hdr.localhost")
 
@@ -2050,8 +2019,8 @@ func TestHandler_WebSocketForwardsClientHeaders(t *testing.T) {
 		}
 	}
 
-	// The handshake headers gorilla writes itself must reach the backend, and
-	// exactly once: passing them in makes Dial fail outright.
+	// The handshake is between the client and the backend, so its headers have
+	// to arrive — once each, not doubled by anything in the middle.
 	for _, name := range []string{"Sec-Websocket-Key", "Sec-Websocket-Version", "Upgrade", "Connection"} {
 		if n := len(got.header.Values(name)); n != 1 {
 			t.Errorf("%s appears %d times, want 1", name, n)
@@ -2075,16 +2044,18 @@ func TestHandler_WebSocketForwardsClientHeaders(t *testing.T) {
 }
 
 // TestHandler_WebSocketDropsUnforwardableHeaders covers what must not reach the
-// backend: the hop-by-hop set, whatever the client names in its own Connection
-// field, and the handshake headers gorilla's dialer writes itself. Passing one
-// of that last group to Dial fails the upgrade outright, so forwarding
-// Sec-WebSocket-Extensions answers every browser WebSocket with 502.
+// backend: the hop-by-hop set, and whatever the client names in its own
+// Connection field.
+//
+// The handshake headers go the other way — they are end-to-end, and forwarding
+// them is what lets the client and the backend agree on a Sec-WebSocket-Accept
+// and on compression without roji in the middle of the negotiation.
 func TestHandler_WebSocketDropsUnforwardableHeaders(t *testing.T) {
 	rec, proxyServer := newWSProxy(t, "ws-conn.localhost")
 
 	// The dial has to be hand-written: gorilla's dialer sets Connection and the
-	// handshake headers itself and rejects them being passed in, which is the
-	// whole point of the group under test.
+	// handshake headers itself and refuses to take them as arguments, and those
+	// are the headers under test here.
 	conn, err := net.Dial("tcp", proxyServer.Listener.Addr().String())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -2120,8 +2091,6 @@ func TestHandler_WebSocketDropsUnforwardableHeaders(t *testing.T) {
 		t.Fatalf("read response: %v", err)
 	}
 	defer resp.Body.Close()
-	// A handshake header that survived would fail the dial to the backend, so
-	// this alone catches the 502 a browser would get.
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusSwitchingProtocols)
 	}
@@ -2132,9 +2101,7 @@ func TestHandler_WebSocketDropsUnforwardableHeaders(t *testing.T) {
 		{"Keep-Alive", "hop-by-hop"},
 		{"Proxy-Connection", "hop-by-hop"},
 		{"Proxy-Authorization", "hop-by-hop"},
-		{"Te", "hop-by-hop"},
 		{"Trailer", "hop-by-hop"},
-		{"Sec-Websocket-Extensions", "the dialer negotiates its own"},
 	}
 	for _, tt := range dropped {
 		if v := got.header.Get(tt.name); v != "" {
@@ -2142,7 +2109,141 @@ func TestHandler_WebSocketDropsUnforwardableHeaders(t *testing.T) {
 		}
 	}
 
-	if v := got.header.Get("X-Kept"); v != "kept" {
-		t.Errorf("X-Kept = %q, want %q", v, "kept")
+	kept := []struct{ name, want, why string }{
+		{"X-Kept", "kept", "an ordinary header"},
+		// The handshake is between the client and the backend; roji forwarding
+		// the offer is what lets them settle on permessage-deflate.
+		{"Sec-Websocket-Extensions", "permessage-deflate; client_max_window_bits", "end-to-end"},
+		// ReverseProxy strips TE with the other hop-by-hop headers and then
+		// re-adds "trailers", advertising the trailer support it does have.
+		// The HTTP path behaves the same way.
+		{"Te", "trailers", "re-added by httputil.ReverseProxy"},
+	}
+	for _, tt := range kept {
+		if v := got.header.Get(tt.name); v != tt.want {
+			t.Errorf("%s = %q, want %q (%s)", tt.name, v, tt.want, tt.why)
+		}
+	}
+}
+
+// TestHandler_WebSocketNegotiatesCompression checks the handshake reaches the
+// backend intact enough for the two ends to settle on permessage-deflate.
+//
+// roji forwards the offer rather than answering it, so the two ends settle
+// compression between themselves.
+func TestHandler_WebSocketNegotiatesCompression(t *testing.T) {
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{
+			CheckOrigin:       func(r *http.Request) bool { return true },
+			EnableCompression: true,
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Logf("backend upgrade error: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		messageType, message, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		conn.WriteMessage(messageType, message)
+	}))
+	defer backendServer.Close()
+
+	proxyServer := newProxyFor(t, "ws-deflate.localhost", backendServer.URL)
+
+	dialer := *websocket.DefaultDialer
+	dialer.EnableCompression = true
+	header := http.Header{}
+	header.Set("Host", "ws-deflate.localhost")
+
+	conn, resp, err := dialer.Dial("ws://"+proxyServer.Listener.Addr().String()+"/ws", header)
+	if err != nil {
+		t.Fatalf("WebSocket dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	if ext := resp.Header.Get("Sec-WebSocket-Extensions"); !strings.Contains(ext, "permessage-deflate") {
+		t.Errorf("Sec-WebSocket-Extensions = %q, want it to name permessage-deflate", ext)
+	}
+
+	// The negotiated connection still has to carry messages.
+	conn.EnableWriteCompression(true)
+	want := "hello over a compressed socket"
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(want)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, got, err := conn.ReadMessage(); err != nil {
+		t.Fatalf("read: %v", err)
+	} else if string(got) != want {
+		t.Errorf("echo = %q, want %q", got, want)
+	}
+}
+
+// TestHandler_WebSocketPassesThroughRefusedUpgrade checks that a backend
+// declining the upgrade answers the client itself.
+//
+// A backend that authenticates the upgrade replies with a status, a
+// WWW-Authenticate header and a body explaining what is wrong. All of it has to
+// reach the client, which cannot act on the status alone.
+func TestHandler_WebSocketPassesThroughRefusedUpgrade(t *testing.T) {
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="socket"`)
+		w.Header().Set("X-Reason", "no session cookie")
+		w.WriteHeader(http.StatusUnauthorized)
+		io.WriteString(w, "please log in")
+	}))
+	defer backendServer.Close()
+
+	proxyServer := newProxyFor(t, "ws-401.localhost", backendServer.URL)
+	resp := dialWSExpectingFailure(t, proxyServer, "ws-401.localhost")
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+	if v := resp.Header.Get("WWW-Authenticate"); v != `Basic realm="socket"` {
+		t.Errorf("WWW-Authenticate = %q, want the backend's value", v)
+	}
+	if v := resp.Header.Get("X-Reason"); v != "no session cookie" {
+		t.Errorf("X-Reason = %q, want %q", v, "no session cookie")
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(body) != "please log in" {
+		t.Errorf("body = %q, want %q", body, "please log in")
+	}
+}
+
+// TestHandler_WebSocketBackendSwitchesWrongProtocol covers a 101 that
+// httputil.ReverseProxy still refuses: the backend answers the upgrade but
+// names a protocol the client never asked for.
+//
+// The status alone says the upgrade succeeded, so anything derived from it
+// disagrees with what the client actually gets, which is a 502 and no
+// connection.
+func TestHandler_WebSocketBackendSwitchesWrongProtocol(t *testing.T) {
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, buf, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Logf("hijack: %v", err)
+			return
+		}
+		defer conn.Close()
+		buf.WriteString("HTTP/1.1 101 Switching Protocols\r\n" +
+			"Upgrade: h2c\r\n" +
+			"Connection: Upgrade\r\n\r\n")
+		buf.Flush()
+	}))
+	defer backendServer.Close()
+
+	proxyServer := newProxyFor(t, "ws-wrong.localhost", backendServer.URL)
+	resp := dialWSExpectingFailure(t, proxyServer, "ws-wrong.localhost")
+
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadGateway)
 	}
 }
