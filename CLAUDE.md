@@ -93,6 +93,13 @@ roji/
 | `roji.auth.basic.realm` | BASIC認証レルム | `Restricted` |
 | `roji.self` | 予約済み: コンテナをルーティング対象から除外（内部使用） | なし |
 
+`roji.path` の挙動（v1.1.0 で修正）:
+
+- プレフィックスはパスのセグメント境界でのみ一致する。`/api` は `/api` と
+  `/api/users` を捕まえるが、`/apifoo` や `/api-docs` は捕まえない
+- `roji.path=/` はラベルを書かないのと同じ。`PathPrefix` は空文字列に正規化
+  され、「プレフィックスなし」の綴りが 1 つに保たれる
+
 ### 環境変数
 
 | 環境変数 | 説明 | デフォルト (Native Mode) |
@@ -127,7 +134,7 @@ roji/
 | `/_api/projects/{name}/delete` | プロジェクト履歴削除 |
 | `/_api/config/reload` | 設定ファイル再読み込み（静的サイト更新） |
 
-## 実装済み機能（v0.1.0 → v0.9.0）
+## 実装済み機能（v0.1.0 → v1.1.0）
 
 ### コア機能
 - ネットワークベースの自動検出（Docker Events監視）
@@ -184,13 +191,28 @@ roji/
 - Distrolessイメージ
 - セキュリティスキャン（Trivy, govulncheck）
 - インテグレーション/E2Eテスト
+- lint（gofmt / golangci-lint、GOOS ごとに 3 回）
+
+### 安全な既定値 (v1.1.0)
+- `bind` 設定（カンマ区切り、既定 `127.0.0.1,::1`）
+  - **破壊的変更**: それまで全インターフェースで待ち受けていた。同一ネットワーク
+    上の誰でもダッシュボードと無認証の Compose エンドポイントに到達できた
+  - ループバックアドレスのバインド失敗は警告してスキップ（IPv6 無効環境でも
+    `127.0.0.1` で起動する）。それ以外のアドレスの失敗は致命
+  - 別端末から到達したい場合は `bind` にそのアドレスを足すか、空文字列で
+    全インターフェース
+- `roji doctor` が待ち受けアドレスを報告
+- WebSocket を `httputil.ReverseProxy` 経由に変更（手組みの中継を廃止）
+  - `permessage-deflate` が end-to-end で成立するようになった
+  - アップグレードを拒否したバックエンドのレスポンスがそのまま届く
 
 ## 開発フロー
 
 機能開発（バグ修正を含む）では、実装後に次の順でレビューを通してからコミットする。
 
 1. **実装** — テストまで含めて書き、`go build ./...` / `go test ./...` /
-   `gofmt` / `go vet` が通る状態にする
+   `gofmt -l .`（何も出ない）/ `go vet ./...` / `golangci-lint run` が通る
+   状態にする。いずれも CI で検査される
 2. **`/code-review`** — **ユーザーが実行する**。実装が終わったらコミットせず、
    その旨を報告して待機すること
 3. **指摘への対応** — 採用しなかった指摘は理由を添えて報告する
@@ -251,7 +273,7 @@ roji/
    - GitHub Actions → GitHub Release → Docker Image
    - 公式サイト（`website/**` を変更したので Deploy Website も走る）
 
-## ロードマップ（v0.7.0 → v1.0.0）
+## ロードマップ（v0.7.0 → v1.1.0）
 
 ### バージョン計画
 
@@ -261,6 +283,7 @@ roji/
 | **v0.8.0** | Native Mode | 単体バイナリ化、`roji doctor`、CA自動インストール |
 | **v0.9.0** | 運用強化 | サービス登録、Docker Compose操作、httpd機能、BASIC認証 |
 | **v1.0.0** | 安定版 | Docker Mode廃止、Homebrew対応、i18n、ドキュメント整備 |
+| **v1.1.0** | 安全な既定値 | `bind` 設定（既定をループバックのみに変更＝破壊的）、ルーティング/WebSocket の修正、lint 導入 |
 
 ---
 
@@ -688,6 +711,55 @@ cd test && go test -v -tags=integration ./...
 # E2Eテスト
 cd test && go test -v -tags=e2e ./...
 ```
+
+### コード品質
+
+CI の `lint` ジョブが `gofmt` と `golangci-lint` を検査する。ローカルでも
+同じものを回せる。
+
+```bash
+# CI と同じ検査
+gofmt -l .                 # 何も出なければOK
+golangci-lint run ./...
+
+# プラットフォーム別ファイルの検査
+# service/ と certgen/ はビルドタグで分かれており、Linux で1回走らせるだけでは
+# macOS / Windows 用のファイルが一度もコンパイルされない。CI は GOOS ごとに
+# 3回走らせている
+GOOS=darwin golangci-lint run ./...
+GOOS=windows golangci-lint run ./...
+```
+
+設定は `.golangci.yml`。リンタはデフォルト（errcheck / govet / ineffassign /
+staticcheck / unused）のままで、除外は標準プリセット 4 つ。この構成で
+nil デリファレンスや未チェックの `os.Rename` といった実際の欠陥を検出できて
+いるので、取りこぼしが出るまでリンタは足さない方針。
+
+意図的に無視するエラーは `_ =` で明示する（`errcheck` が求める形）。
+`defer f.Close()` のようにエラーの行き場がないものは `std-error-handling`
+プリセットが除外するので、書き換えなくてよい。
+
+### go fix（modernizer）
+
+Go 1.26 の `go fix` は modernizer 群を適用するツール。`strings.CutPrefix`、
+`slices.Contains`、`min`/`max`、`t.Context()`、`for i := range n` などへの
+機械変換を行う。
+
+```bash
+go fix -diff ./...              # 変更内容を見るだけ（差分があれば exit 1）
+go fix ./...                    # 全アナライザを適用
+go fix -stringscut ./...        # アナライザを選んで適用
+go tool fix help                # アナライザ一覧
+```
+
+適用後の注意点:
+
+- `go fix` は変換結果を中間変数で受けることがある（`rest := after` 等）。
+  その場で使う形に詰め直す
+- `stringsbuilder` のように関数を書き換えるものは、他と分けてコミットし、
+  出力が変わっていないことを確認する
+- CI では回していない。Go のバージョンが上がるとアナライザが増え、
+  スタイルの問題で CI が落ちうるため
 
 ### GoReleaser
 
