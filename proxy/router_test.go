@@ -273,8 +273,7 @@ func TestRouteInfo_String(t *testing.T) {
 
 func TestRouter_Subscribe(t *testing.T) {
 	router := NewRouter()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// Subscribe
 	eventCh, cleanup := router.Subscribe(ctx)
@@ -388,7 +387,7 @@ func TestRouter_SlowSubscriber(t *testing.T) {
 	defer cleanup()
 
 	// Add many backends to fill the buffer (buffer size is 10)
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		router.AddBackend(&docker.Backend{
 			ContainerID:   "slow" + string(rune('0'+i)),
 			ContainerName: "slow",

@@ -994,8 +994,7 @@ func (h *Handler) findProjectForHostname(hostname string) *project.Project {
 
 	// Second: multi-service pattern — subdomain is "service-project"
 	// Try matching the suffix after the first hyphen
-	if idx := strings.Index(subdomain, "-"); idx != -1 {
-		projectPart := subdomain[idx+1:]
+	if _, projectPart, ok := strings.Cut(subdomain, "-"); ok {
 		for _, p := range inactive {
 			if p.Name == projectPart {
 				return p

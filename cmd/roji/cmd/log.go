@@ -74,10 +74,7 @@ func printLogTail(logPath string, n int) error {
 	}
 
 	// Print last n lines
-	start := len(lines) - n
-	if start < 0 {
-		start = 0
-	}
+	start := max(len(lines)-n, 0)
 	for _, line := range lines[start:] {
 		fmt.Println(line)
 	}
@@ -104,10 +101,7 @@ func followLog(logPath string, initialLines int) error {
 	}
 
 	// Print last n lines
-	start := len(lines) - initialLines
-	if start < 0 {
-		start = 0
-	}
+	start := max(len(lines)-initialLines, 0)
 	for _, line := range lines[start:] {
 		fmt.Println(line)
 	}

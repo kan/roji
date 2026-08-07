@@ -144,8 +144,7 @@ func parseMockLabels(labels map[string]string) []*MockRoute {
 
 	for key, value := range labels {
 		// Check for status code labels first (roji.mock.status.METHOD.PATH)
-		if strings.HasPrefix(key, LabelMockStatusPrefix) {
-			rest := strings.TrimPrefix(key, LabelMockStatusPrefix)
+		if rest, ok := strings.CutPrefix(key, LabelMockStatusPrefix); ok {
 			method, path := parseMethodPath(rest)
 			if method == "" || path == "" {
 				continue
@@ -168,8 +167,7 @@ func parseMockLabels(labels map[string]string) []*MockRoute {
 		}
 
 		// Check for body labels (roji.mock.METHOD.PATH)
-		if strings.HasPrefix(key, LabelMockPrefix) {
-			rest := strings.TrimPrefix(key, LabelMockPrefix)
+		if rest, ok := strings.CutPrefix(key, LabelMockPrefix); ok {
 			// Skip if it's a status label (already handled above)
 			if strings.HasPrefix(rest, "status.") {
 				continue

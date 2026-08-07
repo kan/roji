@@ -15,7 +15,7 @@ func buildComposeArgs(configFiles string, args ...string) []string {
 	result = append(result, "compose")
 
 	if configFiles != "" {
-		for _, f := range strings.Split(configFiles, ",") {
+		for f := range strings.SplitSeq(configFiles, ",") {
 			f = strings.TrimSpace(f)
 			if f != "" {
 				result = append(result, "-f", f)

@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -71,14 +72,7 @@ func TestGenerator_EnsureCerts_NewCerts(t *testing.T) {
 	// Check DNS names
 	expectedDNS := []string{"*.test.localhost", "test.localhost", "localhost", "*.*.test.localhost"}
 	for _, expected := range expectedDNS {
-		found := false
-		for _, dns := range serverCert.DNSNames {
-			if dns == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(serverCert.DNSNames, expected) {
 			t.Errorf("expected DNS name %q not found in certificate", expected)
 		}
 	}

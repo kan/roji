@@ -181,7 +181,7 @@ func serveDirectoryListing(w http.ResponseWriter, r *http.Request, dirPath, root
 // sortDirectoryEntries sorts entries: directories first, then files, alphabetically
 func sortDirectoryEntries(entries []DirectoryEntry) {
 	// Simple bubble sort for small lists
-	for i := 0; i < len(entries); i++ {
+	for i := range entries {
 		for j := i + 1; j < len(entries); j++ {
 			swap := false
 			if entries[i].IsDir != entries[j].IsDir {
