@@ -17,11 +17,11 @@ func NewFirefoxInstaller() *FirefoxInstaller {
 }
 
 func (i *FirefoxInstaller) Install(caCertPath string) error {
-	return errors.New("Firefox certificate installation is only supported on Linux. On macOS/Windows, Firefox uses the system certificate store")
+	return errors.New("installing a certificate into Firefox is only supported on Linux; on macOS and Windows, Firefox uses the system certificate store")
 }
 
 func (i *FirefoxInstaller) Uninstall(caCertPath string) error {
-	return errors.New("Firefox certificate uninstallation is only supported on Linux. On macOS/Windows, Firefox uses the system certificate store")
+	return errors.New("removing a certificate from Firefox is only supported on Linux; on macOS and Windows, Firefox uses the system certificate store")
 }
 
 func (i *FirefoxInstaller) IsInstalled(caCertPath string) (bool, error) {

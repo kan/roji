@@ -52,6 +52,15 @@ type ServiceOptions struct {
 	User string // User to run service as (empty = auto-detect)
 }
 
+// commandExists checks if a command is available in PATH.
+//
+// Lives here rather than in service.go because systemd is its only caller, and
+// service.go is built on every platform.
+func commandExists(cmd string) bool {
+	_, err := exec.LookPath(cmd)
+	return err == nil
+}
+
 func newSystemdManagerWithOptions(opts ServiceOptions) (*systemdManager, error) {
 	if !commandExists("systemctl") {
 		return nil, fmt.Errorf("systemctl not found - systemd is required")

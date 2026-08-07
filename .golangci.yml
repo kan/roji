@@ -1,0 +1,21 @@
+# golangci-lint configuration
+#
+# The linter set is the default one (errcheck, govet, ineffassign, staticcheck,
+# unused). It is enough to have caught real defects here — a nil dereference in
+# tests, an unchecked rename that let the log grow without bound, dead code —
+# so nothing is added until something is missed.
+#
+# Formatting is not checked here. CI runs `gofmt -l` as its own step so the
+# failure names the files directly.
+version: "2"
+
+linters:
+  exclusions:
+    # Standard exclusions. std-error-handling is the one that matters: it
+    # covers Close, Flush, print* and the like, whose errors have nowhere to go.
+    # It is narrow enough to leave the checks that found real problems alone.
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling

@@ -3,7 +3,6 @@ package service
 
 import (
 	"fmt"
-	"os/exec"
 	"runtime"
 )
 
@@ -64,10 +63,4 @@ func NewManagerWithOptions(opts Options) (Manager, error) {
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
-}
-
-// commandExists checks if a command is available in PATH
-func commandExists(cmd string) bool {
-	_, err := exec.LookPath(cmd)
-	return err == nil
 }
