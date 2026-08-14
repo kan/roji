@@ -274,6 +274,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	isDashboardHost := h.dashboardHost != "" && hostname == h.dashboardHost
 	isBaseDomain := h.baseDomain != "" && hostname == h.baseDomain
 
+	// Everything below answers on the dashboard host and none of it is
+	// authenticated, so TunnelHandler refuses the paths by prefix before they
+	// reach here. A dashboard endpoint outside /_api/ or /_assets/ has to be
+	// added to that list too, or the tunnel publishes it.
 	if isDashboardHost || isBaseDomain {
 		// If accessing via base domain, redirect to dashboard host
 		if isBaseDomain && !isDashboardHost {
@@ -922,6 +926,16 @@ func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request, hostnam
 	slog.Warn("no route found",
 		"hostname", hostname,
 		"path", r.URL.Path)
+
+	// The page below names every route roji knows — hostnames, container and
+	// project names, backend addresses — which is a diagnostic for whoever runs
+	// the machine and an inventory for anyone else. A request that got this far
+	// through the tunnel lost its route between the guard and here, so it gets
+	// the same bare 404 the guard would have given it.
+	if isTunneled(r) {
+		bareNotFound(w)
+		return
+	}
 
 	routes := h.router.ListRoutes()
 

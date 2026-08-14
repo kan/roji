@@ -20,6 +20,7 @@ import (
 	"github.com/kan/roji/i18n"
 	"github.com/kan/roji/project"
 	"github.com/kan/roji/proxy"
+	"github.com/kan/roji/tunnel"
 	"golang.org/x/net/http2"
 )
 
@@ -37,6 +38,7 @@ type Config struct {
 	DataDir       string              // Directory for persistent data (project history)
 	StaticSites   []config.StaticSite // Static file hosting sites
 	ConfigPath    string              // Path to config file (for reload)
+	Tunnel        *config.Tunnel      // Cloudflare Tunnel; nil or incomplete means no tunnel
 }
 
 const (
@@ -193,6 +195,10 @@ func run(ctx context.Context, cfg Config) error {
 
 	handler := proxy.NewHandler(router, dockerClient, cfg.DashboardHost, cfg.BaseDomain, statusConfig, projectStore)
 
+	if cfg.Tunnel.Enabled() {
+		router.SetTunnelDomains(tunnelDomains(cfg))
+	}
+
 	// Register static sites
 	registerStaticSites(cfg, router)
 
@@ -219,17 +225,101 @@ func run(ctx context.Context, cfg Config) error {
 		return err
 	}
 
+	tunnelServer, tunnelRunner := startTunnel(cfg, router, handler)
+
 	// Print registered routes
 	printRoutes(router)
 
 	// Wait for shutdown
 	<-ctx.Done()
 
-	// Graceful shutdown
-	shutdownServers(context.Background(), httpServer, httpsServer)
+	// Graceful shutdown. The tunnel goes first so no new request arrives from
+	// outside while the servers behind it are closing.
+	if tunnelRunner != nil {
+		tunnelRunner.Stop()
+	}
+	shutdownServers(context.Background(), []namedServer{
+		{"tunnel", tunnelServer},
+		{"HTTP", httpServer},
+		{"HTTPS", httpsServer},
+	})
 
 	slog.Info("shutdown complete")
 	return nil
+}
+
+// tunnelDomains returns the mapping between local hostnames and the public
+// names they answer to.
+func tunnelDomains(cfg Config) proxy.TunnelDomains {
+	return proxy.TunnelDomains{Base: cfg.BaseDomain, Public: cfg.Tunnel.Domain}
+}
+
+// startTunnel opens the listener cloudflared forwards to and, when configured
+// to, starts cloudflared itself.
+//
+// Neither failure stops roji: the tunnel is an addition to a proxy that works
+// without it, and a machine that cannot reach Cloudflare — or has no
+// cloudflared installed yet — should still serve localhost.
+func startTunnel(cfg Config, router *proxy.Router, handler http.Handler) (*http.Server, *tunnel.Runner) {
+	if !cfg.Tunnel.Enabled() {
+		return nil, nil
+	}
+
+	port := cfg.Tunnel.ListenPort()
+
+	// Sharing a port with the proxy defeats the separation the guard rests on.
+	// Which listener wins depends on bind: with 127.0.0.1 in it the tunnel
+	// listener fails to open, and without it the tunnel takes the port and
+	// local browsers reach the guard instead of the proxy. Refuse either way.
+	if port == cfg.HTTPPort || port == cfg.HTTPSPort {
+		slog.Error("tunnel port is already a proxy port, continuing without the tunnel",
+			"tunnel_port", port, "http_port", cfg.HTTPPort, "https_port", cfg.HTTPSPort)
+		return nil, nil
+	}
+
+	// Loopback only, and never the address set the main listeners use: what
+	// makes the guard possible is that reaching roji through this port means
+	// the request came through the tunnel.
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		slog.Error("tunnel listener unavailable, continuing without the tunnel",
+			"address", addr, "error", err)
+		return nil, nil
+	}
+
+	server := &http.Server{
+		Handler:      proxy.NewTunnelHandler(handler, router, tunnelDomains(cfg), cfg.DashboardHost),
+		ReadTimeout:  0, // Match the HTTPS server: large uploads, SSE, WebSocket
+		WriteTimeout: 0,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	slog.Info("starting tunnel listener", "address", ln.Addr(), "domain", cfg.Tunnel.Domain)
+	go func() {
+		if err := server.Serve(ln); err != http.ErrServerClosed {
+			slog.Error("tunnel server error", "address", ln.Addr(), "error", err)
+		}
+	}()
+
+	if !cfg.Tunnel.AutoStart {
+		slog.Info("tunnel auto_start is off; run cloudflared yourself to publish",
+			"command", fmt.Sprintf("cloudflared tunnel run %s", cfg.Tunnel.Name))
+		return server, nil
+	}
+
+	runner := tunnel.NewRunner(tunnel.Config{
+		Domain:     cfg.Tunnel.Domain,
+		Name:       cfg.Tunnel.Name,
+		Port:       port,
+		ConfigPath: filepath.Join(cfg.DataDir, "cloudflared.yml"),
+	})
+	if err := runner.Start(); err != nil {
+		slog.Error("cannot start cloudflared, continuing without it", "error", err)
+		return server, nil
+	}
+
+	return server, runner
 }
 
 // closeListeners closes every listener, for giving up on a partially opened set.
@@ -337,20 +427,26 @@ func startHTTPSServer(cfg Config, handler http.Handler) (*http.Server, error) {
 	return httpsServer, nil
 }
 
-func shutdownServers(ctx context.Context, httpServer, httpsServer *http.Server) {
+// namedServer pairs a server with the name it is reported under.
+type namedServer struct {
+	name   string
+	server *http.Server // nil for a server that never started
+}
+
+func shutdownServers(ctx context.Context, servers []namedServer) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer shutdownCancel()
 
 	// A Shutdown error means the deadline passed with connections still open,
 	// so roji is about to drop them. Worth saying, since the alternative
 	// reading of a slow exit is that roji hung.
-	if httpServer != nil {
-		if err := httpServer.Shutdown(shutdownCtx); err != nil {
-			slog.Warn("HTTP server did not shut down cleanly", "error", err)
+	for _, s := range servers {
+		if s.server == nil {
+			continue
 		}
-	}
-	if err := httpsServer.Shutdown(shutdownCtx); err != nil {
-		slog.Warn("HTTPS server did not shut down cleanly", "error", err)
+		if err := s.server.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("server did not shut down cleanly", "server", s.name, "error", err)
+		}
 	}
 }
 
@@ -620,6 +716,9 @@ func printBanner(cfg Config) {
 	fmt.Printf("  %s\n", i18n.Tf("server.banner.dashboard", cfg.DashboardHost))
 	if len(cfg.StaticSites) > 0 {
 		fmt.Printf("  %s\n", i18n.Tf("server.banner.static", len(cfg.StaticSites)))
+	}
+	if cfg.Tunnel.Enabled() {
+		fmt.Printf("  %s\n", i18n.Tf("server.banner.tunnel", cfg.Tunnel.Domain, cfg.Tunnel.ListenPort()))
 	}
 	fmt.Println()
 

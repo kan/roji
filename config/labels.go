@@ -17,9 +17,10 @@ const (
 	LabelPrefix = "roji."
 
 	// Supported labels
-	LabelHost = LabelPrefix + "host" // Custom hostname (default: {service}.{domain})
-	LabelPort = LabelPrefix + "port" // Target port when multiple ports exposed
-	LabelPath = LabelPrefix + "path" // Path prefix for routing (optional)
+	LabelHost   = LabelPrefix + "host"   // Custom hostname (default: {service}.{domain})
+	LabelPort   = LabelPrefix + "port"   // Target port when multiple ports exposed
+	LabelPath   = LabelPrefix + "path"   // Path prefix for routing (optional)
+	LabelTunnel = LabelPrefix + "tunnel" // Publish this route through the tunnel
 
 	// Mock labels prefix
 	LabelMockPrefix       = LabelPrefix + "mock."       // roji.mock.GET./path = response body
@@ -56,6 +57,10 @@ type RouteConfig struct {
 	PathPrefix string
 	MockRoutes []*MockRoute // Mock responses for this container
 	BasicAuth  *BasicAuth   // Basic authentication (optional)
+	// Tunnel opts this route into being reachable from the internet. Publishing
+	// is opt-in per container: roji routes everything on its network without
+	// asking, and that default is safe only as long as it stays local.
+	Tunnel bool
 }
 
 // ParseLabels extracts roji configuration from container labels
@@ -90,6 +95,8 @@ func ParseLabels(labels map[string]string) *RouteConfig {
 		}
 	}
 
+	cfg.Tunnel = parseBoolLabel(labels[LabelTunnel])
+
 	// Parse mock labels
 	cfg.MockRoutes = parseMockLabels(labels)
 
@@ -97,6 +104,20 @@ func ParseLabels(labels map[string]string) *RouteConfig {
 	cfg.BasicAuth = parseBasicAuthLabels(labels)
 
 	return cfg
+}
+
+// parseBoolLabel reads a label that turns something on.
+//
+// Only an affirmative spelling counts. Anything else — a missing label, an
+// empty one, a typo — leaves the feature off, which is the direction a
+// misreading should fall for a label that exposes a container to the internet.
+func parseBoolLabel(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // parseBasicAuthLabels extracts basic authentication configuration from labels

@@ -53,6 +53,7 @@ type Backend struct {
 	Network       string              // Docker network name this container was found on
 	MockRoutes    []*config.MockRoute // Mock responses defined via labels
 	BasicAuth     *config.BasicAuth   // Basic authentication (optional)
+	Tunnel        bool                // Published through the tunnel; see config.RouteConfig.Tunnel
 }
 
 // ProjectInfo contains docker-compose project metadata
@@ -314,6 +315,7 @@ func (c *Client) inspectToBackend(info container.InspectResponse, networkName st
 		Network:       networkName,
 		MockRoutes:    labelCfg.MockRoutes,
 		BasicAuth:     labelCfg.BasicAuth,
+		Tunnel:        labelCfg.Tunnel,
 	}, nil
 }
 

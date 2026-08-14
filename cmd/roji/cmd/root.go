@@ -219,6 +219,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		DataDir:       settings.DataDir,
 		StaticSites:   settings.StaticSites,
 		ConfigPath:    actualConfigPath,
+		Tunnel:        settings.Tunnel,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

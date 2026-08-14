@@ -55,6 +55,7 @@ roji/
 ├── proxy/
 │   ├── handler.go           # ReverseProxy 実装
 │   ├── router.go            # ルーティング + SSE Pub/Sub
+│   ├── tunnel.go            # トンネルリスナーのガード
 │   └── templates/           # HTML/CSS/JS（embed.FS）
 ├── certgen/
 │   ├── generator.go         # TLS証明書生成
@@ -63,6 +64,8 @@ roji/
 │   ├── installer_linux.go   # Linux (Debian/RHEL) 対応
 │   ├── installer_windows.go # Windows certutil対応
 │   └── installer_wsl.go     # WSL→Windows対応
+├── tunnel/
+│   └── cloudflared.go       # cloudflared の設定生成とプロセス管理
 ├── config/
 │   ├── labels.go            # ラベルパーサー
 │   ├── paths.go             # XDGパスユーティリティ
@@ -91,6 +94,7 @@ roji/
 | `roji.auth.basic.user` | BASIC認証ユーザー名 | なし |
 | `roji.auth.basic.pass` | BASIC認証パスワード | なし |
 | `roji.auth.basic.realm` | BASIC認証レルム | `Restricted` |
+| `roji.tunnel` | トンネルで外部公開する（`true` / `1` / `yes` / `on`） | なし（非公開） |
 | `roji.self` | 予約済み: コンテナをルーティング対象から除外（内部使用） | なし |
 
 `roji.path` の挙動（v1.1.0 で修正）:
@@ -115,6 +119,60 @@ roji/
 `strings.Contains` で見て警告ページの種別を決めている。`"hostname conflict"`
 という書き出しは変えないこと（変えると分類が unknown に落ちる）。
 
+### 外部公開（トンネル）
+
+v1.2.0 で追加。Cloudflare Tunnel を通して選んだルートだけを外部から
+到達可能にする。設定は `tunnel:` ブロック（後述）と `roji.tunnel` ラベル。
+
+**なぜ専用ポートなのか。** cloudflared は 127.0.0.1 から接続してくるので、
+リクエストの中身ではローカルのブラウザと区別がつかない。区別できるのは
+到達したポートだけ。だから通常の `bind` リスナーとは別に
+`127.0.0.1:{tunnel.port}`（既定 8080）を開き、そこに来たものだけを
+「外から来た」として扱う。この分離がガードの成立条件そのものなので、
+トンネルを既存リスナーに相乗りさせないこと。
+
+**ガード（`proxy/tunnel.go` の `TunnelHandler`）が落とすもの:**
+
+1. `/_api/*` と `/_assets/*` は**パスだけで無条件 404**。ホスト名や設定で
+   開けられないようにしてある。`/_api/projects/{name}/up` は無認証で
+   コンテナを起動でき、`/_api/logs` はリクエストログを読める
+2. ダッシュボードホストとベースドメイン
+3. `roji.tunnel=true` が無い Docker ルート（**明示オプトイン**。roji は
+   ネットワーク上のコンテナをラベル無しで拾うので、既定で公開すると
+   全部が外に出る）
+4. 静的サイト（オプトインの綴りが無いため現状すべて非公開）
+
+拒否は理由によらず同じ素の 404 を返す。文言を分けるとどのホスト名が
+存在するかを教えてしまう。
+
+ガードを通った後も同じ規律が要る。ガードと `Handler` はそれぞれ独立に
+`Lookup` するので、その間にコンテナが消えるとリクエストは not found ページに
+落ちる。このページは全ルート（ホスト名・コンテナ名・プロジェクト名・
+バックエンドの ip:port）を列挙するので、トンネル由来のリクエストには
+素の 404 を返す（`isTunneled`）。
+
+トンネル用ポートが `http_port` / `https_port` と衝突したらトンネルを開かない。
+どちらのリスナーが勝つかは `bind` 次第で、`bind` に 127.0.0.1 が無ければ
+トンネル側が勝ち、ローカルのブラウザがガードに当たることになる。
+
+**ホスト名の対応:** `web.dev.localhost` ⇔ `web.example.com`。接尾辞だけを
+入れ替える（`proxy.TunnelDomains`）。ルーティングキーはローカル名のままなので、
+ルートの保存・照合・表示はトンネルの有無で変わらない。バックエンドに渡す
+Host もローカル名（dev サーバーの host 許可リストがそれを期待する）。
+
+**cloudflared の ingress は `*.{domain}` の catch-all 1 本に固定。**
+cloudflared には設定のホットリロードが無い（SIGHUP 非対応）ため、ルートごとに
+ingress を書くとコンテナの起動・停止のたびに再起動＝全接続断になる。
+ホスト名解決は roji 側が持つ。
+
+**ドメインは 1 階層に収める。** Cloudflare の Universal SSL は `example.com` と
+`*.example.com` しかカバーしない。`*.tunnel.example.com` にすると
+Advanced Certificate Manager（有償）が必要になる。設定バリデーションが警告を出す。
+
+**手動作業:** `*.{domain}` の DNS を `<uuid>.cfargotunnel.com` に向ける設定は
+roji がやらない（Cloudflare の API トークンを持たせたくないため）。
+`roji doctor` と `cloudflared tunnel route dns` で案内する。
+
 ### 環境変数
 
 | 環境変数 | 説明 | デフォルト (Native Mode) |
@@ -129,6 +187,9 @@ roji/
 | `ROJI_HTTP_PORT` | HTTPポート | `80` |
 | `ROJI_HTTPS_PORT` | HTTPSポート | `443` |
 | `ROJI_AUTO_CERT` | 証明書自動生成 | `true` |
+
+トンネル（`tunnel:`）と静的サイト（`static_sites:`）は設定ファイル専用で、
+対応する環境変数は無い。
 
 ### API エンドポイント
 
@@ -149,7 +210,7 @@ roji/
 | `/_api/projects/{name}/delete` | プロジェクト履歴削除 |
 | `/_api/config/reload` | 設定ファイル再読み込み（静的サイト更新） |
 
-## 実装済み機能（v0.1.0 → v1.1.0）
+## 実装済み機能（v0.1.0 → v1.2.0）
 
 ### コア機能
 - ネットワークベースの自動検出（Docker Events監視）
@@ -221,6 +282,15 @@ roji/
   - `permessage-deflate` が end-to-end で成立するようになった
   - アップグレードを拒否したバックエンドのレスポンスがそのまま届く
 
+### 外部公開 (v1.2.0)
+- Cloudflare Tunnel 経由の外部公開（`tunnel:` 設定 + `roji.tunnel` ラベル）
+  - cloudflared は子プロセスとして exec（ライブラリとして import すると
+    quic-go を引き込んでバイナリが数 MB 増えるため）
+  - 専用リスナー `127.0.0.1:{tunnel.port}` + `TunnelHandler` のガード
+  - `auto_start: true` で roji が cloudflared を起動・停止する
+- `roji doctor` が cloudflared の導入・ログイン・named tunnel の存在を確認
+- ダッシュボードに 🌐 バッジと公開 URL を表示
+
 ## 開発フロー
 
 機能開発（バグ修正を含む）では、実装後に次の順でレビューを通してからコミットする。
@@ -288,7 +358,7 @@ roji/
    - GitHub Actions → GitHub Release → Docker Image
    - 公式サイト（`website/**` を変更したので Deploy Website も走る）
 
-## ロードマップ（v0.7.0 → v1.1.0）
+## ロードマップ（v0.7.0 → v1.2.0）
 
 ### バージョン計画
 
@@ -300,6 +370,7 @@ roji/
 | **v1.0.0** | 安定版 | Docker Mode廃止、Homebrew対応、i18n、ドキュメント整備 |
 | **v1.1.0** | 安全な既定値 | `bind` 設定（既定をループバックのみに変更＝破壊的）、ルーティング/WebSocket の修正、lint 導入 |
 | **v1.1.1** | ルーティング修正 | ホスト名+プレフィックスの衝突検出、静的サイト優先の明確化 |
+| **v1.2.0** | 外部公開 | Cloudflare Tunnel ラッパー（`roji.tunnel` オプトイン、専用リスナー + ガード） |
 
 ---
 
@@ -375,6 +446,13 @@ log_level: info
 http_port: 80
 https_port: 443
 auto_cert: true
+
+# 外部公開（省略可。domain と name が揃ったときだけ有効）
+tunnel:
+  domain: example.com   # Cloudflare 上のゾーン。1階層に収める
+  name: roji            # cloudflared tunnel create で作った named tunnel
+  port: 8080            # トンネル専用リスナー（127.0.0.1 固定）
+  auto_start: false     # roji が cloudflared を起動するか
 ```
 
 - [x] **config コマンド**
@@ -417,6 +495,7 @@ Run 'roji doctor --fix' to auto-fix where possible
 - CA証明書のシステムインストール状態（修復可能、WSLではWindows側も確認）
 - サーバー証明書の有効期限（修復可能）
 - DNS解決（*.localhost）
+- トンネル（設定時のみ: cloudflared の導入・ログイン・named tunnel の存在）
 
 **フラグ:**
 - `--fix` - 修復可能な問題を自動修復
@@ -689,6 +768,31 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 3. パッケージマネージャー対応（Homebrew Formula）
 4. 多言語対応 (i18n)
 5. ドキュメント整備（最後にまとめて更新）
+
+---
+
+### v1.2.0: 外部公開（トンネル）
+
+`bind` がループバック限定になった（v1.1.0）ぶん、外から触りたいときの
+手段が無くなったのを埋めるもの。用途は webhook 受信と、開発中のアプリを
+外部に見せること。
+
+- [x] `tunnel:` 設定ブロック（domain / name / port / auto_start）+ バリデーション
+- [x] `roji.tunnel` ラベル（明示オプトイン）
+- [x] `proxy/tunnel.go` — 専用リスナーのガード
+- [x] `tunnel/cloudflared.go` — ingress 生成と cloudflared のプロセス管理
+- [x] `roji doctor` のトンネルチェック
+- [x] ダッシュボードの 🌐 バッジと公開 URL
+
+**意図的に入れていないもの:**
+
+- `roji tunnel start/stop/status` コマンド。`auto_start: false` のときは
+  ユーザーが `cloudflared tunnel run <name>` を回す前提
+- 静的サイトの公開。`static_sites:` にオプトインの綴りが無い
+- cloudflared のクラッシュ後の自動再起動。roji はプロセスマネージャでは
+  ないので、落ちたことを報告して放置する（認証に失敗し続けるトンネルが
+  黙って再試行を繰り返すのを避ける）
+- Cloudflare API トークンによる DNS レコードの自動作成
 
 ---
 

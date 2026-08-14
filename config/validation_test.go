@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -295,5 +296,94 @@ func TestValidationResult_FormatMessages(t *testing.T) {
 	}
 	if messages[0] != "[unknown_key] network: test message" {
 		t.Errorf("unexpected message format: %s", messages[0])
+	}
+}
+
+func TestValidateConfigYAML_TunnelValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		yaml       string
+		wantIssues []string // substrings expected in the reported issues
+		wantClean  bool
+	}{
+		{
+			name: "valid tunnel",
+			yaml: `tunnel:
+  domain: example.com
+  name: roji
+  port: 8080
+  auto_start: true
+`,
+			wantClean: true,
+		},
+		{
+			name: "minimal tunnel",
+			yaml: `tunnel:
+  domain: example.com
+  name: roji
+`,
+			wantClean: true,
+		},
+		{
+			name: "unknown key",
+			yaml: `tunnel:
+  domain: example.com
+  name: roji
+  hostname: web
+`,
+			wantIssues: []string{"tunnel.hostname"},
+		},
+		{
+			name: "wrong types",
+			yaml: `tunnel:
+  domain: example.com
+  name: roji
+  port: "8080"
+  auto_start: "yes"
+`,
+			wantIssues: []string{"tunnel.port", "tunnel.auto_start"},
+		},
+		{
+			name: "missing both names",
+			yaml: `tunnel:
+  port: 8080
+`,
+			wantIssues: []string{"missing required key 'domain'", "missing required key 'name'"},
+		},
+		{
+			name: "two-level domain needs a paid certificate",
+			yaml: `tunnel:
+  domain: tunnel.example.com
+  name: roji
+`,
+			wantIssues: []string{"Advanced Certificate Manager"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ValidateConfigYAML([]byte(tt.yaml))
+			messages := result.FormatMessages()
+
+			if tt.wantClean {
+				if result.HasIssues() {
+					t.Errorf("expected no issues, got: %v", messages)
+				}
+				return
+			}
+
+			for _, want := range tt.wantIssues {
+				found := false
+				for _, msg := range messages {
+					if strings.Contains(msg, want) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected an issue mentioning %q, got: %v", want, messages)
+				}
+			}
+		})
 	}
 }

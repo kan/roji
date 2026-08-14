@@ -40,6 +40,63 @@ func (s *StaticSite) GetBasicAuth() *BasicAuth {
 	return s.Auth.Basic
 }
 
+// DefaultTunnelPort is the port the tunnel listener takes when the tunnel is
+// configured without one.
+//
+// It is deliberately not 80 or 443: the tunnel listener is a separate door into
+// roji with its own guard, and telling the two apart is what makes the guard
+// possible at all. See Tunnel.Port.
+const DefaultTunnelPort = 8080
+
+// Tunnel configures exposing selected routes to the internet through a
+// Cloudflare Tunnel.
+//
+// roji runs cloudflared as a child process rather than linking it: the library
+// pulls in a QUIC stack and several megabytes of binary, and roji already
+// shells out to `docker compose` for the same reason.
+type Tunnel struct {
+	// Domain is a zone on the Cloudflare account, e.g. "example.com". A route
+	// published as "web.dev.localhost" locally answers to "web.example.com".
+	//
+	// One level only. Cloudflare's Universal SSL covers "example.com" and
+	// "*.example.com"; a two-level name like "*.tunnel.example.com" needs the
+	// paid Advanced Certificate Manager.
+	Domain string `yaml:"domain"`
+
+	// Name is the named tunnel to run, created beforehand with
+	// `cloudflared tunnel create`.
+	Name string `yaml:"name"`
+
+	// Port is the tunnel listener's port on 127.0.0.1. cloudflared reaches roji
+	// through it, and every request arriving there is treated as coming from
+	// the internet.
+	//
+	// A separate port is the whole mechanism: cloudflared connects from
+	// 127.0.0.1 like any local browser, so nothing in the request distinguishes
+	// the two. The port does.
+	Port int `yaml:"port,omitempty"`
+
+	// AutoStart runs cloudflared alongside roji. With it off the listener still
+	// opens and whoever wants the tunnel runs `cloudflared tunnel run` himself.
+	AutoStart bool `yaml:"auto_start,omitempty"`
+}
+
+// Enabled reports whether the tunnel is configured well enough to open the
+// listener. Both names are required: the domain decides which public hostnames
+// resolve to which route, and the tunnel name decides what cloudflared runs.
+func (t *Tunnel) Enabled() bool {
+	return t != nil && t.Domain != "" && t.Name != ""
+}
+
+// ListenPort returns the port the tunnel listener binds, filling in the default
+// for a tunnel configured without one.
+func (t *Tunnel) ListenPort() int {
+	if t == nil || t.Port == 0 {
+		return DefaultTunnelPort
+	}
+	return t.Port
+}
+
 // DefaultBind is the address set roji listens on when nothing else is
 // configured: both loopback addresses, and nothing beyond the machine itself.
 //
@@ -60,6 +117,7 @@ type Settings struct {
 	LogLevel    string       `yaml:"log_level"`              // Log level (debug, info, warn, error)
 	AutoCert    bool         `yaml:"auto_cert"`              // Auto-generate certificates
 	StaticSites []StaticSite `yaml:"static_sites,omitempty"` // Static file hosting sites
+	Tunnel      *Tunnel      `yaml:"tunnel,omitempty"`       // Cloudflare Tunnel for outside access
 }
 
 // Defaults returns settings with default values
@@ -172,6 +230,9 @@ func (s *Settings) loadFromFile(path string) error {
 			fileSettings.StaticSites[i].Root = ExpandPath(fileSettings.StaticSites[i].Root)
 		}
 		s.StaticSites = fileSettings.StaticSites
+	}
+	if _, ok := rawMap["tunnel"]; ok {
+		s.Tunnel = fileSettings.Tunnel
 	}
 
 	return nil

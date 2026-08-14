@@ -122,6 +122,24 @@
             align-items: center;
             gap: 4px;
         }
+        .tunnel-badge {
+            background: var(--warning-bg);
+            color: var(--warning-text);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .route-tunnel {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+        .route-tunnel a {
+            color: var(--link-color);
+        }
         .empty {
             padding: 40px;
             text-align: center;
@@ -848,6 +866,9 @@
                         <span v-if="route.isStatic">&#x1F4C1;</span>
                         &#x2192; {{route.target}}
                     </div>
+                    <div v-if="route.tunnelUrl" class="route-tunnel">
+                        &#x1F310; <a :href="route.tunnelUrl" target="_blank">{{route.tunnelUrl}}</a>
+                    </div>
                     <div v-if="route.warning" class="warning-badge">&#x26A0;&#xFE0F; {{route.warning}}</div>
                 </div>
                 <div class="route-info">
@@ -873,6 +894,9 @@
                         <span v-if="restartingContainer === route.containerId">&#x21BB; {{t('dashboard.route.restarting')}}</span>
                         <span v-else>&#x21BB; {{t('dashboard.projects.restart')}}</span>
                     </button>
+                    <span v-if="route.tunnelUrl" class="tunnel-badge" :title="t('dashboard.route.tunnel')">
+                        &#x1F310; tunnel
+                    </span>
                     <span v-if="route.hasBasicAuth" class="auth-badge" :title="t('dashboard.route.auth')">
                         &#x1F512; auth
                     </span>

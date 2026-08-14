@@ -408,3 +408,41 @@ func TestParseBasicAuthLabels(t *testing.T) {
 		})
 	}
 }
+
+func TestParseLabelsTunnel(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"true", "true", true},
+		{"one", "1", true},
+		{"yes", "yes", true},
+		{"on", "on", true},
+		{"mixed case", "True", true},
+		{"padded", "  true  ", true},
+		{"false", "false", false},
+		{"zero", "0", false},
+		{"empty", "", false},
+		// Anything unrecognized leaves the route unpublished: a label that
+		// exposes a container to the internet must not turn on by accident.
+		{"typo", "ture", false},
+		{"other word", "enabled", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := ParseLabels(map[string]string{"roji.tunnel": tt.value})
+			if cfg.Tunnel != tt.want {
+				t.Errorf("ParseLabels(roji.tunnel=%q).Tunnel = %v, want %v", tt.value, cfg.Tunnel, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseLabelsTunnelAbsent(t *testing.T) {
+	cfg := ParseLabels(map[string]string{"roji.host": "api.localhost"})
+	if cfg.Tunnel {
+		t.Error("a container with no roji.tunnel label must not be published")
+	}
+}

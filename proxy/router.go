@@ -44,6 +44,10 @@ type Router struct {
 	// Static file hosting routes
 	staticRoutes map[string]*Route // key: hostname (lowercase)
 
+	// Domain mapping used to name a published route's public URL. Zero when no
+	// tunnel is configured, in which case ListRoutes reports no URLs.
+	tunnelDomains TunnelDomains
+
 	// Pub/Sub for SSE subscribers
 	subMu       sync.RWMutex
 	subscribers map[*Subscriber]struct{}
@@ -57,6 +61,27 @@ func NewRouter() *Router {
 		staticRoutes: make(map[string]*Route),
 		subscribers:  make(map[*Subscriber]struct{}),
 	}
+}
+
+// SetTunnelDomains records the domain mapping so ListRoutes can name the public
+// URL of each published route. Called once at startup, before serving.
+func (r *Router) SetTunnelDomains(domains TunnelDomains) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tunnelDomains = domains
+}
+
+// tunnelURL returns the address a published route answers to from the internet,
+// or an empty string for a route that is not published. The caller holds r.mu.
+func (r *Router) tunnelURL(route *Route) string {
+	if route.Backend == nil || !route.Backend.Tunnel {
+		return ""
+	}
+	public, ok := r.tunnelDomains.ToPublic(route.Hostname)
+	if !ok {
+		return ""
+	}
+	return "https://" + public + route.PathPrefix
 }
 
 // claimedRoute returns the route already serving this hostname and prefix, or
@@ -361,6 +386,27 @@ func (r *Router) Lookup(hostname, path string) *Route {
 	return r.routes[hostname]
 }
 
+// backendRouteInfo renders a Docker route for display. The caller holds r.mu.
+func (r *Router) backendRouteInfo(route *Route) RouteInfo {
+	target := ""
+	if route.Backend.Port > 0 {
+		target = fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port)
+	}
+	return RouteInfo{
+		Hostname:      route.Hostname,
+		PathPrefix:    route.PathPrefix,
+		Target:        target,
+		ContainerID:   route.Backend.ContainerID,
+		ContainerName: route.Backend.ContainerName,
+		ServiceName:   route.Backend.ServiceName,
+		ProjectName:   route.Backend.ProjectName,
+		Warning:       route.Backend.Warning,
+		Network:       route.Backend.Network,
+		HasBasicAuth:  route.Backend.BasicAuth != nil,
+		TunnelURL:     r.tunnelURL(route),
+	}
+}
+
 // ListRoutes returns all current routes for display
 func (r *Router) ListRoutes() []RouteInfo {
 	r.mu.RLock()
@@ -369,42 +415,12 @@ func (r *Router) ListRoutes() []RouteInfo {
 	infos := []RouteInfo{}
 
 	for _, route := range r.routes {
-		target := ""
-		if route.Backend.Port > 0 {
-			target = fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port)
-		}
-		infos = append(infos, RouteInfo{
-			Hostname:      route.Hostname,
-			PathPrefix:    route.PathPrefix,
-			Target:        target,
-			ContainerID:   route.Backend.ContainerID,
-			ContainerName: route.Backend.ContainerName,
-			ServiceName:   route.Backend.ServiceName,
-			ProjectName:   route.Backend.ProjectName,
-			Warning:       route.Backend.Warning,
-			Network:       route.Backend.Network,
-			HasBasicAuth:  route.Backend.BasicAuth != nil,
-		})
+		infos = append(infos, r.backendRouteInfo(route))
 	}
 
 	for _, routes := range r.pathRoutes {
 		for _, route := range routes {
-			target := ""
-			if route.Backend.Port > 0 {
-				target = fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port)
-			}
-			infos = append(infos, RouteInfo{
-				Hostname:      route.Hostname,
-				PathPrefix:    route.PathPrefix,
-				Target:        target,
-				ContainerID:   route.Backend.ContainerID,
-				ContainerName: route.Backend.ContainerName,
-				ServiceName:   route.Backend.ServiceName,
-				ProjectName:   route.Backend.ProjectName,
-				Warning:       route.Backend.Warning,
-				Network:       route.Backend.Network,
-				HasBasicAuth:  route.Backend.BasicAuth != nil,
-			})
+			infos = append(infos, r.backendRouteInfo(route))
 		}
 	}
 
@@ -445,6 +461,11 @@ type RouteInfo struct {
 	IsStatic      bool   `json:"isStatic,omitempty"`
 	IndexEnabled  bool   `json:"indexEnabled,omitempty"` // For static sites: directory listing enabled
 	HasBasicAuth  bool   `json:"hasBasicAuth,omitempty"` // Whether basic auth is enabled
+	// TunnelURL is the address a route answers to from the internet, empty for
+	// one that does not. It is the only spelling of "published": a route opted
+	// in with roji.tunnel while no tunnel is configured reaches nobody, and
+	// saying so twice invites the two answers to disagree.
+	TunnelURL string `json:"tunnelUrl,omitempty"`
 }
 
 func (ri RouteInfo) String() string {

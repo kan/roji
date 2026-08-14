@@ -510,3 +510,101 @@ func TestLocalAddr(t *testing.T) {
 		}
 	}
 }
+
+func TestTunnelEnabled(t *testing.T) {
+	tests := []struct {
+		name   string
+		tunnel *Tunnel
+		want   bool
+	}{
+		{"nil", nil, false},
+		{"empty", &Tunnel{}, false},
+		{"domain only", &Tunnel{Domain: "example.com"}, false},
+		{"name only", &Tunnel{Name: "roji"}, false},
+		{"both", &Tunnel{Domain: "example.com", Name: "roji"}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.tunnel.Enabled(); got != tt.want {
+				t.Errorf("Enabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTunnelListenPort(t *testing.T) {
+	tests := []struct {
+		name   string
+		tunnel *Tunnel
+		want   int
+	}{
+		{"nil", nil, DefaultTunnelPort},
+		{"unset", &Tunnel{Domain: "example.com", Name: "roji"}, DefaultTunnelPort},
+		{"explicit", &Tunnel{Domain: "example.com", Name: "roji", Port: 9000}, 9000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.tunnel.ListenPort(); got != tt.want {
+				t.Errorf("ListenPort() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadTunnelFromFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `domain: dev.localhost
+tunnel:
+  domain: example.com
+  name: roji
+  port: 9000
+  auto_start: true
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	settings, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !settings.Tunnel.Enabled() {
+		t.Fatal("expected the tunnel to be enabled")
+	}
+	if settings.Tunnel.Domain != "example.com" {
+		t.Errorf("Domain = %q, want example.com", settings.Tunnel.Domain)
+	}
+	if settings.Tunnel.Name != "roji" {
+		t.Errorf("Name = %q, want roji", settings.Tunnel.Name)
+	}
+	if settings.Tunnel.ListenPort() != 9000 {
+		t.Errorf("ListenPort() = %d, want 9000", settings.Tunnel.ListenPort())
+	}
+	if !settings.Tunnel.AutoStart {
+		t.Error("expected AutoStart true")
+	}
+}
+
+func TestLoadWithoutTunnel(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("domain: dev.localhost\n"), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	settings, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if settings.Tunnel != nil {
+		t.Errorf("expected no tunnel, got %+v", settings.Tunnel)
+	}
+	if settings.Tunnel.Enabled() {
+		t.Error("a nil tunnel must not report itself enabled")
+	}
+}

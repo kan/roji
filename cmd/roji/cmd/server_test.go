@@ -3,11 +3,16 @@ package cmd
 import (
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/kan/roji/config"
+	"github.com/kan/roji/proxy"
 )
 
 // freePort returns a port nothing is listening on. There is a race between
@@ -225,4 +230,159 @@ func TestReopenIfRotated(t *testing.T) {
 			t.Errorf("reopened file holds %q, want %q", got, "second\n")
 		}
 	})
+}
+
+func tunnelTestConfig(t *testing.T, tunnelCfg *config.Tunnel) Config {
+	t.Helper()
+	return Config{
+		BaseDomain:    "dev.localhost",
+		DashboardHost: "roji.dev.localhost",
+		DataDir:       t.TempDir(),
+		Tunnel:        tunnelCfg,
+	}
+}
+
+func TestStartTunnel_NotConfigured(t *testing.T) {
+	tests := []struct {
+		name   string
+		tunnel *config.Tunnel
+	}{
+		{"absent", nil},
+		{"empty", &config.Tunnel{}},
+		{"domain without a tunnel name", &config.Tunnel{Domain: "example.com"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, runner := startTunnel(tunnelTestConfig(t, tt.tunnel), proxy.NewRouter(), nil)
+			if server != nil {
+				t.Error("an unconfigured tunnel must not open a listener")
+			}
+			if runner != nil {
+				t.Error("an unconfigured tunnel must not run cloudflared")
+			}
+		})
+	}
+}
+
+func TestStartTunnel_RefusesAProxyPort(t *testing.T) {
+	// Which listener wins a shared port depends on bind, and one of the two
+	// outcomes puts the tunnel guard in front of local browsers. Neither is a
+	// state to start in.
+	tests := []struct {
+		name string
+		port int
+	}{
+		{"the HTTP port", 8080},
+		{"the HTTPS port", 8443},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tunnelTestConfig(t, &config.Tunnel{
+				Domain: "example.com",
+				Name:   "roji",
+				Port:   tt.port,
+			})
+			cfg.HTTPPort = 8080
+			cfg.HTTPSPort = 8443
+
+			server, runner := startTunnel(cfg, proxy.NewRouter(), nil)
+			if server != nil {
+				t.Error("a tunnel sharing a proxy port must not open a listener")
+			}
+			if runner != nil {
+				t.Error("a tunnel sharing a proxy port must not run cloudflared")
+			}
+		})
+	}
+}
+
+func TestStartTunnel_ListensOnLoopbackOnly(t *testing.T) {
+	port := freePort(t)
+	cfg := tunnelTestConfig(t, &config.Tunnel{
+		Domain: "example.com",
+		Name:   "roji",
+		Port:   port,
+		// cloudflared is not installed in CI, and starting it is a separate
+		// concern from opening the listener it connects to.
+		AutoStart: false,
+	})
+
+	router := proxy.NewRouter()
+	server, runner := startTunnel(cfg, router, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+	if server == nil {
+		t.Fatal("startTunnel did not open a listener")
+	}
+	t.Cleanup(func() { _ = server.Close() })
+	if runner != nil {
+		t.Error("auto_start is off, so cloudflared must not be started")
+	}
+
+	// The guard depends on the tunnel arriving through a port of its own, so
+	// the listener has to be there and answer.
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 2*time.Second)
+	if err != nil {
+		t.Fatalf("the tunnel listener is not accepting connections: %v", err)
+	}
+	_ = conn.Close()
+}
+
+func TestStartTunnel_GuardsTheListener(t *testing.T) {
+	port := freePort(t)
+	cfg := tunnelTestConfig(t, &config.Tunnel{Domain: "example.com", Name: "roji", Port: port})
+
+	reached := make(chan string, 1)
+	server, _ := startTunnel(cfg, proxy.NewRouter(), http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) { reached <- r.Host }))
+	if server == nil {
+		t.Fatal("startTunnel did not open a listener")
+	}
+	t.Cleanup(func() { _ = server.Close() })
+
+	// Nothing is published, so nothing reaches the proxy behind the guard.
+	// proxy.TunnelHandler covers the individual refusals; this checks the
+	// listener is wired to the guard rather than straight to the handler.
+	req, err := http.NewRequest("GET", "http://"+net.JoinHostPort("127.0.0.1", strconv.Itoa(port))+"/", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Host = "roji.example.com"
+
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("request to the tunnel listener: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+	select {
+	case host := <-reached:
+		t.Errorf("the dashboard request reached the proxy as %q", host)
+	default:
+	}
+}
+
+func TestStartTunnel_PortInUse(t *testing.T) {
+	// Something else already holding the port must not stop roji: the tunnel
+	// is an addition to a proxy that works without it.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve port: %v", err)
+	}
+	defer ln.Close()
+
+	cfg := tunnelTestConfig(t, &config.Tunnel{
+		Domain: "example.com",
+		Name:   "roji",
+		Port:   ln.Addr().(*net.TCPAddr).Port,
+	})
+
+	server, runner := startTunnel(cfg, proxy.NewRouter(), nil)
+	if server != nil || runner != nil {
+		t.Error("startTunnel should give up quietly when the port is taken")
+	}
 }

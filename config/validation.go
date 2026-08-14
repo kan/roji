@@ -75,38 +75,99 @@ var validTopLevelKeys = map[string]string{
 	"log_level":    "string",
 	"auto_cert":    "bool",
 	"static_sites": "array",
+	"tunnel":       "object",
 }
 
-// validateTopLevel validates top-level config keys
-func validateTopLevel(rawMap map[string]any, result *ValidationResult) {
-	// Check for unknown keys
-	for key := range rawMap {
-		expectedType, ok := validTopLevelKeys[key]
+// validateKeys reports every unknown key and type mismatch in one object.
+//
+// prefix names the object in the reported path, and is empty for the top level.
+func validateKeys(values map[string]any, valid map[string]string, prefix string, result *ValidationResult) {
+	for key, value := range values {
+		path := key
+		if prefix != "" {
+			path = prefix + "." + key
+		}
+
+		expectedType, ok := valid[key]
 		if !ok {
 			result.Issues = append(result.Issues, ValidationIssue{
-				Path:    key,
+				Path:    path,
 				Type:    "unknown_key",
-				Message: fmt.Sprintf("unknown config key '%s', valid keys: %s", key, formatValidKeys(validTopLevelKeys)),
+				Message: fmt.Sprintf("unknown key '%s', valid keys: %s", key, formatValidKeys(valid)),
 			})
 			continue
 		}
 
-		// Type validation
-		value := rawMap[key]
 		if !validateType(value, expectedType) {
 			result.Issues = append(result.Issues, ValidationIssue{
-				Path:    key,
+				Path:    path,
 				Type:    "invalid_type",
 				Message: fmt.Sprintf("expected %s, got %T", expectedType, value),
 			})
 		}
+	}
+}
 
+// requireKeys reports each of keys that values does not have. They are all
+// reported against path, since a missing key has no path of its own.
+func requireKeys(values map[string]any, keys []string, path string, result *ValidationResult) {
+	for _, key := range keys {
+		if _, ok := values[key]; !ok {
+			result.Issues = append(result.Issues, ValidationIssue{
+				Path:    path,
+				Type:    "missing_required",
+				Message: fmt.Sprintf("missing required key '%s'", key),
+			})
+		}
+	}
+}
+
+// validateTopLevel validates top-level config keys
+func validateTopLevel(rawMap map[string]any, result *ValidationResult) {
+	validateKeys(rawMap, validTopLevelKeys, "", result)
+
+	for key, value := range rawMap {
 		// Specific validation for static_sites
 		if key == "static_sites" {
 			if sites, ok := value.([]any); ok {
 				validateStaticSites(sites, result)
 			}
 		}
+
+		// Specific validation for tunnel
+		if key == "tunnel" {
+			if tunnel, ok := value.(map[string]any); ok {
+				validateTunnel(tunnel, result)
+			}
+		}
+	}
+}
+
+// Valid tunnel keys
+var validTunnelKeys = map[string]string{
+	"domain":     "string",
+	"name":       "string",
+	"port":       "int",
+	"auto_start": "bool",
+}
+
+// validateTunnel validates the tunnel configuration
+func validateTunnel(tunnel map[string]any, result *ValidationResult) {
+	validateKeys(tunnel, validTunnelKeys, "tunnel", result)
+
+	// Both names are required: see Tunnel.Enabled.
+	requireKeys(tunnel, []string{"domain", "name"}, "tunnel", result)
+
+	// A two-level domain needs Cloudflare's paid certificate manager, since
+	// Universal SSL covers one level of wildcard. Nothing here can tell a
+	// subscriber from a non-subscriber, so this reports rather than refuses.
+	if domain, ok := tunnel["domain"].(string); ok && strings.Count(domain, ".") > 1 {
+		result.Issues = append(result.Issues, ValidationIssue{
+			Path: "tunnel.domain",
+			Type: "suspicious_value",
+			Message: fmt.Sprintf("'%s' has more than one level; Cloudflare's Universal SSL covers only *.example.com, "+
+				"so *.%s needs Advanced Certificate Manager", domain, domain),
+		})
 	}
 }
 
@@ -138,44 +199,8 @@ func validateStaticSites(sites []any, result *ValidationResult) {
 			pathPrefix = fmt.Sprintf("static_sites[%d] (host: %s)", i, host)
 		}
 
-		// Check for unknown keys
-		for key := range siteMap {
-			expectedType, ok := validStaticSiteKeys[key]
-			if !ok {
-				result.Issues = append(result.Issues, ValidationIssue{
-					Path:    fmt.Sprintf("%s.%s", pathPrefix, key),
-					Type:    "unknown_key",
-					Message: fmt.Sprintf("unknown key '%s', valid keys: %s", key, formatValidKeys(validStaticSiteKeys)),
-				})
-				continue
-			}
-
-			// Type validation
-			value := siteMap[key]
-			if !validateType(value, expectedType) {
-				result.Issues = append(result.Issues, ValidationIssue{
-					Path:    fmt.Sprintf("%s.%s", pathPrefix, key),
-					Type:    "invalid_type",
-					Message: fmt.Sprintf("expected %s, got %T", expectedType, value),
-				})
-			}
-		}
-
-		// Required fields
-		if _, ok := siteMap["host"]; !ok {
-			result.Issues = append(result.Issues, ValidationIssue{
-				Path:    pathPrefix,
-				Type:    "missing_required",
-				Message: "missing required key 'host'",
-			})
-		}
-		if _, ok := siteMap["root"]; !ok {
-			result.Issues = append(result.Issues, ValidationIssue{
-				Path:    pathPrefix,
-				Type:    "missing_required",
-				Message: "missing required key 'root'",
-			})
-		}
+		validateKeys(siteMap, validStaticSiteKeys, pathPrefix, result)
+		requireKeys(siteMap, []string{"host", "root"}, pathPrefix, result)
 
 		// Validate auth if present
 		if auth, ok := siteMap["auth"]; ok {
@@ -249,44 +274,9 @@ func validateBasicAuth(basic any, pathPrefix string, result *ValidationResult) {
 		return
 	}
 
-	// Check for unknown basic auth keys
-	for key := range basicMap {
-		expectedType, ok := validBasicAuthKeys[key]
-		if !ok {
-			result.Issues = append(result.Issues, ValidationIssue{
-				Path:    fmt.Sprintf("%s.auth.basic.%s", pathPrefix, key),
-				Type:    "unknown_key",
-				Message: fmt.Sprintf("unknown key '%s', valid keys: %s", key, formatValidKeys(validBasicAuthKeys)),
-			})
-			continue
-		}
+	validateKeys(basicMap, validBasicAuthKeys, pathPrefix+".auth.basic", result)
 
-		// Type validation
-		value := basicMap[key]
-		if !validateType(value, expectedType) {
-			result.Issues = append(result.Issues, ValidationIssue{
-				Path:    fmt.Sprintf("%s.auth.basic.%s", pathPrefix, key),
-				Type:    "invalid_type",
-				Message: fmt.Sprintf("expected %s, got %T", expectedType, value),
-			})
-		}
-	}
-
-	// Required fields for basic auth (user and pass)
-	if _, ok := basicMap["user"]; !ok {
-		result.Issues = append(result.Issues, ValidationIssue{
-			Path:    fmt.Sprintf("%s.auth.basic", pathPrefix),
-			Type:    "missing_required",
-			Message: "missing required key 'user'",
-		})
-	}
-	if _, ok := basicMap["pass"]; !ok {
-		result.Issues = append(result.Issues, ValidationIssue{
-			Path:    fmt.Sprintf("%s.auth.basic", pathPrefix),
-			Type:    "missing_required",
-			Message: "missing required key 'pass'",
-		})
-	}
+	requireKeys(basicMap, []string{"user", "pass"}, pathPrefix+".auth.basic", result)
 }
 
 // validateType checks if a value matches the expected type

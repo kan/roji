@@ -32,6 +32,7 @@ The doctor command runs a series of diagnostic checks:
   - CA certificate status
   - Server certificate validity
   - DNS resolution for *.localhost
+  - Cloudflare Tunnel readiness (when a tunnel is configured)
 
 Use --fix to automatically fix issues where possible.`,
 	RunE: runDoctor,
@@ -78,6 +79,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	d.AddCheck(&checks.CAInstall{})
 	d.AddCheck(&checks.ServerCert{})
 	d.AddCheck(&checks.DNS{})
+	d.AddCheck(&checks.Tunnel{})
 
 	// Run checks (or fix)
 	var results []doctor.CheckResult
