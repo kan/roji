@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-14
+
+Feature release. v1.1.0 confined roji to loopback, which left nothing for the
+times something outside has to reach the machine. A Cloudflare Tunnel fills
+that in, one container at a time.
+
+### Added
+
+- Publish selected routes to the internet through a Cloudflare Tunnel, with a
+  `tunnel:` block in the configuration file and a `roji.tunnel` label on each
+  container that opts in. roji picks up every container on its network without
+  being asked, so publishing is never the default.
+
+  The tunnel gets a listener of its own on `127.0.0.1:{tunnel.port}` (8080
+  unless set). cloudflared connects from 127.0.0.1 like any local browser, so
+  nothing in a request distinguishes the two; the port it arrived on does, and
+  that is what makes the guard possible. Requests reaching it are refused
+  unless they name a route that opted in. The dashboard, the base domain,
+  `/_api/*` and `/_assets/*` are refused outright — `/_api/projects/{name}/up`
+  starts containers without credentials — and static sites have no opt-in
+  spelling, so none are published. Every refusal answers with the same bare
+  404, since wording them apart would say which hostnames exist.
+
+  A route published as `web.dev.localhost` answers to `web.example.com`. Only
+  the suffix changes: the routing key stays local, and so does the `Host` the
+  backend receives, which is what a dev server's allowed-hosts list expects.
+
+  With `auto_start: true` roji runs cloudflared as a child process and stops it
+  on shutdown. It is not restarted after a crash — roji is not a process
+  manager, and a tunnel that keeps failing to authenticate should not retry in
+  silence. Pointing `*.{domain}` at the tunnel stays manual, since roji holds
+  no Cloudflare credentials. See
+  [Public Access](https://roji-proxy.dev/docs/guides/tunnel/).
+
+- `roji doctor` checks that cloudflared is installed, logged in, and that the
+  named tunnel exists, and prints the DNS command it cannot run for you.
+
+- The dashboard marks published routes with a 🌐 badge and their public URL.
+
 ## [1.1.1] - 2026-08-07
 
 Bug fix release. Three routing defects that share a shape: a route was stored
@@ -693,6 +732,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.2.0]: https://github.com/kan/roji/releases/tag/v1.2.0
 [1.1.1]: https://github.com/kan/roji/releases/tag/v1.1.1
 [1.1.0]: https://github.com/kan/roji/releases/tag/v1.1.0
 [1.0.8]: https://github.com/kan/roji/releases/tag/v1.0.8
