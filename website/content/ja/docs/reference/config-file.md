@@ -66,7 +66,17 @@ static_sites:
         user: admin
         pass: secret
         realm: Private Area       # 任意、デフォルトは "Restricted"
+
+# 外部公開（省略可。domain と name が揃ったときだけ有効）
+tunnel:
+  domain: example.com   # Cloudflare 上のゾーン。1階層に収める
+  name: roji            # cloudflared tunnel create で作った named tunnel
+  port: 8080            # トンネル専用リスナー（127.0.0.1 固定）
+  auto_start: false     # roji が cloudflared を起動するか
 ```
+
+`static_sites` と `tunnel` は設定ファイル専用で、対応する環境変数は無い。
+トンネルの使い方は[外部公開（トンネル）](/ja/docs/guides/tunnel/)ガイドを参照。
 
 ## 設定の管理
 

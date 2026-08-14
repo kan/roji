@@ -57,6 +57,7 @@ roji doctor --json   # Output as JSON
 - Server certificate validity
 - DNS resolution (*.localhost)
 - Config file validation
+- Tunnel (when configured: cloudflared installed, logged in, named tunnel exists)
 
 ## `roji config`
 

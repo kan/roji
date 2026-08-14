@@ -57,6 +57,7 @@ roji doctor --json   # JSON形式で出力
 - サーバー証明書の有効期限
 - DNS解決（*.localhost）
 - 設定ファイルのバリデーション
+- トンネル（設定時のみ: cloudflared の導入、ログイン、named tunnel の存在）
 
 ## `roji config`
 

@@ -21,6 +21,7 @@ toc: true
 | `roji.auth.basic.user` | Basic auth username | none |
 | `roji.auth.basic.pass` | Basic auth password | none |
 | `roji.auth.basic.realm` | Basic auth realm | `Restricted` |
+| `roji.tunnel` | Publish this route through the tunnel | none (private) |
 | `roji.self` | Reserved: excludes container from routing (internal use) | none |
 
 ## `roji.host`
@@ -93,6 +94,21 @@ labels:
 ```
 
 See the [Basic Authentication](/docs/guides/basic-auth/) guide for details.
+
+## `roji.tunnel`
+
+Make this route reachable from the internet through a Cloudflare Tunnel:
+
+```yaml
+labels:
+  - "roji.tunnel=true"
+```
+
+`true`, `1`, `yes` and `on` count as affirmative; anything else leaves the
+route private. Without a `tunnel:` block in the configuration file, the label
+publishes nothing.
+
+See the [Public Access (Tunnel)](/docs/guides/tunnel/) guide for details.
 
 ## `roji.self`
 

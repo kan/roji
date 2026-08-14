@@ -25,6 +25,7 @@ A simple reverse proxy for local development environments. Automatically discove
 - **Request Mocking**: Define mock responses via labels for frontend development
 - **Basic Authentication**: Protect routes with username/password via labels or config
 - **Static File Hosting**: Serve static files with directory listing
+- **Public Access**: Publish selected routes through a Cloudflare Tunnel, opt-in per container
 - **Service Management**: Run as system service (systemd/launchd/Windows Service)
 - **Environment Diagnostics**: `roji doctor` checks and fixes common issues
 
@@ -129,17 +130,25 @@ auto_cert: true                        # Auto-generate certificates
 static_sites:                          # Static file hosting
   - host: docs
     root: ~/projects/docs/build
+
+tunnel:                                # Public access via Cloudflare Tunnel
+  domain: example.com                  # Zone on your Cloudflare account
+  name: roji                           # Named tunnel to run
 ```
+
+Routes stay private until a container opts in with `roji.tunnel=true`. The
+dashboard and its API are never published. See the
+[Public Access guide](https://roji-proxy.dev/docs/guides/tunnel/).
 
 Manage with `roji config show | path | init | edit`.
 
 Settings priority: **CLI flags** > **Environment variables** > **Config file** > **Defaults**
 
-For full details on environment variables, Docker labels, static sites, and authentication, see the [Configuration guide](https://roji-proxy.dev/docs/guide/configuration/).
+For full details on environment variables, Docker labels, static sites, and authentication, see the [Configuration guide](https://roji-proxy.dev/docs/guides/configuration/).
 
 ## Dashboard
 
-Access at `https://roji.dev.localhost` — a live dashboard with real-time route updates, request logging, Docker Compose controls, and project management. See the [Dashboard documentation](https://roji-proxy.dev/docs/guide/configuration/#dashboard) for details.
+Access at `https://roji.dev.localhost` — a live dashboard with real-time route updates, request logging, Docker Compose controls, and project management. See the [Dashboard documentation](https://roji-proxy.dev/docs/getting-started/quick-start/#explore-the-dashboard) for details.
 
 ## CLI Reference
 
@@ -179,7 +188,8 @@ For platform-specific issues (WSL, macOS, Linux) and detailed solutions, see the
 Full documentation is available at **[roji-proxy.dev](https://roji-proxy.dev)**:
 
 - [Getting Started](https://roji-proxy.dev/docs/getting-started/installation/) — Installation and first service
-- [Configuration Guide](https://roji-proxy.dev/docs/guide/configuration/) — Config file, labels, static sites, auth
+- [Configuration Guide](https://roji-proxy.dev/docs/guides/configuration/) — Config file, labels, static sites, auth
+- [Public Access](https://roji-proxy.dev/docs/guides/tunnel/) — Reaching selected routes from the internet
 - [CLI Reference](https://roji-proxy.dev/docs/reference/cli/) — All commands and flags
 - [API Reference](https://roji-proxy.dev/docs/reference/api/) — Dashboard API endpoints
 - [Troubleshooting](https://roji-proxy.dev/docs/troubleshooting/common-issues/) — Common issues and platform guides

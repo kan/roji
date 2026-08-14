@@ -65,7 +65,18 @@ static_sites:
         user: admin
         pass: secret
         realm: Private Area       # Optional, defaults to "Restricted"
+
+# Public access (optional; on only when both domain and name are set)
+tunnel:
+  domain: example.com   # a zone on your Cloudflare account; keep it one level
+  name: roji            # the named tunnel from `cloudflared tunnel create`
+  port: 8080            # the tunnel's own listener (always on 127.0.0.1)
+  auto_start: false     # whether roji starts cloudflared for you
 ```
+
+`static_sites` and `tunnel` are config-file only; neither has an environment
+variable. See the [Public Access (Tunnel)](/docs/guides/tunnel/) guide for how
+the tunnel works.
 
 ## Managing Config
 

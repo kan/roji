@@ -21,6 +21,7 @@ toc: true
 | `roji.auth.basic.user` | BASIC認証ユーザー名 | なし |
 | `roji.auth.basic.pass` | BASIC認証パスワード | なし |
 | `roji.auth.basic.realm` | BASIC認証レルム | `Restricted` |
+| `roji.tunnel` | トンネルで外部公開する | なし（非公開） |
 | `roji.self` | 予約済み: コンテナをルーティングから除外（内部使用） | なし |
 
 ## `roji.host`
@@ -93,6 +94,21 @@ labels:
 ```
 
 詳細は[BASIC認証](/ja/docs/guides/basic-auth/)ガイドを参照。
+
+## `roji.tunnel`
+
+Cloudflare Tunnel を通してこのルートを外部から到達可能にする：
+
+```yaml
+labels:
+  - "roji.tunnel=true"
+```
+
+`true` / `1` / `yes` / `on` が肯定として扱われ、それ以外はすべて非公開に
+なる。設定ファイルに `tunnel:` ブロックが無ければ、ラベルを付けても何も
+公開されない。
+
+詳細は[外部公開（トンネル）](/ja/docs/guides/tunnel/)ガイドを参照。
 
 ## `roji.self`
 
