@@ -19,7 +19,7 @@
 
 ## 技術スタック
 
-- **言語**: Go 1.25+
+- **言語**: Go 1.27+
 - **主要ライブラリ**:
   - `github.com/docker/docker/client` - Docker API
   - `net/http/httputil` - ReverseProxy（標準ライブラリ）
@@ -850,6 +850,11 @@ GOOS=darwin golangci-lint run ./...
 GOOS=windows golangci-lint run ./...
 ```
 
+golangci-lint は go.mod が要求する Go 以上でビルドされたものが要る。古いまま
+だと設定の読み込み自体が `the Go language version (go1.26) used to build
+golangci-lint is lower than the targeted Go version (1.27.1)` で失敗する。
+Go を上げるときは ci.yml の `version:` も合わせて上げること。
+
 設定は `.golangci.yml`。リンタはデフォルト（errcheck / govet / ineffassign /
 staticcheck / unused）のままで、除外は標準プリセット 4 つ。この構成で
 nil デリファレンスや未チェックの `os.Rename` といった実際の欠陥を検出できて
@@ -861,7 +866,7 @@ nil デリファレンスや未チェックの `os.Rename` といった実際の
 
 ### go fix（modernizer）
 
-Go 1.26 の `go fix` は modernizer 群を適用するツール。`strings.CutPrefix`、
+Go 1.26 以降の `go fix` は modernizer 群を適用するツール。`strings.CutPrefix`、
 `slices.Contains`、`min`/`max`、`t.Context()`、`for i := range n` などへの
 機械変換を行う。
 

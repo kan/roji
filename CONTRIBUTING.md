@@ -5,7 +5,7 @@ Guide for setting up a local development environment for roji.
 ## Prerequisites
 
 - Docker & Docker Compose
-- Go 1.25+ (for local builds without Docker)
+- Go 1.27+ (for local builds without Docker)
 - [mkcert](https://github.com/FiloSottile/mkcert) (optional - for custom certificates)
 
 ## Quick Start
