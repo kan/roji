@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.6'
+          go-version: '1.27.1'
 
       - name: Check formatting
         run: |
@@ -34,21 +34,21 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12.2
+          version: v2.13.2
 
       - name: Run golangci-lint (darwin)
         uses: golangci/golangci-lint-action@v9
         env:
           GOOS: darwin
         with:
-          version: v2.12.2
+          version: v2.13.2
 
       - name: Run golangci-lint (windows)
         uses: golangci/golangci-lint-action@v9
         env:
           GOOS: windows
         with:
-          version: v2.12.2
+          version: v2.13.2
 
   test:
     runs-on: ubuntu-latest
@@ -58,7 +58,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.6'
+          go-version: '1.27.1'
 
       - name: Download dependencies
         run: go mod download
@@ -81,7 +81,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.6'
+          go-version: '1.27.1'
 
       - name: Download dependencies
         run: go mod download
@@ -98,7 +98,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.6'
+          go-version: '1.27.1'
 
       - name: Download dependencies
         run: go mod download
