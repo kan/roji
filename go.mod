@@ -10,7 +10,7 @@ require (
 	// Tests only: roji proxies WebSocket upgrades through httputil.ReverseProxy
 	// and links no WebSocket library. The tests dial and serve one.
 	github.com/gorilla/websocket v1.5.3
-	github.com/moby/moby/api v1.55.0
+	github.com/moby/moby/api v1.56.0
 	github.com/moby/moby/client v0.5.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
