@@ -18,7 +18,7 @@ params:
 brew install kan/roji/roji
 
 # Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.2.0/install.sh | bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
 ```
 
 ## Try it out

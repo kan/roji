@@ -123,7 +123,9 @@ release:
   github:
     owner: kan
     name: roji
-  draft: false
+  # Published by release.yml once the archives are attested; install.sh refuses
+  # an attested-era release that has no attestation yet
+  draft: true
   prerelease: auto
   name_template: "v{{.Version}}"
   footer: |

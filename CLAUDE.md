@@ -263,6 +263,16 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
 ### 配布・品質
 - ワンライナーインストール（Native Mode / アップグレード対応）
+  - 取得したアーカイブは `checksums.txt` と照合する。`gh` がありログイン済みなら
+    `gh attestation verify` で出所も検証する（`release.yml` の `actions/attest` が
+    証明を付ける）。どちらかが失敗したらインストールしない。取得したバイナリを
+    `sudo` で実行し CA まで入れるため
+  - attestation は v1.2.1 以降にしか無い（`install.sh` の `FIRST_ATTESTED_VERSION`）。
+    それより前の版はチェックサムの照合だけで入れる
+  - 最新版は API ではなく `releases/latest` のリダイレクト先から得る（未認証 API の
+    レート制限で「最新」と誤表示していたため）。得られなければエラーで終了する
+  - 最終行の `main "$@"` 以外は変数宣言と関数定義だけにする。ダウンロードが途中で
+    切れたスクリプトを実行させないため
 - GoReleaser v2（マルチプラットフォーム）
 - Distrolessイメージ
 - セキュリティスキャン（Trivy, govulncheck）
@@ -315,39 +325,16 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
 1. **ドキュメント更新**
 
-   install.sh の URL は**タグ固定**（`main` は開発中のコードを拾ってしまうため）。
-   リリースのたびに以下すべてを新バージョンへ追従させる。漏れを防ぐため、
-   grep で残りがないことを確認する。
+   CHANGELOG.md に新バージョンの変更内容と末尾のリンク定義を追加する。
 
-   ```bash
-   # 一括置換（vX.Y.Z は新バージョン、vA.B.C は直前のバージョン）
-   grep -rln "kan/roji/vA\.B\.C/install\.sh" README.md website/content/
-   sed -i 's|kan/roji/vA\.B\.C/install\.sh|kan/roji/vX.Y.Z/install.sh|g' \
-     README.md \
-     website/content/{en,ja}/_index.md \
-     website/content/{en,ja}/docs/getting-started/installation.md
-
-   # 取りこぼしチェック（何も出なければOK）
-   grep -rn "raw.githubusercontent.com/kan/roji/v" \
-     --exclude-dir=public README.md website/content/ | grep -v "vX\.Y\.Z"
-
-   # CHANGELOG.md: 新バージョンの変更内容 + 末尾のリンク定義を追加
-   ```
-
-   対象ファイル（2026-08-01 時点）:
-
-   | ファイル | 箇所数 |
-   |---|---|
-   | `README.md` | 3 |
-   | `website/content/{en,ja}/_index.md` | 各 1 |
-   | `website/content/{en,ja}/docs/getting-started/installation.md` | 各 2 |
-
-   ※ `install.sh` / `docker-compose.yml` 内の URL は `main` 固定で正しい
-   （インストーラー自身の自己参照のため、追従不要）。
+   install.sh の URL は `main` 固定なので、リリースのたびの置換は要らない
+   （#88 で変更）。以前はタグ固定にしていたが、install.sh が最新版を取りに行く
+   ため、URL のタグと入るバージョンが一致していなかった。版の固定は
+   `ROJI_VERSION` / `--version` で行う。
 
 2. **コミット & タグ**
    ```bash
-   git add README.md CHANGELOG.md website/content/
+   git add CHANGELOG.md
    git commit -m "Prepare for vX.Y.Z release"
    git tag -a vX.Y.Z -m "Release vX.Y.Z: [主要機能]"
    git push origin main
@@ -356,7 +343,12 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
 3. **確認**
    - GitHub Actions → GitHub Release → Docker Image
-   - 公式サイト（`website/**` を変更したので Deploy Website も走る）
+   - リリースのアーカイブに attestation が付いていること
+     （`gh attestation verify roji_Linux_x86_64.tar.gz --repo kan/roji`）
+   - リリースが draft のまま残っていないこと。GoReleaser は draft で作り、
+     attest が成功した後に `release.yml` が公開する。attest 前に公開すると、
+     その間 `gh` を持つ利用者の install.sh が検証に失敗して止まるため。
+     draft のまま残っていたら attest の失敗を調べる
 
 ## ロードマップ（v0.7.0 → v1.2.0）
 

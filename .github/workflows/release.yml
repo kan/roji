@@ -37,6 +37,13 @@ jobs:
   release:
     needs: test  # Wait for tests to pass before releasing
     runs-on: ubuntu-latest
+    # Job-level permissions replace the workflow-level ones, so repeat them
+    permissions:
+      contents: write
+      packages: write
+      id-token: write           # Sigstore signing certificate for attestations
+      attestations: write       # Store the build provenance attestation
+      artifact-metadata: write  # Storage record for the attested artifacts
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -67,6 +74,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      # install.sh verifies archives with `gh attestation verify --repo kan/roji`.
+      # checksums.txt lists every archive, so each one becomes a subject.
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-checksums: dist/checksums.txt
+
+      # GoReleaser leaves the release as a draft (.goreleaser.yml), so
+      # /releases/latest keeps pointing at the previous version until the
+      # attestation exists. If attesting fails, the release stays a draft.
+      - name: Publish release
+        run: gh release edit "$TAG" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
 
       - name: Trigger pkg.go.dev update
         run: |

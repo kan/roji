@@ -19,12 +19,14 @@ brew install kan/roji/roji
 Works on Linux and macOS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.2.0/install.sh | bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
 ```
 
 This will:
 
 - Download the roji binary for your platform (Linux/macOS, x86_64/arm64)
+- Verify it against the release's `checksums.txt`, and its build provenance
+  with `gh attestation verify` when the GitHub CLI is installed and logged in
 - Install to `~/.local/bin` by default (interactive prompt for location)
 - Run `roji doctor --fix` to set up the environment
 - Install CA certificate to system trust store
@@ -37,6 +39,7 @@ curl -fsSL ... | bash -s -- --global       # Install to /usr/local/bin
 curl -fsSL ... | bash -s -- --local        # Install to ~/.local/bin (default)
 curl -fsSL ... | bash -s -- --no-service   # Skip service registration
 curl -fsSL ... | bash -s -- --upgrade      # Skip upgrade prompts
+curl -fsSL ... | bash -s -- --version 1.2.0  # Install a specific version (or: | ROJI_VERSION=1.2.0 bash)
 ```
 
 ## Manual Installation
@@ -55,7 +58,7 @@ sudo ./bin/roji service install && sudo ./bin/roji service start
 Re-run the install script. It detects existing installations and upgrades automatically:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.2.0/install.sh | bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
 ```
 
 Or with Homebrew:

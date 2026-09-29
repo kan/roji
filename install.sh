@@ -2,13 +2,24 @@
 set -e
 
 # roji installation script (Native Mode)
-# Usage: curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
+# Usage: curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
 #
 # Options:
-#   --upgrade       Force upgrade mode
-#   --local         Install to ~/.local/bin (default)
-#   --global        Install to /usr/local/bin
-#   --no-service    Skip service installation
+#   --upgrade          Force upgrade mode
+#   --local            Install to ~/.local/bin (default)
+#   --global           Install to /usr/local/bin
+#   --no-service       Skip service installation
+#   --version X.Y.Z    Install this version instead of the latest release
+#
+# Environment:
+#   ROJI_VERSION       Same as --version (the flag wins when both are given)
+#
+# The downloaded archive is checked against the release's checksums.txt. When
+# the GitHub CLI is installed and logged in, its build provenance is verified
+# with `gh attestation verify` as well. Either failure aborts the install.
+#
+# Nothing below runs until the last line calls main, so a download cut off
+# midway leaves a script that only defines variables and functions.
 
 # Color codes for output
 RED='\033[0;31m'
@@ -23,28 +34,49 @@ GITHUB_REPO="kan/roji"
 LOCAL_BIN="$HOME/.local/bin"
 GLOBAL_BIN="/usr/local/bin"
 DOCKER_INSTALL_DIR="$HOME/.roji"
+# Releases before this one carry no build provenance attestation, so they can
+# only be checked against checksums.txt.
+FIRST_ATTESTED_VERSION="1.2.1"
 
 # Default options
 INSTALL_MODE=""  # Will be set interactively or via flags
 FORCE_UPGRADE=false
 SKIP_SERVICE=false
+REQUESTED_VERSION="${ROJI_VERSION:-}"  # Empty means the latest release
+VERSION=""       # Resolved version to install, without the leading "v"
+TMP_DIR=""
+
 # Parse command line arguments
-for arg in "$@"; do
-    case $arg in
-        --upgrade)
-            FORCE_UPGRADE=true
-            ;;
-        --local)
-            INSTALL_MODE="local"
-            ;;
-        --global)
-            INSTALL_MODE="global"
-            ;;
-        --no-service)
-            SKIP_SERVICE=true
-            ;;
-    esac
-done
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --upgrade)
+                FORCE_UPGRADE=true
+                ;;
+            --local)
+                INSTALL_MODE="local"
+                ;;
+            --global)
+                INSTALL_MODE="global"
+                ;;
+            --no-service)
+                SKIP_SERVICE=true
+                ;;
+            --version)
+                if [ $# -lt 2 ]; then
+                    print_error "$MSG_VERSION_NEEDS_VALUE"
+                    exit 1
+                fi
+                REQUESTED_VERSION="$2"
+                shift
+                ;;
+            --version=*)
+                REQUESTED_VERSION="${1#--version=}"
+                ;;
+        esac
+        shift
+    done
+}
 
 # Detect language from environment variables
 detect_lang() {
@@ -97,6 +129,21 @@ setup_messages() {
         # Download and install
         MSG_DOWNLOADING="roji %s (%s) をダウンロード中..."
         MSG_DOWNLOAD_FAILED="roji のダウンロードに失敗しました"
+        # Version resolution
+        MSG_VERSION_NEEDS_VALUE="--version にはバージョンを指定してください (例: --version 1.2.0)"
+        MSG_INVALID_VERSION="不正なバージョン指定: %s"
+        MSG_RESOLVE_FAILED="roji の最新バージョンを取得できませんでした"
+        MSG_RESOLVE_HINT="ネットワークを確認するか、ROJI_VERSION=x.y.z でバージョンを指定してください"
+        # Verification
+        MSG_CHECKSUM_TOOL_MISSING="ダウンロードの検証には sha256sum か shasum が必要です"
+        MSG_CHECKSUM_NOT_LISTED="checksums.txt に %s がありません"
+        MSG_CHECKSUM_FAILED="チェックサムが一致しません。ダウンロードが破損している可能性があります"
+        MSG_CHECKSUM_OK="チェックサムを確認しました"
+        MSG_VERIFYING_ATTESTATION="gh attestation でビルドの出所を検証中..."
+        MSG_ATTESTATION_FAILED="ビルドの出所を検証できませんでした。インストールを中止します"
+        MSG_ATTESTATION_OK="ビルドの出所を確認しました"
+        MSG_ATTESTATION_NO_GH="gh が無い、ログインしていない、または gh attestation 非対応の版 (2.49 未満) のため、ビルドの出所の検証を省略しました (チェックサムのみ)"
+        MSG_ATTESTATION_OLD="roji %s にはビルドの出所の証明が無いため、チェックサムのみで検証しました"
         MSG_INSTALLED_TO="roji を %s にインストールしました"
         MSG_NOT_IN_PATH="%s が PATH に含まれていません"
         MSG_ADD_TO_PATH="シェル設定に追加してください:"
@@ -141,6 +188,7 @@ setup_messages() {
         MSG_EXISTING_DETECTED="既存の roji インストールを検出"
         MSG_CURRENT_VERSION="現在のバージョン:"
         MSG_LATEST_VERSION="最新バージョン:"
+        MSG_REQUESTED_VERSION="指定バージョン:"
         MSG_LOCATION="場所:"
         MSG_UP_TO_DATE="roji は最新です"
         MSG_SERVICE_NOT_RUNNING="roji サービスが稼働していません"
@@ -149,6 +197,7 @@ setup_messages() {
         MSG_UPGRADING="アップグレード中..."
         MSG_OPTIONS="オプション:"
         MSG_UPGRADE_TO="バージョン %s にアップグレード"
+        MSG_SWITCH_TO="バージョン %s に切り替え"
         MSG_KEEP_CURRENT="現在のバージョンを維持 (%s)"
         MSG_KEEPING_CURRENT="現在のバージョンを維持します"
         MSG_AUTO_UPGRADING="バージョン %s に自動アップグレード中..."
@@ -187,6 +236,21 @@ setup_messages() {
         # Download and install
         MSG_DOWNLOADING="Downloading roji %s for %s..."
         MSG_DOWNLOAD_FAILED="Failed to download roji"
+        # Version resolution
+        MSG_VERSION_NEEDS_VALUE="--version needs a version (e.g. --version 1.2.0)"
+        MSG_INVALID_VERSION="Invalid version: %s"
+        MSG_RESOLVE_FAILED="Could not determine the latest roji version"
+        MSG_RESOLVE_HINT="Check your network, or pin a version with ROJI_VERSION=x.y.z"
+        # Verification
+        MSG_CHECKSUM_TOOL_MISSING="sha256sum or shasum is required to verify the download"
+        MSG_CHECKSUM_NOT_LISTED="%s is not listed in checksums.txt"
+        MSG_CHECKSUM_FAILED="Checksum mismatch; the download may be corrupted"
+        MSG_CHECKSUM_OK="Checksum verified"
+        MSG_VERIFYING_ATTESTATION="Verifying build provenance with gh attestation..."
+        MSG_ATTESTATION_FAILED="Build provenance could not be verified; aborting installation"
+        MSG_ATTESTATION_OK="Build provenance verified"
+        MSG_ATTESTATION_NO_GH="gh is missing, not logged in, or older than 2.49 (no gh attestation); skipped the build provenance check (checksum only)"
+        MSG_ATTESTATION_OLD="roji %s has no build provenance attestation; verified by checksum only"
         MSG_INSTALLED_TO="roji installed to %s"
         MSG_NOT_IN_PATH="%s is not in your PATH"
         MSG_ADD_TO_PATH="Add it to your shell configuration:"
@@ -231,6 +295,7 @@ setup_messages() {
         MSG_EXISTING_DETECTED="Existing roji installation detected"
         MSG_CURRENT_VERSION="Current version:"
         MSG_LATEST_VERSION="Latest version:"
+        MSG_REQUESTED_VERSION="Requested version:"
         MSG_LOCATION="Location:"
         MSG_UP_TO_DATE="roji is already up to date"
         MSG_SERVICE_NOT_RUNNING="roji service is not running"
@@ -239,6 +304,7 @@ setup_messages() {
         MSG_UPGRADING="Upgrading..."
         MSG_OPTIONS="Options:"
         MSG_UPGRADE_TO="Upgrade to %s"
+        MSG_SWITCH_TO="Switch to %s"
         MSG_KEEP_CURRENT="Keep current version (%s)"
         MSG_KEEPING_CURRENT="Keeping current version"
         MSG_AUTO_UPGRADING="Auto-upgrading to %s..."
@@ -246,10 +312,6 @@ setup_messages() {
         MSG_STOPPING_SERVICE="Stopping roji service..."
     fi
 }
-
-# Detect language and set up messages
-DETECTED_LANG=$(detect_lang)
-setup_messages "$DETECTED_LANG"
 
 # Print colored message
 print_info() {
@@ -368,25 +430,57 @@ check_native_mode() {
     return 1
 }
 
-# Get current native version
+# Get current native version ("unknown" when it cannot be read)
 get_native_version() {
+    local version=""
     if command -v roji &> /dev/null; then
-        roji version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown"
-    else
-        echo "not installed"
+        version=$(roji version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
     fi
+    echo "${version:-unknown}"
 }
 
-# Get latest version from GitHub
+# Check that a string is a release version such as 1.2.0 or 1.3.0-rc.1
+is_version() {
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+}
+
+# curl restricted to HTTPS with TLS 1.2 or later
+curl_https() {
+    curl --proto '=https' --tlsv1.2 "$@"
+}
+
+# Get the latest release version from the redirect of /releases/latest.
+# The REST API is avoided on purpose: unauthenticated calls are limited to 60
+# an hour, and running out used to be mistaken for "already up to date".
 get_latest_version() {
-    local version=""
-    if command -v curl &> /dev/null; then
-        version=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep -oE '"tag_name":\s*"v?[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
-    fi
-    if [ -z "$version" ]; then
-        version="latest"
-    fi
+    local location=""
+    location=$(curl_https -fsSI -o /dev/null -w '%{redirect_url}' \
+        "https://github.com/${GITHUB_REPO}/releases/latest") || return 1
+    local version="${location##*/}"
+    version="${version#v}"
+    is_version "$version" || return 1
     echo "$version"
+}
+
+# Set VERSION from --version / ROJI_VERSION, or from the latest release
+resolve_version() {
+    if [ -n "$REQUESTED_VERSION" ]; then
+        VERSION="${REQUESTED_VERSION#v}"
+        if ! is_version "$VERSION"; then
+            # shellcheck disable=SC2059
+            print_error "$(printf "$MSG_INVALID_VERSION" "$REQUESTED_VERSION")"
+            exit 1
+        fi
+        return
+    fi
+
+    if ! VERSION=$(get_latest_version); then
+        print_error "$MSG_RESOLVE_FAILED"
+        echo ""
+        echo "  ${MSG_RESOLVE_HINT}"
+        echo ""
+        exit 1
+    fi
 }
 
 # Warn about Docker Mode (no longer supported in v1.0.0)
@@ -411,7 +505,7 @@ warn_docker_mode() {
     echo "     rm -rf ${DOCKER_INSTALL_DIR}"
     echo ""
     echo "  4. ${MSG_MIGRATE_STEP4}"
-    echo "     curl -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash"
+    echo "     curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash"
     echo ""
     exit 1
 }
@@ -464,44 +558,106 @@ select_install_dir() {
     print_info "${MSG_INSTALLING_TO} ${INSTALL_DIR}"
 }
 
+# Download a release asset into TMP_DIR, exiting on failure
+download_asset() {
+    local name="$1"
+    local url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/${name}"
+
+    if ! curl_https -fsSL "$url" -o "${TMP_DIR}/${name}"; then
+        print_error "$MSG_DOWNLOAD_FAILED"
+        echo ""
+        echo "URL: ${url}"
+        echo ""
+        exit 1
+    fi
+}
+
+# Check the archive against checksums.txt from the same release.
+# This catches corruption in transit; it cannot catch tampering, since both
+# files come from the same place. verify_attestation covers that.
+verify_checksum() {
+    local archive="$1"
+    local expected=""
+    local actual=""
+
+    download_asset "checksums.txt"
+    expected=$(awk -v name="$archive" '$2 == name { print $1 }' "${TMP_DIR}/checksums.txt")
+    if [ -z "$expected" ]; then
+        # shellcheck disable=SC2059
+        print_error "$(printf "$MSG_CHECKSUM_NOT_LISTED" "$archive")"
+        exit 1
+    fi
+
+    if command -v sha256sum &> /dev/null; then
+        actual=$(sha256sum "${TMP_DIR}/${archive}" | awk '{ print $1 }')
+    elif command -v shasum &> /dev/null; then
+        actual=$(shasum -a 256 "${TMP_DIR}/${archive}" | awk '{ print $1 }')
+    else
+        print_error "$MSG_CHECKSUM_TOOL_MISSING"
+        exit 1
+    fi
+
+    if [ "$actual" != "$expected" ]; then
+        print_error "$MSG_CHECKSUM_FAILED"
+        echo ""
+        echo "  expected: ${expected}"
+        echo "  actual:   ${actual}"
+        echo ""
+        exit 1
+    fi
+    print_success "$MSG_CHECKSUM_OK"
+}
+
+# Verify that the archive was built by this repository's release workflow
+verify_attestation() {
+    local archive="$1"
+
+    if version_lt "$VERSION" "$FIRST_ATTESTED_VERSION"; then
+        # shellcheck disable=SC2059
+        print_warning "$(printf "$MSG_ATTESTATION_OLD" "$VERSION")"
+        return
+    fi
+    # gh attestation verify calls the GitHub API, so it needs a login too.
+    # The attestation command itself arrived in gh 2.49.
+    if ! command -v gh &> /dev/null || ! gh attestation verify --help &> /dev/null ||
+        ! gh auth status &> /dev/null; then
+        print_warning "$MSG_ATTESTATION_NO_GH"
+        return
+    fi
+
+    print_info "$MSG_VERIFYING_ATTESTATION"
+    if ! gh attestation verify "${TMP_DIR}/${archive}" --repo "$GITHUB_REPO" > /dev/null; then
+        print_error "$MSG_ATTESTATION_FAILED"
+        exit 1
+    fi
+    print_success "$MSG_ATTESTATION_OK"
+}
+
 # Download and install binary
 install_binary() {
-    local platform=$(detect_platform)
-    local version=$(get_latest_version)
-    local download_url=""
+    local platform=""
+    platform=$(detect_platform)
     local archive_ext="tar.gz"
-    local tmp_dir=$(mktemp -d)
 
     # Windows uses zip format
     if [[ "$platform" == Windows* ]]; then
         archive_ext="zip"
     fi
+    local archive="roji_${platform}.${archive_ext}"
 
     # shellcheck disable=SC2059
-    print_info "$(printf "$MSG_DOWNLOADING" "$version" "$platform")"
+    print_info "$(printf "$MSG_DOWNLOADING" "$VERSION" "$platform")"
 
-    # Construct download URL
-    if [ "$version" = "latest" ]; then
-        download_url="https://github.com/${GITHUB_REPO}/releases/latest/download/roji_${platform}.${archive_ext}"
-    else
-        download_url="https://github.com/${GITHUB_REPO}/releases/download/v${version}/roji_${platform}.${archive_ext}"
-    fi
-
-    # Download
-    if ! curl -fsSL "$download_url" -o "${tmp_dir}/roji.${archive_ext}"; then
-        print_error "$MSG_DOWNLOAD_FAILED"
-        echo ""
-        echo "URL: ${download_url}"
-        echo ""
-        rm -rf "$tmp_dir"
-        exit 1
-    fi
+    TMP_DIR=$(mktemp -d)
+    download_asset "$archive"
+    verify_checksum "$archive"
+    verify_attestation "$archive"
 
     # Extract
     if [ "$archive_ext" = "zip" ]; then
-        unzip -q "${tmp_dir}/roji.${archive_ext}" -d "$tmp_dir"
+        unzip -q "${TMP_DIR}/${archive}" -d "$TMP_DIR"
     else
-        tar -xzf "${tmp_dir}/roji.${archive_ext}" -C "$tmp_dir"
+        tar -xzf "${TMP_DIR}/${archive}" -C "$TMP_DIR"
     fi
 
     # Create install directory if needed
@@ -515,14 +671,12 @@ install_binary() {
 
     # Install binary
     if [ "$INSTALL_MODE" = "global" ]; then
-        sudo mv "${tmp_dir}/roji" "${INSTALL_DIR}/roji"
+        sudo mv "${TMP_DIR}/roji" "${INSTALL_DIR}/roji"
         sudo chmod +x "${INSTALL_DIR}/roji"
     else
-        mv "${tmp_dir}/roji" "${INSTALL_DIR}/roji"
+        mv "${TMP_DIR}/roji" "${INSTALL_DIR}/roji"
         chmod +x "${INSTALL_DIR}/roji"
     fi
-
-    rm -rf "$tmp_dir"
 
     # shellcheck disable=SC2059
     print_success "$(printf "$MSG_INSTALLED_TO" "${INSTALL_DIR}/roji")"
@@ -617,15 +771,13 @@ install_service() {
 
 # Show completion message
 show_completion() {
-    local version=$(get_latest_version)
-
     echo ""
     echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║${NC}  🎉 ${BLUE}roji${NC} ${MSG_INSTALL_SUCCESS}                  ${GREEN}║${NC}"
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
-    echo -e "${CYAN}${MSG_LABEL_VERSION}${NC}    ${version}"
+    echo -e "${CYAN}${MSG_LABEL_VERSION}${NC}    ${VERSION}"
     echo -e "${CYAN}${MSG_LABEL_BINARY}${NC}     ${INSTALL_DIR}/roji"
     echo -e "${CYAN}${MSG_LABEL_CONFIG}${NC}     ~/.config/roji/config.yaml"
     echo -e "${CYAN}${MSG_LABEL_DASHBOARD}${NC}  https://roji.dev.localhost"
@@ -669,15 +821,11 @@ show_completion() {
     echo ""
 }
 
-# Compare versions (returns 0 if v1 < v2)
+# Compare versions (returns 0 if v1 < v2); both must pass is_version
 version_lt() {
     local v1="$1"
     local v2="$2"
 
-    # Handle special cases
-    if [ "$v1" = "latest" ] || [ "$v2" = "latest" ] || [ "$v1" = "unknown" ] || [ "$v1" = "not installed" ]; then
-        return 1  # Can't compare
-    fi
     if [ "$v1" = "$v2" ]; then
         return 1  # Same version
     fi
@@ -712,22 +860,38 @@ detect_existing_install_dir() {
 
 # Handle existing native installation (upgrade)
 handle_existing_native() {
-    local current=$(get_native_version)
-    local latest=$(get_latest_version)
-    local existing_dir=$(detect_existing_install_dir)
+    local current=""
+    current=$(get_native_version)
+    local existing_dir=""
+    existing_dir=$(detect_existing_install_dir)
+    local target_label="$MSG_LATEST_VERSION"
+    if [ -n "$REQUESTED_VERSION" ]; then
+        target_label="$MSG_REQUESTED_VERSION"
+    fi
 
     echo ""
     echo -e "${CYAN}${MSG_EXISTING_DETECTED}${NC}"
     echo ""
     echo -e "  ${MSG_CURRENT_VERSION} ${YELLOW}${current}${NC}"
-    echo -e "  ${MSG_LATEST_VERSION}  ${GREEN}${latest}${NC}"
+    echo -e "  ${target_label}  ${GREEN}${VERSION}${NC}"
     if [ -n "$existing_dir" ]; then
         echo -e "  ${MSG_LOCATION}        ${existing_dir}/roji"
     fi
     echo ""
 
-    # Check if already up to date
-    if ! version_lt "$current" "$latest"; then
+    # With a readable current version that is not older than the target,
+    # there is nothing to do when it matches, or when no version was requested
+    # (it is ahead of the latest release). An unreadable one always proceeds.
+    local is_upgrade=false
+    local up_to_date=false
+    if [ "$current" != "unknown" ]; then
+        if version_lt "$current" "$VERSION"; then
+            is_upgrade=true
+        elif [ "$current" = "$VERSION" ] || [ -z "$REQUESTED_VERSION" ]; then
+            up_to_date=true
+        fi
+    fi
+    if [ "$up_to_date" = true ]; then
         print_success "${MSG_UP_TO_DATE} (${current})"
         echo ""
 
@@ -743,16 +907,20 @@ handle_existing_native() {
         exit 0
     fi
 
-    # Upgrade available
-    echo "$MSG_UPGRADE_AVAILABLE"
-    echo ""
+    # Upgrade (or switch to the requested version)
+    local install_choice="$MSG_SWITCH_TO"
+    if [ "$is_upgrade" = true ]; then
+        echo "$MSG_UPGRADE_AVAILABLE"
+        echo ""
+        install_choice="$MSG_UPGRADE_TO"
+    fi
 
     if [ "$FORCE_UPGRADE" = true ]; then
         print_info "$MSG_UPGRADING"
     elif [ -t 0 ]; then
         echo -e "${CYAN}${MSG_OPTIONS}${NC}"
         # shellcheck disable=SC2059
-        echo "  1. $(printf "$MSG_UPGRADE_TO" "$latest")"
+        echo "  1. $(printf "$install_choice" "$VERSION")"
         # shellcheck disable=SC2059
         echo "  2. $(printf "$MSG_KEEP_CURRENT" "$current")"
         echo ""
@@ -768,7 +936,7 @@ handle_existing_native() {
     else
         # Non-interactive mode: auto-upgrade
         # shellcheck disable=SC2059
-        print_info "$(printf "$MSG_AUTO_UPGRADING" "$latest")"
+        print_info "$(printf "$MSG_AUTO_UPGRADING" "$VERSION")"
     fi
 
     # Use existing install directory
@@ -791,15 +959,24 @@ handle_existing_native() {
 
 # Main installation flow
 main() {
+    setup_messages "$(detect_lang)"
+    parse_args "$@"
+    trap 'rm -rf "$TMP_DIR"' EXIT
+
     print_banner
 
     # Check Docker first
     check_docker
 
-    # Check for existing installations
+    # Docker Mode exits here, before any network access
     if check_docker_mode; then
         warn_docker_mode
-    elif check_native_mode; then
+    fi
+
+    # Decide which version to install before comparing with an existing one
+    resolve_version
+
+    if check_native_mode; then
         handle_existing_native
     fi
 

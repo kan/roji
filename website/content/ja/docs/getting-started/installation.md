@@ -20,12 +20,14 @@ brew install kan/roji/roji
 Linux・macOS対応：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.2.0/install.sh | bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
 ```
 
 実行内容：
 
 - プラットフォーム（Linux/macOS、x86_64/arm64）に合ったバイナリをダウンロード
+- リリースの `checksums.txt` と照合する。GitHub CLI がインストール済みでログイン
+  していれば、`gh attestation verify` でビルドの出所も検証する
 - デフォルトで `~/.local/bin` にインストール（対話式でインストール先を選択）
 - `roji doctor --fix` で環境をセットアップ
 - CA証明書をシステム信頼ストアにインストール
@@ -38,6 +40,7 @@ curl -fsSL ... | bash -s -- --global       # /usr/local/bin にインストー�
 curl -fsSL ... | bash -s -- --local        # ~/.local/bin にインストール（デフォルト）
 curl -fsSL ... | bash -s -- --no-service   # サービス登録をスキップ
 curl -fsSL ... | bash -s -- --upgrade      # アップグレード確認をスキップ
+curl -fsSL ... | bash -s -- --version 1.2.0  # バージョンを指定してインストール（| ROJI_VERSION=1.2.0 bash でも可）
 ```
 
 ## 手動インストール
@@ -56,7 +59,7 @@ sudo ./bin/roji service install && sudo ./bin/roji service start
 インストールスクリプトを再実行すると、既存のインストールを検出して自動アップグレードします：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v1.2.0/install.sh | bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
 ```
 
 Homebrew の場合：
