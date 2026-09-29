@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-30
+
+Distribution release. The installer runs the binary it downloads with `sudo`
+and puts a CA into the system trust store, yet it never checked what it had
+downloaded. It does now, and the releases carry what it checks against. The
+binary also ships the licenses of everything linked into it.
+
+### Added
+
+- The installer verifies the downloaded archive before installing anything. It
+  compares the archive with the release's `checksums.txt`, and when the GitHub
+  CLI is installed and logged in, it also checks the build provenance with
+  `gh attestation verify`. Either failure stops the installation. Releases
+  from this one on carry that attestation; older ones are checked against the
+  checksums only. See
+  [Installation](https://roji-proxy.dev/docs/getting-started/installation/).
+
+- `--version X.Y.Z` (or `ROJI_VERSION=X.Y.Z` on the `bash` side of the pipe)
+  installs a given release instead of the latest one.
+
+- `roji credits` prints roji's license, the licenses of the Go modules linked
+  into the binary, and the notices for other bundled software such as Petite
+  Vue. The same texts ship as `CREDITS` and `THIRD_PARTY_NOTICES` in the
+  release archives and the Docker image. The one-liner installer keeps only the
+  binary, so the command is how to read them after installing that way.
+
+### Changed
+
+- The install one-liner points at `main` instead of a release tag. The tag in
+  the URL never decided which version was installed — the installer always
+  fetched the latest release — so `--version` is now the way to pin one. The
+  documented command also passes `--proto '=https' --tlsv1.2` to curl.
+
+### Fixed
+
+- When the GitHub API rate limit was hit, the installer reported roji as
+  already up to date and exited without upgrading. It now reads the latest
+  version from the `releases/latest` redirect, which has no such limit, and
+  stops with an error if it cannot determine it.
+
+- The installer left its temporary directory behind when extracting the
+  archive failed.
+
+### Internal
+
+- GoReleaser creates the release as a draft, and the workflow publishes it only
+  after the archives are attested. Until then `releases/latest` keeps pointing
+  at the previous version, so the installer never picks up a release it cannot
+  verify.
+- The installer runs nothing but its final `main "$@"` line at the top level,
+  so a download cut off midway does not execute a partial script.
+- HTTP/2 for the HTTPS listener and for gRPC backends is configured through
+  `net/http`'s `Protocols` instead of the deprecated `golang.org/x/net/http2`
+  APIs.
+- Dependency updates: `github.com/moby/moby/client` 0.6.0, `golang.org/x/net`
+  0.59.0, Go 1.27.1.
+
 ## [1.2.0] - 2026-08-14
 
 Feature release. v1.1.0 confined roji to loopback, which left nothing for the
@@ -732,6 +789,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.3.0]: https://github.com/kan/roji/releases/tag/v1.3.0
 [1.2.0]: https://github.com/kan/roji/releases/tag/v1.2.0
 [1.1.1]: https://github.com/kan/roji/releases/tag/v1.1.1
 [1.1.0]: https://github.com/kan/roji/releases/tag/v1.1.0
