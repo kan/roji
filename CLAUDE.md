@@ -78,6 +78,9 @@ roji/
 ├── i18n/                    # CLI / ダッシュボードのメッセージ
 ├── apiclient/               # CLI から稼働中の roji API を呼ぶクライアント
 ├── test/                    # インテグレーション/E2Eテスト
+├── credits.go               # LICENSE / CREDITS / THIRD_PARTY_NOTICES の埋め込み（roji credits）
+├── CREDITS                  # 依存 Go モジュールのライセンス（gocredits で生成、コミットする）
+├── THIRD_PARTY_NOTICES      # gocredits が拾わないもの（Petite Vue、NOTICE ファイル）
 ├── Dockerfile               # マルチステージビルド
 ├── docker-compose.yml       # 開発・テスト用（Air ホットリロード。本番はネイティブバイナリ）
 ├── .air.toml                # Air ホットリロード設定
@@ -276,6 +279,13 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
     レート制限で「最新」と誤表示していたため）。得られなければエラーで終了する
   - 最終行の `main "$@"` 以外は変数宣言と関数定義だけにする。ダウンロードが途中で
     切れたスクリプトを実行させないため
+- 依存のライセンス表示（`CREDITS` / `THIRD_PARTY_NOTICES`）
+  - アーカイブと Docker イメージに同梱し、`roji credits` でバイナリからも出力する。
+    install.sh はアーカイブからバイナリしか残さないため
+  - `go:embed` はビルド時にファイルが要るので、`CREDITS` はコミットする（リリース時
+    だけ生成すると `go build` / `go install` が失敗する）。dependabot の PR ごとには
+    更新せず、リリース手順で再生成する
+  - gocredits は `go.mod` の `tool` と、テストだけで使う依存を含めない
 - GoReleaser v2（マルチプラットフォーム）
 - Distrolessイメージ
 - セキュリティスキャン（Trivy, govulncheck）
@@ -330,13 +340,27 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
    CHANGELOG.md に新バージョンの変更内容と末尾のリンク定義を追加する。
 
+   `CREDITS` を再生成する。依存が変わっていれば差分が出る。
+   `release.yml` の `test` ジョブが `go tool gocredits . | diff - CREDITS` で
+   検査するので、忘れるとリリースが止まる。
+
+   ```bash
+   go tool gocredits -w .
+   ```
+
+   `THIRD_PARTY_NOTICES` は手で管理する。次のときに更新する。
+
+   - `proxy/templates/petite-vue.min.js` を差し替えたとき（版と著作権表示）
+   - NOTICE ファイルを持つ Go モジュールが依存に加わったとき。gocredits は
+     LICENSE しか集めない。現時点で該当するのは `gopkg.in/yaml.v3` だけ
+
    install.sh の URL は `main` 固定なので、リリースのたびの置換は要らない。
    install.sh は常に最新版を取りに行くため、URL をタグで固定しても版は固定
    されない。版の固定は `ROJI_VERSION` / `--version` で行う。
 
 2. **コミット & タグ**
    ```bash
-   git add CHANGELOG.md
+   git add CHANGELOG.md CREDITS THIRD_PARTY_NOTICES
    git commit -m "Prepare for vX.Y.Z release"
    git tag -a vX.Y.Z -m "Release vX.Y.Z: [主要機能]"
    git push origin main

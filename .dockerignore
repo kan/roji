@@ -9,8 +9,8 @@ certs/
 .gitignore
 
 # Documentation
+# (LICENSE, CREDITS and THIRD_PARTY_NOTICES stay: credits.go embeds them)
 *.md
-LICENSE
 
 # IDE
 .idea/

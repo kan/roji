@@ -165,6 +165,7 @@ Access at `https://roji.dev.localhost` — a live dashboard with real-time route
 | `roji log` | View server logs (`-n`, `--no-follow`) |
 | `roji routes` | List registered routes |
 | `roji version` | Show version info |
+| `roji credits` | Show licenses of roji and its dependencies |
 | `roji health` | Check server health |
 
 For full command reference with all flags, see the [CLI Reference](https://roji-proxy.dev/docs/reference/cli/).
@@ -204,3 +205,7 @@ Full documentation is available at **[roji-proxy.dev](https://roji-proxy.dev)**:
 ## License
 
 MIT
+
+Licenses of the bundled dependencies are in `CREDITS` (Go modules) and
+`THIRD_PARTY_NOTICES` (everything else). Both ship in the release archives and
+the Docker image, and `roji credits` prints them from the binary itself.

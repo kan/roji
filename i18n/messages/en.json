@@ -23,6 +23,8 @@
   "cmd.version.by": "  by:      %s",
   "cmd.version.go": "  go:      %s",
   "cmd.version.os_arch": "  os/arch: %s/%s",
+  "cmd.credits.short": "Show licenses of roji and its dependencies",
+  "cmd.credits.long": "Show roji's license, followed by the licenses of the Go modules linked\ninto the binary and the notices for other bundled software.",
 
   "cmd.health.short": "Check if roji is healthy",
   "cmd.health.long": "Performs a health check against the local roji instance. Exits with 0 if healthy, 1 otherwise.",

@@ -92,6 +92,9 @@ func updateCommandMessages() {
 	versionCmd.Short = i18n.T("cmd.version.short")
 	versionCmd.Long = i18n.T("cmd.version.long")
 
+	creditsCmd.Short = i18n.T("cmd.credits.short")
+	creditsCmd.Long = i18n.T("cmd.credits.long")
+
 	healthCmd.Short = i18n.T("cmd.health.short")
 	healthCmd.Long = i18n.T("cmd.health.long")
 

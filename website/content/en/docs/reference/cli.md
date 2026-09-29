@@ -141,6 +141,14 @@ List all registered routes from the running server.
 
 Show version, commit hash, build date, and Go version.
 
+## `roji credits`
+
+Print roji's license, the licenses of the Go modules linked into the binary
+(`CREDITS`), and the notices for other bundled software such as Petite Vue
+(`THIRD_PARTY_NOTICES`). The same files ship in the release archives, but the
+one-liner installer keeps only the binary, so this is how to read them after
+installing that way.
+
 ## `roji health`
 
 Check if the roji server is healthy. Exits with code 0 if healthy, 1 otherwise.

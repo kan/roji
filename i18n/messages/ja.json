@@ -23,6 +23,8 @@
   "cmd.version.by": "  ビルド元: %s",
   "cmd.version.go": "  Go:       %s",
   "cmd.version.os_arch": "  OS/Arch:  %s/%s",
+  "cmd.credits.short": "roji と依存モジュールのライセンスを表示",
+  "cmd.credits.long": "roji のライセンスに続けて、バイナリにリンクされた Go モジュールのライセンスと、\n同梱しているその他のソフトウェアの表示を出力します。",
 
   "cmd.health.short": "rojiの正常性を確認",
   "cmd.health.long": "ローカルのrojiインスタンスに対してヘルスチェックを実行します。正常なら終了コード0、異常なら1で終了します。",

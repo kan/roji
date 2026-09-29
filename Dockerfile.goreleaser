@@ -15,6 +15,9 @@ LABEL org.opencontainers.image.licenses="MIT"
 # Copy the pre-built binary from GoReleaser (platform-specific path)
 COPY ${TARGETPLATFORM}/roji /roji
 
+# License texts: roji's own, the linked Go modules, and other bundled software
+COPY LICENSE CREDITS THIRD_PARTY_NOTICES /
+
 EXPOSE 80 443
 
 # Run as nonroot user (UID 65532)

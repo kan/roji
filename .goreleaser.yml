@@ -43,6 +43,8 @@ archives:
         formats: [zip]
     files:
       - LICENSE
+      - CREDITS
+      - THIRD_PARTY_NOTICES
       - README.md
       - CHANGELOG.md
 
@@ -111,6 +113,10 @@ dockers_v2:
       - linux/amd64
       - linux/arm64
     dockerfile: Dockerfile.goreleaser
+    extra_files:
+      - LICENSE
+      - CREDITS
+      - THIRD_PARTY_NOTICES
     labels:
       org.opencontainers.image.created: "{{ .Date }}"
       org.opencontainers.image.title: "{{ .ProjectName }}"

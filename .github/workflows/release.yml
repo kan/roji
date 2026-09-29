@@ -23,6 +23,11 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
+      # CREDITS is committed and refreshed as part of the release steps
+      # (CLAUDE.md). Stop the release if that step was skipped.
+      - name: Check CREDITS is up to date
+        run: go tool gocredits . | diff - CREDITS
+
       - name: Run unit tests
         run: go test -v -race ./...
 
