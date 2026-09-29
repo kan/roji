@@ -18,7 +18,6 @@ func TestCreditsCommand(t *testing.T) {
 		"Copyright (c) 2025 kan",
 		"github.com/spf13/cobra",
 		"Petite Vue",
-		"Copyright 2011-2016 Canonical Ltd.",
 	}
 	last := -1
 	for _, want := range wants {

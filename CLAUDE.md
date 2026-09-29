@@ -80,7 +80,7 @@ roji/
 ├── test/                    # インテグレーション/E2Eテスト
 ├── credits.go               # LICENSE / CREDITS / THIRD_PARTY_NOTICES の埋め込み（roji credits）
 ├── CREDITS                  # 依存 Go モジュールのライセンス（gocredits で生成、コミットする）
-├── THIRD_PARTY_NOTICES      # gocredits が拾わないもの（Petite Vue、NOTICE ファイル）
+├── THIRD_PARTY_NOTICES      # gocredits が拾わないもの（Go モジュールでない Petite Vue）
 ├── Dockerfile               # マルチステージビルド
 ├── docker-compose.yml       # 開発・テスト用（Air ホットリロード。本番はネイティブバイナリ）
 ├── .air.toml                # Air ホットリロード設定
@@ -348,11 +348,9 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
    go tool gocredits -w .
    ```
 
-   `THIRD_PARTY_NOTICES` は手で管理する。次のときに更新する。
-
-   - `proxy/templates/petite-vue.min.js` を差し替えたとき（版と著作権表示）
-   - NOTICE ファイルを持つ Go モジュールが依存に加わったとき。gocredits は
-     LICENSE しか集めない。現時点で該当するのは `gopkg.in/yaml.v3` だけ
+   `THIRD_PARTY_NOTICES` は手で管理する。`proxy/templates/petite-vue.min.js` を
+   差し替えたときに、版と著作権表示を更新する。Go モジュールの NOTICE ファイルは
+   gocredits が `CREDITS` に入れるので、手で写さない。
 
    install.sh の URL は `main` 固定なので、リリースのたびの置換は要らない。
    install.sh は常に最新版を取りに行くため、URL をタグで固定しても版は固定
