@@ -8,8 +8,8 @@
 
 ### 言語ルール
 
-- **CLAUDE.md**: 日本語（開発者向け内部ドキュメント）
-- **その他すべて**: 英語（README.md、CONTRIBUTING.md、ソースコード、コメント）
+- 日本語で書くもの: CLAUDE.md（開発者向け内部ドキュメント）、`website/content/ja/`、コミットメッセージ
+- 英語で書くもの: 上記以外（README.md、CONTRIBUTING.md、CHANGELOG.md、ソースコード、コメント、`website/content/en/`）
 
 ### コンセプト
 
@@ -21,7 +21,7 @@
 
 - **言語**: Go 1.27+
 - **主要ライブラリ**:
-  - `github.com/docker/docker/client` - Docker API
+  - `github.com/moby/moby/client` / `github.com/moby/moby/api` - Docker API
   - `net/http/httputil` - ReverseProxy（標準ライブラリ）
   - `crypto/x509`, `crypto/tls` - 証明書生成（標準ライブラリ）
 - **フロントエンド**: Petite Vue（~6KB、ビルド不要）
@@ -47,7 +47,7 @@
 roji/
 ├── cmd/roji/
 │   ├── main.go              # エントリーポイント
-│   └── cmd/                  # Cobraコマンド（root, routes, version, health, server, config, doctor, ca）
+│   └── cmd/                  # Cobraコマンド（root, routes, version, health, server, config, doctor, ca, service, log）
 ├── docker/
 │   ├── client.go            # Docker API ラッパー
 │   ├── compose.go           # Docker Compose CLI実行（up/down/restart/logs）
@@ -73,10 +73,14 @@ roji/
 ├── doctor/
 │   ├── check.go             # Doctor インターフェース
 │   └── checks/              # 各チェック実装
+├── service/                 # サービス登録（systemd / launchd / NSSM、ビルドタグで分割）
+├── project/                 # プロジェクト履歴（project.Store）
+├── i18n/                    # CLI / ダッシュボードのメッセージ
+├── apiclient/               # CLI から稼働中の roji API を呼ぶクライアント
 ├── test/                    # インテグレーション/E2Eテスト
 ├── Dockerfile               # マルチステージビルド
-├── docker-compose.yml       # 本番用
-├── docker-compose.dev.yml   # 開発用（Air ホットリロード）
+├── docker-compose.yml       # 開発・テスト用（Air ホットリロード。本番はネイティブバイナリ）
+├── .air.toml                # Air ホットリロード設定
 └── install.sh               # ワンライナーインストール
 ```
 
@@ -257,7 +261,6 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   - 対話式インストール先選択（`~/.local/bin` / `/usr/local/bin`）
   - Docker Mode検出 → 移行フロー
   - 自動セットアップ（doctor --fix, ca install, service install）
-  - 旧Docker版は `install-docker.sh` として維持
 - 設定ファイルバリデーション（不明キー警告、型チェック）
 - Docker Compose操作（ダッシュボード/APIからup/down/restart/logs）
 
@@ -327,10 +330,9 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
    CHANGELOG.md に新バージョンの変更内容と末尾のリンク定義を追加する。
 
-   install.sh の URL は `main` 固定なので、リリースのたびの置換は要らない
-   （#88 で変更）。以前はタグ固定にしていたが、install.sh が最新版を取りに行く
-   ため、URL のタグと入るバージョンが一致していなかった。版の固定は
-   `ROJI_VERSION` / `--version` で行う。
+   install.sh の URL は `main` 固定なので、リリースのたびの置換は要らない。
+   install.sh は常に最新版を取りに行くため、URL をタグで固定しても版は固定
+   されない。版の固定は `ROJI_VERSION` / `--version` で行う。
 
 2. **コミット & タグ**
    ```bash
@@ -387,7 +389,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
 ### v0.8.0: Native Mode（単体バイナリ化）✅
 
-v0.8.0以降は**Native Mode**を主とする。Docker Modeは1.0.0で廃止予定。
+v0.8.0 以降は **Native Mode** を主とする。Docker Mode は 1.0.0 で廃止した。
 
 #### 概要
 
@@ -653,7 +655,7 @@ static_sites:
 **新 install.sh（Native Mode対応）:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash
 ```
 
 **処理フロー:**
@@ -672,11 +674,9 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 **オプション:**
 - `--local` / `--global` - インストール先指定
 - `--upgrade` - アップグレード確認スキップ
-- `--migrate` - Docker Mode移行確認スキップ
 - `--no-service` - サービス登録スキップ
 
-**旧版:**
-- `install-docker.sh` として維持（Docker Mode用）
+**旧版:** `install-docker.sh`（Docker Mode 用）は v1.0.0 で削除した
 
 #### 設定ファイルバリデーション ✅
 
@@ -700,7 +700,7 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 - [x] `install-docker.sh` を削除
 - [x] README.md から「Docker Mode (Legacy)」セクションを削除
 - [x] `docker-compose.yml` の `ROJI_DOMAIN` デフォルトを `dev.localhost` に統一
-- [x] Dockerfile、docker-compose.yml、docker-compose.dev.yml は開発・テスト用として維持
+- [x] Dockerfile、docker-compose.yml は開発・テスト用として維持
   - docker-compose.yml のコメントに「開発・テスト用」と明記
 
 #### 2. ダッシュボード機能強化
@@ -721,7 +721,7 @@ curl -fsSL https://raw.githubusercontent.com/kan/roji/v0.9.0/install.sh | bash
 #### 4. パッケージマネージャー対応
 
 - [x] **Homebrew対応**（macOS）
-  - Formulaの作成（GoReleaserの `brews` セクション利用）
+  - Cask の作成（GoReleaser の `homebrew_casks` セクション利用）
   - `brew install kan/roji/roji` でインストール可能に
 - [ ] APT/RPMパッケージは検討のみ（v1.x以降）
 
@@ -901,8 +901,8 @@ goreleaser release --snapshot --clean
 ### 手動テスト
 
 ```bash
-# 開発サーバー起動（ホットリロード）
-docker compose -f docker-compose.dev.yml up
+# 開発サーバー起動（docker-compose.yml が Air でホットリロード。設定は .air.toml）
+docker compose up
 
 # テストサービス起動
 cd test && docker compose up -d
