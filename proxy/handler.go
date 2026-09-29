@@ -10,7 +10,6 @@ package proxy
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -28,7 +27,6 @@ import (
 	"github.com/kan/roji/docker"
 	"github.com/kan/roji/i18n"
 	"github.com/kan/roji/project"
-	"golang.org/x/net/http2"
 )
 
 // sharedTransport is used for connection pooling across all proxied requests (HTTP/1.1)
@@ -38,14 +36,13 @@ var sharedTransport = &http.Transport{
 	IdleConnTimeout:     90 * time.Second,
 }
 
-// http2Transport is used for gRPC proxying (HTTP/2)
-var http2Transport = &http2.Transport{
-	AllowHTTP: true, // Allow h2c (HTTP/2 without TLS) for backend connections
-	DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
-		// Use plain TCP for backend connections (h2c)
-		return net.Dial(network, addr)
-	},
-}
+// http2Transport is used for gRPC proxying (HTTP/2).
+// Backends speak h2c (HTTP/2 without TLS), so only unencrypted HTTP/2 is enabled.
+var http2Transport = func() *http.Transport {
+	var protocols http.Protocols
+	protocols.SetUnencryptedHTTP2(true)
+	return &http.Transport{Protocols: &protocols}
+}()
 
 // isGRPCRequest checks if the request is a gRPC request
 func isGRPCRequest(r *http.Request) bool {

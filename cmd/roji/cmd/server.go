@@ -21,7 +21,6 @@ import (
 	"github.com/kan/roji/project"
 	"github.com/kan/roji/proxy"
 	"github.com/kan/roji/tunnel"
-	"golang.org/x/net/http2"
 )
 
 // Config holds the server configuration
@@ -397,17 +396,18 @@ func startHTTPSServer(cfg Config, handler http.Handler) (*http.Server, error) {
 		return nil, fmt.Errorf("failed to load TLS config: %w", err)
 	}
 
+	// Enable HTTP/2 support for gRPC
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+
 	httpsServer := &http.Server{
 		Handler:      handler,
 		TLSConfig:    tlsConfig,
+		Protocols:    &protocols,
 		ReadTimeout:  0, // No limit (support large uploads)
 		WriteTimeout: 0, // No limit (support SSE/Long Polling)
 		IdleTimeout:  120 * time.Second,
-	}
-
-	// Enable HTTP/2 support for gRPC
-	if err := http2.ConfigureServer(httpsServer, &http2.Server{}); err != nil {
-		return nil, fmt.Errorf("failed to configure HTTP/2: %w", err)
 	}
 
 	listeners, err := listenAll(cfg.BindAddrs, cfg.HTTPSPort, "HTTPS")
