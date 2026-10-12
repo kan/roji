@@ -348,6 +348,14 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
     理由そのものが無くなる
 - 再現可能ビルド（`-trimpath`、`mod_timestamp`、アーカイブ内の時刻と所有者の固定）
   - 同じタグからは同じアーカイブができる。`roji version` のビルド日はコミット日時
+  - **GoReleaser の版は `release-build.yml` で 1 つに固定する**（`version: "v2.18.3"`
+    のように。`"~> v2"` のような範囲にしない）。アーカイブの gzip 圧縮は
+    GoReleaser が行い、版が違うと出力のバイト列が変わる。v1.4.0 をタグから
+    再ビルドすると、v2.13.3 と v2.18.3 で `roji` バイナリと tar の層は一致し、
+    `.tar.gz` のチェックサムだけが食い違った。範囲指定のままだと、ワークフローを
+    再実行したときに別のチェックサムのアーカイブができる
+  - この `version:` は dependabot が更新しない（更新するのは action の SHA だけ）。
+    上げるときは手で、リリースとリリースの間に行う
 - ワークフローの `uses:` はコミット SHA で固定する（タグは付け替えられるため）。
   末尾の `# vX.Y.Z` コメントを dependabot が SHA と一緒に更新する
 - Distrolessイメージ
@@ -1216,6 +1224,11 @@ push は `release.yml` の `publish` ジョブが行う（「配布・品質」�
 ```bash
 GITHUB_TOKEN=$(gh auth token) goreleaser release --clean --skip=publish
 ```
+
+公開されたアーカイブと `checksums.txt` まで一致させるには、`release-build.yml` が
+固定している版の GoReleaser を、GitHub Releases の公式バイナリで使う。版が違うと
+`.tar.gz` のチェックサムが変わる。`go install` でビルドしたものは、公式バイナリと
+ビルドに使う Go が違いうるので、比較には使わない。
 
 `Dockerfile.goreleaser` は `ARG TARGETPLATFORM` を使い `${TARGETPLATFORM}/roji` から
 コピーする。`publish` ジョブがバイナリを `linux/amd64/roji` の形に並べて渡す。

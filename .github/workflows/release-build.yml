@@ -45,7 +45,16 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
-          version: "~> v2"
+          # An exact version, not a range. The archives are gzip-compressed by
+          # GoReleaser, and the bytes that come out differ between versions:
+          # v1.4.0 rebuilt from its tag has identical binaries and tar streams
+          # under v2.13.3 and v2.18.3 and different .tar.gz checksums. Rerunning
+          # this workflow for a tag has to give the archives it gave the first
+          # time, and a range lets a GoReleaser release in between change them.
+          #
+          # dependabot updates the action above, not this. Raise it by hand,
+          # between releases.
+          version: "v2.18.3"
           args: release --clean --skip=publish
         env:
           GITHUB_TOKEN: ${{ github.token }}

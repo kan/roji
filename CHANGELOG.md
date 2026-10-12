@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Internal
+
+- The release build pins GoReleaser to an exact version instead of `~> v2`.
+  The `.tar.gz` and `.zip` bytes depend on the GoReleaser that packs them, so
+  rebuilding a tag reproduced the binaries and not the archive checksums once
+  GoReleaser had moved on.
+
 ## [1.4.0] - 2026-10-12
 
 Dev servers on the host. roji has routed containers and static directories;
