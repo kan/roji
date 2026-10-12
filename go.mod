@@ -14,7 +14,7 @@ require (
 	// and links no WebSocket library. The tests dial and serve one.
 	github.com/gorilla/websocket v1.5.3
 	github.com/moby/moby/api v1.56.1
-	github.com/moby/moby/client v0.6.0
+	github.com/moby/moby/client v0.6.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/text v0.42.0
@@ -33,7 +33,7 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/go-connections v0.7.0 // indirect
+	github.com/docker/go-connections v0.8.2 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
