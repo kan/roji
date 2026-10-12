@@ -5,9 +5,9 @@ on:
     tags:
       - 'v*'
 
+# Each job lists what it needs
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   # Run tests before releasing
@@ -15,10 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -39,65 +41,175 @@ jobs:
         working-directory: ./test
         run: go test -v -tags=e2e -timeout=5m ./...
 
-  release:
+  # Build and attest the archives without the permissions and secrets that
+  # publishing needs. A reusable workflow cannot exceed what its caller
+  # grants, so the permissions are repeated here.
+  build:
     needs: test  # Wait for tests to pass before releasing
-    runs-on: ubuntu-latest
-    # Job-level permissions replace the workflow-level ones, so repeat them
     permissions:
-      contents: write
-      packages: write
-      id-token: write           # Sigstore signing certificate for attestations
-      attestations: write       # Store the build provenance attestation
-      artifact-metadata: write  # Storage record for the attested artifacts
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    uses: ./.github/workflows/release-build.yml
 
-      - name: Set up Go
-        uses: actions/setup-go@v7
+  # Publish what the build job produced. Nothing is compiled here.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Create and publish the release
+      packages: write  # Push the Docker image
+      actions: read    # Download the build job's artifact
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_REPO: ${{ github.repository }}
+      # A tag with a pre-release suffix (v1.2.3-rc.1). It gets a GitHub
+      # pre-release and a versioned image, but neither the image's latest tag
+      # nor the Homebrew cask, which would hand it to everyone.
+      PRERELEASE: ${{ contains(github.ref_name, '-') }}
+    steps:
+      # For Dockerfile.goreleaser and the license files copied into the image
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version-file: 'go.mod'
-          cache: true
+          persist-credentials: false
+
+      - name: Download release files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-dist
+          path: dist
+
+      # release_state is what an earlier attempt of this job left behind:
+      #   none      - nothing
+      #   draft     - it failed before publishing; the draft is replaced
+      #   published - it failed after publishing; the release is left alone
+      #               and only the remaining steps run
+      - name: Set release metadata
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state=none
+          if is_draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            state=published
+            if [ "$is_draft" = "true" ]; then
+              state=draft
+            fi
+          fi
+
+          {
+            echo "version=${TAG#v}"
+            echo "commit_date=$(git log -1 --format=%cI)"
+            echo "release_state=${state}"
+          } >> "$GITHUB_OUTPUT"
+
+      # The release stays a draft until the image is pushed, so
+      # /releases/latest keeps pointing at the previous version. install.sh
+      # refuses a release whose archives have no attestation; the build job
+      # has already attested them by the time this job starts.
+      - name: Create draft release
+        if: steps.meta.outputs.release_state != 'published'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_STATE: ${{ steps.meta.outputs.release_state }}
+        run: |
+          if [ "$RELEASE_STATE" = draft ]; then
+            gh release delete "$TAG" --yes
+          fi
+
+          version="${TAG#v}"
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat dist/CHANGELOG.md > "$notes"
+          cat >> "$notes" <<EOF
+
+          ## Docker Image
+
+          \`\`\`bash
+          docker pull ghcr.io/kan/roji:${version}
+          \`\`\`
+
+          ## Homebrew (macOS)
+
+          \`\`\`bash
+          brew install kan/roji/roji
+          \`\`\`
+
+          ## Quick Install
+
+          \`\`\`bash
+          curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash -s -- --version ${version}
+          \`\`\`
+          EOF
+
+          gh release create "$TAG" --draft --verify-tag --prerelease="$PRERELEASE" \
+            --title "$TAG" --notes-file "$notes" \
+            dist/*.tar.gz dist/*.zip dist/checksums.txt
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: "~> v2"
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      # Dockerfile.goreleaser copies ${TARGETPLATFORM}/roji, so lay the
+      # binaries out as linux/amd64/roji and linux/arm64/roji. They come out
+      # of the attested archives, so the image holds the same binaries.
+      - name: Prepare Docker build context
+        run: |
+          ctx="$RUNNER_TEMP/docker"
+          for pair in amd64:x86_64 arm64:arm64; do
+            mkdir -p "$ctx/linux/${pair%%:*}"
+            tar -xzf "dist/roji_Linux_${pair##*:}.tar.gz" -C "$ctx/linux/${pair%%:*}" roji
+          done
+          cp LICENSE CREDITS THIRD_PARTY_NOTICES "$ctx/"
 
-      # install.sh verifies archives with `gh attestation verify --repo kan/roji`.
-      # checksums.txt lists every archive, so each one becomes a subject.
-      - name: Attest build provenance
-        uses: actions/attest@v4
+      - name: Build and push Docker image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          subject-checksums: dist/checksums.txt
+          context: ${{ runner.temp }}/docker
+          file: Dockerfile.goreleaser
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/kan/roji:${{ steps.meta.outputs.version }}
+            ${{ env.PRERELEASE != 'true' && 'ghcr.io/kan/roji:latest' || '' }}
+          # The fixed labels (source, licenses) are in the Dockerfile
+          labels: |
+            org.opencontainers.image.created=${{ steps.meta.outputs.commit_date }}
+            org.opencontainers.image.title=roji
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
 
-      # GoReleaser leaves the release as a draft (.goreleaser.yml), so
-      # /releases/latest keeps pointing at the previous version until the
-      # attestation exists. If attesting fails, the release stays a draft.
+      # With immutable releases enabled, the assets and the tag cannot be
+      # changed from here on.
       - name: Publish release
-        run: gh release edit "$TAG" --draft=false
+        if: steps.meta.outputs.release_state != 'published'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false
+
+      # After publishing: the cask points at the release's download URLs,
+      # which do not resolve while the release is a draft.
+      - name: Update Homebrew cask
+        if: env.PRERELEASE != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          cask=Casks/roji.rb
+          # Updating a file needs its current blob SHA
+          sha=$(gh api "repos/kan/homebrew-roji/contents/$cask" --jq .sha)
+          gh api -X PUT "repos/kan/homebrew-roji/contents/$cask" --silent \
+            -f "message=Brew cask update for roji version $TAG" \
+            -f "content=$(base64 -w0 "dist/homebrew/$cask")" \
+            -f "sha=$sha"
 
       - name: Trigger pkg.go.dev update
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          echo "Requesting pkg.go.dev to index $VERSION"
-          curl -f "https://proxy.golang.org/github.com/kan/roji/@v/$VERSION.info" || true
+          echo "Requesting pkg.go.dev to index $TAG"
+          curl -f "https://proxy.golang.org/github.com/kan/roji/@v/$TAG.info" || true

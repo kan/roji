@@ -1,10 +1,10 @@
-# Dockerfile for GoReleaser
-# This is used by GoReleaser to build Docker images
-# The binary is built by GoReleaser and copied into the image
+# Dockerfile for the release image
+# release.yml builds this with the binaries from the release archives;
+# nothing is compiled here
 
 FROM gcr.io/distroless/static:nonroot
 
-# Required for multi-platform builds with dockers_v2
+# Set by buildx for each platform of a multi-platform build
 ARG TARGETPLATFORM
 
 # Metadata
@@ -12,7 +12,7 @@ LABEL org.opencontainers.image.source="https://github.com/kan/roji"
 LABEL org.opencontainers.image.description="Reverse proxy for local development"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Copy the pre-built binary from GoReleaser (platform-specific path)
+# Copy the pre-built binary (release.yml lays it out as linux/<arch>/roji)
 COPY ${TARGETPLATFORM}/roji /roji
 
 # License texts: roji's own, the linked Go modules, and other bundled software

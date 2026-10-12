@@ -54,6 +54,20 @@ sudo ./bin/roji ca install      # CA証明書インストール
 sudo ./bin/roji service install && sudo ./bin/roji service start
 ```
 
+ダウンロードしたアーカイブは、インストーラーと同じ方法でビルドの出所を検証できる。
+GitHub CLI を使い、`--source-ref` にはダウンロードした版のタグを指定する。
+
+```bash
+gh attestation verify roji_Linux_x86_64.tar.gz --repo kan/roji \
+  --signer-workflow kan/roji/.github/workflows/release-build.yml \
+  --source-ref refs/tags/vX.Y.Z
+```
+
+`--signer-workflow` は、リリース用のワークフローがビルドしたアーカイブだけを
+受け入れる指定。`--source-ref` は、その版のタグからビルドしたものだけを受け入れる指定。
+v1.3.0 では `--signer-workflow` に `kan/roji/.github/workflows/release.yml` を指定する。
+それより前の版に attestation は無い。
+
 ## アップグレード
 
 インストールスクリプトを再実行すると、既存のインストールを検出して自動アップグレードします：

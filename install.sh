@@ -37,6 +37,9 @@ DOCKER_INSTALL_DIR="$HOME/.roji"
 # Releases before this one carry no build provenance attestation, so they can
 # only be checked against checksums.txt.
 FIRST_ATTESTED_VERSION="1.2.1"
+# The last release whose archives were attested by release.yml itself. Later
+# ones are built and attested by the reusable workflow release-build.yml.
+LAST_RELEASE_YML_SIGNED_VERSION="1.3.0"
 
 # Default options
 INSTALL_MODE=""  # Will be set interactively or via flags
@@ -142,7 +145,7 @@ setup_messages() {
         MSG_VERIFYING_ATTESTATION="gh attestation でビルドの出所を検証中..."
         MSG_ATTESTATION_FAILED="ビルドの出所を検証できませんでした。インストールを中止します"
         MSG_ATTESTATION_OK="ビルドの出所を確認しました"
-        MSG_ATTESTATION_NO_GH="gh が無い、ログインしていない、または gh attestation 非対応の版 (2.49 未満) のため、ビルドの出所の検証を省略しました (チェックサムのみ)"
+        MSG_ATTESTATION_NO_GH="gh が無い、ログインしていない、または gh の版が古い (gh attestation verify --source-ref に非対応) ため、ビルドの出所の検証を省略しました (チェックサムのみ)"
         MSG_ATTESTATION_OLD="roji %s にはビルドの出所の証明が無いため、チェックサムのみで検証しました"
         MSG_INSTALLED_TO="roji を %s にインストールしました"
         MSG_NOT_IN_PATH="%s が PATH に含まれていません"
@@ -249,7 +252,7 @@ setup_messages() {
         MSG_VERIFYING_ATTESTATION="Verifying build provenance with gh attestation..."
         MSG_ATTESTATION_FAILED="Build provenance could not be verified; aborting installation"
         MSG_ATTESTATION_OK="Build provenance verified"
-        MSG_ATTESTATION_NO_GH="gh is missing, not logged in, or older than 2.49 (no gh attestation); skipped the build provenance check (checksum only)"
+        MSG_ATTESTATION_NO_GH="gh is missing, not logged in, or too old (no gh attestation verify --source-ref); skipped the build provenance check (checksum only)"
         MSG_ATTESTATION_OLD="roji %s has no build provenance attestation; verified by checksum only"
         MSG_INSTALLED_TO="roji installed to %s"
         MSG_NOT_IN_PATH="%s is not in your PATH"
@@ -608,7 +611,21 @@ verify_checksum() {
     print_success "$MSG_CHECKSUM_OK"
 }
 
-# Verify that the archive was built by this repository's release workflow
+# The workflow that attested the archives of $VERSION. This script always
+# comes from main, yet --version installs older releases too, so the answer
+# depends on the version.
+signer_workflow() {
+    if version_lt "$LAST_RELEASE_YML_SIGNED_VERSION" "$VERSION"; then
+        echo "${GITHUB_REPO}/.github/workflows/release-build.yml"
+    else
+        echo "${GITHUB_REPO}/.github/workflows/release.yml"
+    fi
+}
+
+# Verify that the archive was built by this repository's release workflow,
+# from the tag of the version being installed. --repo alone would accept an
+# archive attested by any workflow in the repository, from any ref: a genuine
+# archive of an older release served as this one would pass.
 verify_attestation() {
     local archive="$1"
 
@@ -618,15 +635,19 @@ verify_attestation() {
         return
     fi
     # gh attestation verify calls the GitHub API, so it needs a login too.
-    # The attestation command itself arrived in gh 2.49.
-    if ! command -v gh &> /dev/null || ! gh attestation verify --help &> /dev/null ||
+    # The attestation command itself arrived in gh 2.49, and --source-ref
+    # later still; a gh without the flag would fail on a genuine archive.
+    if ! command -v gh &> /dev/null ||
+        ! gh attestation verify --help 2> /dev/null | grep -q -- '--source-ref' ||
         ! gh auth status &> /dev/null; then
         print_warning "$MSG_ATTESTATION_NO_GH"
         return
     fi
 
     print_info "$MSG_VERIFYING_ATTESTATION"
-    if ! gh attestation verify "${TMP_DIR}/${archive}" --repo "$GITHUB_REPO" > /dev/null; then
+    if ! gh attestation verify "${TMP_DIR}/${archive}" --repo "$GITHUB_REPO" \
+        --signer-workflow "$(signer_workflow)" \
+        --source-ref "refs/tags/v${VERSION}" > /dev/null; then
         print_error "$MSG_ATTESTATION_FAILED"
         exit 1
     fi

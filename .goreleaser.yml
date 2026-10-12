@@ -1,5 +1,13 @@
 # GoReleaser configuration
 # Documentation: https://goreleaser.com/customization/
+#
+# GoReleaser only builds: release-build.yml runs it with --skip=publish.
+# release.yml creates the GitHub release, pushes the Docker image and updates
+# the Homebrew tap from the files in dist/, so the build runs without the
+# permissions and secrets that publishing needs.
+#
+# The build is reproducible: the same tag gives the same archives. Timestamps
+# come from the commit, not from the clock.
 version: 2
 
 project_name: roji
@@ -22,12 +30,15 @@ builds:
     goarch:
       - amd64
       - arm64
+    flags:
+      - -trimpath
     ldflags:
       - -s -w
       - -X github.com/kan/roji/cmd/roji/cmd.Version={{.Version}}
       - -X github.com/kan/roji/cmd/roji/cmd.Commit={{.Commit}}
-      - -X github.com/kan/roji/cmd/roji/cmd.Date={{.Date}}
+      - -X github.com/kan/roji/cmd/roji/cmd.Date={{.CommitDate}}
       - -X github.com/kan/roji/cmd/roji/cmd.BuiltBy=goreleaser
+    mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
   - id: roji
@@ -41,13 +52,30 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    # Files would otherwise carry the time of the checkout, and the user and
+    # umask of whoever ran the build
+    builds_info:
+      owner: root
+      group: root
+      mode: 0755
+      mtime: "{{ .CommitDate }}"
     files:
-      - LICENSE
-      - CREDITS
-      - THIRD_PARTY_NOTICES
-      - README.md
-      - CHANGELOG.md
+      - src: LICENSE
+        info: &reproducible_info
+          owner: root
+          group: root
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: CREDITS
+        info: *reproducible_info
+      - src: THIRD_PARTY_NOTICES
+        info: *reproducible_info
+      - src: README.md
+        info: *reproducible_info
+      - src: CHANGELOG.md
+        info: *reproducible_info
 
+# Only generates dist/homebrew/Casks/roji.rb; release.yml pushes it to the tap
 homebrew_casks:
   - name: roji
     ids:
@@ -64,7 +92,6 @@ homebrew_casks:
     repository:
       owner: kan
       name: homebrew-roji
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
 
 checksum:
   name_template: 'checksums.txt'
@@ -102,56 +129,11 @@ changelog:
     - title: 'Other'
       order: 999
 
-dockers_v2:
-  - id: roji
-    images:
-      - "ghcr.io/kan/{{ .ProjectName }}"
-    tags:
-      - "{{ .Version }}"
-      - latest
-    platforms:
-      - linux/amd64
-      - linux/arm64
-    dockerfile: Dockerfile.goreleaser
-    extra_files:
-      - LICENSE
-      - CREDITS
-      - THIRD_PARTY_NOTICES
-    labels:
-      org.opencontainers.image.created: "{{ .Date }}"
-      org.opencontainers.image.title: "{{ .ProjectName }}"
-      org.opencontainers.image.revision: "{{ .FullCommit }}"
-      org.opencontainers.image.version: "{{ .Version }}"
-      org.opencontainers.image.source: "https://github.com/kan/roji"
-      org.opencontainers.image.licenses: "MIT"
-
+# The cask's download URLs are built from this
 release:
   github:
     owner: kan
     name: roji
-  # Published by release.yml once the archives are attested; install.sh refuses
-  # an attested-era release that has no attestation yet
-  draft: true
-  prerelease: auto
-  name_template: "v{{.Version}}"
-  footer: |
-    ## Docker Image
-    
-    ```bash
-    docker pull ghcr.io/kan/roji:{{.Version}}
-    ```
-    
-    ## Homebrew (macOS)
-
-    ```bash
-    brew install kan/roji/roji
-    ```
-
-    ## Quick Install
-
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/kan/roji/v{{.Version}}/install.sh | bash
-    ```
 
 # Announce releases to social media (optional)
 announce:

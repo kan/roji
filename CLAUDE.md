@@ -270,11 +270,19 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 ### 配布・品質
 - ワンライナーインストール（Native Mode / アップグレード対応）
   - 取得したアーカイブは `checksums.txt` と照合する。`gh` がありログイン済みなら
-    `gh attestation verify` で出所も検証する（`release.yml` の `actions/attest` が
+    `gh attestation verify` で出所も検証する（`release-build.yml` の `actions/attest` が
     証明を付ける）。どちらかが失敗したらインストールしない。取得したバイナリを
     `sudo` で実行し CA まで入れるため
+  - 検証は `--signer-workflow`（署名したワークフロー）と `--source-ref`（入れる版の
+    タグ）で絞る。`--repo` だけだと、古い版の正規のアーカイブを新しい版として
+    配る差し替えを検出できない
+  - **署名するワークフローのパスは版で違う**（`install.sh` の `signer_workflow`）。
+    v1.3.0 までは `release.yml`、それより後は `release-build.yml`。install.sh は
+    常に `main` のものが使われ、`--version` で古い版も入れるので、
+    `release-build.yml` を改名・移動するときは先にこの分岐を足すこと
   - attestation は v1.2.1 以降にしか無い（`install.sh` の `FIRST_ATTESTED_VERSION`）。
-    それより前の版はチェックサムの照合だけで入れる
+    それより前の版はチェックサムの照合だけで入れる。v1.2.1 はリリースしておらず、
+    実際に attestation が付いた最初の版は v1.3.0
   - 最新版は API ではなく `releases/latest` のリダイレクト先から得る（未認証 API の
     レート制限で「最新」と誤表示していたため）。得られなければエラーで終了する
   - 最終行の `main "$@"` 以外は変数宣言と関数定義だけにする。ダウンロードが途中で
@@ -287,6 +295,19 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
     更新せず、リリース手順で再生成する
   - gocredits は `go.mod` の `tool` と、テストだけで使う依存を含めない
 - GoReleaser v2（マルチプラットフォーム）
+- ビルドと公開の分離（v1.3.0 より後）
+  - `release-build.yml`（reusable workflow）がビルドと attest だけを行う。権限は
+    `contents: read` と attestation 用の 3 つで、secrets は渡さない
+  - `release.yml` の `publish` ジョブが、受け取った成果物からリリース、Docker
+    イメージ、Homebrew cask を公開する。ここではコンパイルしない
+  - GoReleaser は `--skip=publish` でビルド専用。`--split` / `publish` は Pro 版に
+    しか無いため、公開は `gh` と `docker/build-push-action` で書いている
+  - **ビルド側のジョブに書き込み権限や secrets を足さないこと。** 分離している
+    理由そのものが無くなる
+- 再現可能ビルド（`-trimpath`、`mod_timestamp`、アーカイブ内の時刻と所有者の固定）
+  - 同じタグからは同じアーカイブができる。`roji version` のビルド日はコミット日時
+- ワークフローの `uses:` はコミット SHA で固定する（タグは付け替えられるため）。
+  末尾の `# vX.Y.Z` コメントを dependabot が SHA と一緒に更新する
 - Distrolessイメージ
 - セキュリティスキャン（Trivy, govulncheck）
 - インテグレーション/E2Eテスト
@@ -368,11 +389,34 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 3. **確認**
    - GitHub Actions → GitHub Release → Docker Image
    - リリースのアーカイブに attestation が付いていること
-     （`gh attestation verify roji_Linux_x86_64.tar.gz --repo kan/roji`）
-   - リリースが draft のまま残っていないこと。GoReleaser は draft で作り、
-     attest が成功した後に `release.yml` が公開する。attest 前に公開すると、
-     その間 `gh` を持つ利用者の install.sh が検証に失敗して止まるため。
-     draft のまま残っていたら attest の失敗を調べる
+
+     ```bash
+     gh attestation verify roji_Linux_x86_64.tar.gz --repo kan/roji \
+       --signer-workflow kan/roji/.github/workflows/release-build.yml \
+       --source-ref refs/tags/vX.Y.Z
+     ```
+
+   - リリースが draft のまま残っていないこと。`publish` ジョブは draft で作り、
+     Docker イメージの push が済んでから公開する。attest は `build` ジョブで
+     済んでいるので、公開された時点で必ず attestation がある。draft のまま
+     残っていたら `publish` ジョブの失敗を調べる。直して `publish` ジョブを
+     再実行すると、残った draft は作り直される。公開後のステップ（cask の更新など）
+     で失敗した場合も同じく再実行でよく、公開済みのリリースには触らず残りだけを行う
+   - `build` ジョブの成果物は 1 日で消える。`publish` の再実行が翌日以降になったら、
+     ワークフロー全体を再実行する（ビルドは再現可能なので同じアーカイブができる）
+   - Homebrew tap（`kan/homebrew-roji`）の `Casks/roji.rb` が新しい版になって
+     いること。cask の更新は公開の後に行う（cask が指すダウンロード URL は
+     draft の間は解決できないため）
+   - `gh release verify vX.Y.Z --repo kan/roji` が通ること。リポジトリは
+     immutable releases を有効にしており、公開した時点で release attestation が
+     作られる
+   - **公開後はアセットとタグを差し替えられない。** 成果物の誤りは次の版で直す
+     （タイトルとリリースノートは公開後も編集できる）。`publish` ジョブが draft の
+     うちにアセットを揃えてから公開するのはこのため。公開後にアセットを足す
+     ステップをワークフローへ入れないこと
+   - プレリリース（`v1.2.3-rc.1` のように `-` を含むタグ）は、GitHub の
+     pre-release と版付きの Docker イメージだけを出す。イメージの `latest` と
+     cask は更新しない
 
 ## ロードマップ（v0.7.0 → v1.2.0）
 
@@ -917,8 +961,20 @@ goreleaser release --snapshot --clean
 
 **v2の主な特徴:**
 - `version: 2` ヘッダーが必須
-- `dockers_v2`: 単一設定でマルチプラットフォームイメージ+マニフェスト生成
-- Dockerfileで `ARG TARGETPLATFORM` を使用し `${TARGETPLATFORM}/binary` からコピー
+
+**GoReleaser がやらないこと:** リリースの作成、Docker イメージ、Homebrew tap への
+push は `release.yml` の `publish` ジョブが行う（「配布・品質」の「ビルドと公開の
+分離」）。`.goreleaser.yml` に `dockers_v2` や `release.draft` を戻しても
+`--skip=publish` で無視される。
+
+リリース用のビルドをローカルで再現するには次を使う（`--snapshot` は版が変わる）。
+
+```bash
+GITHUB_TOKEN=$(gh auth token) goreleaser release --clean --skip=publish
+```
+
+`Dockerfile.goreleaser` は `ARG TARGETPLATFORM` を使い `${TARGETPLATFORM}/roji` から
+コピーする。`publish` ジョブがバイナリを `linux/amd64/roji` の形に並べて渡す。
 
 ### 手動テスト
 

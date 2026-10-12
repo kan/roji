@@ -53,6 +53,21 @@ sudo ./bin/roji ca install      # Install CA certificate
 sudo ./bin/roji service install && sudo ./bin/roji service start
 ```
 
+A downloaded archive can be checked against its build provenance with the
+GitHub CLI, the way the installer does. Put the version you downloaded in
+`--source-ref`:
+
+```bash
+gh attestation verify roji_Linux_x86_64.tar.gz --repo kan/roji \
+  --signer-workflow kan/roji/.github/workflows/release-build.yml \
+  --source-ref refs/tags/vX.Y.Z
+```
+
+`--signer-workflow` limits the check to archives built by the release
+workflow, and `--source-ref` to the ones built from that version's tag. For
+v1.3.0, the signer workflow is `kan/roji/.github/workflows/release.yml`.
+Earlier releases carry no attestation.
+
 ## Upgrading
 
 Re-run the install script. It detects existing installations and upgrades automatically:
