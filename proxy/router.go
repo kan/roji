@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 
+	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
 )
 
@@ -25,12 +27,76 @@ type Subscriber struct {
 	cancel context.CancelFunc
 }
 
-// Route represents a single route configuration
+// LocalBackend is a server already listening on the host, such as a dev server
+// started outside Docker, that the config file gives a hostname to.
+type LocalBackend struct {
+	Target    *url.URL          // Where the server listens, e.g. http://127.0.0.1:8787
+	BasicAuth *config.BasicAuth // Basic authentication (optional)
+	Tunnel    bool              // Published through the tunnel
+}
+
+// Route kinds, as reported in RouteInfo.Kind.
+const (
+	KindDocker = "docker" // A container discovered on a watched network
+	KindStatic = "static" // A directory declared under static_sites
+	KindLocal  = "local"  // A server on the host declared under proxy_sites
+)
+
+// Route represents a single route configuration. Exactly one of the three
+// backends is set.
 type Route struct {
 	Hostname      string
 	PathPrefix    string
 	Backend       *docker.Backend
-	StaticBackend *StaticBackend // For static file hosting (mutually exclusive with Backend)
+	StaticBackend *StaticBackend // A directory served from disk
+	LocalBackend  *LocalBackend  // A server on the host
+}
+
+// Kind names which backend the route has.
+func (route *Route) Kind() string {
+	switch {
+	case route.StaticBackend != nil:
+		return KindStatic
+	case route.LocalBackend != nil:
+		return KindLocal
+	default:
+		return KindDocker
+	}
+}
+
+// Published reports whether the route opted in to the tunnel: a Docker route
+// with the roji.tunnel label, a declared one with its `tunnel` key. There is no
+// other way in, so this is the one question the tunnel guard asks of a route.
+func (route *Route) Published() bool {
+	switch {
+	case route.StaticBackend != nil:
+		return route.StaticBackend.Tunnel
+	case route.LocalBackend != nil:
+		return route.LocalBackend.Tunnel
+	default:
+		return route.Backend.Tunnel
+	}
+}
+
+// BasicAuth returns the credentials the route asks for, or nil for none.
+func (route *Route) BasicAuth() *config.BasicAuth {
+	switch {
+	case route.StaticBackend != nil:
+		return route.StaticBackend.BasicAuth
+	case route.LocalBackend != nil:
+		return route.LocalBackend.BasicAuth
+	default:
+		return route.Backend.BasicAuth
+	}
+}
+
+// ServiceName is what the route is called in logs and listings. Declared routes
+// have no service, so they go by their kind.
+func (route *Route) ServiceName() string {
+	if route.Backend != nil {
+		return route.Backend.ServiceName
+	}
+	return route.Kind()
 }
 
 // Router manages routes and provides thread-safe access
@@ -41,8 +107,10 @@ type Router struct {
 	// For path-based routing: hostname -> []*Route (sorted by path length desc)
 	pathRoutes map[string][]*Route
 
-	// Static file hosting routes
-	staticRoutes map[string]*Route // key: hostname (lowercase)
+	// Routes declared in the config file: static sites and servers on the host.
+	// They are kept apart from the Docker routes above because they outrank
+	// them — see Resolve.
+	declaredRoutes map[string]*Route // key: hostname (lowercase)
 
 	// Domain mapping used to name a published route's public URL. Zero when no
 	// tunnel is configured, in which case ListRoutes reports no URLs.
@@ -56,10 +124,10 @@ type Router struct {
 // NewRouter creates a new route manager
 func NewRouter() *Router {
 	return &Router{
-		routes:       make(map[string]*Route),
-		pathRoutes:   make(map[string][]*Route),
-		staticRoutes: make(map[string]*Route),
-		subscribers:  make(map[*Subscriber]struct{}),
+		routes:         make(map[string]*Route),
+		pathRoutes:     make(map[string][]*Route),
+		declaredRoutes: make(map[string]*Route),
+		subscribers:    make(map[*Subscriber]struct{}),
 	}
 }
 
@@ -74,7 +142,7 @@ func (r *Router) SetTunnelDomains(domains TunnelDomains) {
 // tunnelURL returns the address a published route answers to from the internet,
 // or an empty string for a route that is not published. The caller holds r.mu.
 func (r *Router) tunnelURL(route *Route) string {
-	if route.Backend == nil || !route.Backend.Tunnel {
+	if !route.Published() {
 		return ""
 	}
 	public, ok := r.tunnelDomains.ToPublic(route.Hostname)
@@ -165,6 +233,19 @@ func (r *Router) AddBackend(backend *docker.Backend) {
 			"path", backend.PathPrefix,
 			"new_service", backend.ServiceName,
 			"existing_service", existing.Backend.ServiceName)
+	}
+
+	// The other order of the collision setDeclared reports: the site was
+	// declared first and the container arrived on its hostname afterwards. Said
+	// in the log and not in backend.Warning, which would outlive a reload that
+	// removes the site and leave a working container behind a warning page.
+	if declared, ok := r.declaredRoutes[hostname]; ok {
+		slog.Warn("Docker route is hidden by a declared site on the same hostname",
+			"hostname", hostname,
+			"docker_service", backend.ServiceName,
+			"docker_path", backend.PathPrefix,
+			"kind", declared.Kind(),
+			"target", declaredTarget(declared))
 	}
 
 	route := &Route{
@@ -262,78 +343,91 @@ func (r *Router) RemoveProject(projectName string) {
 	go r.notifySubscribers()
 }
 
-// AddStaticSite adds a static file hosting route
-func (r *Router) AddStaticSite(site *StaticBackend) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// declaredTarget renders where a declared route sends its requests.
+func declaredTarget(route *Route) string {
+	if route.StaticBackend != nil {
+		return route.StaticBackend.Root
+	}
+	return route.LocalBackend.Target.String()
+}
 
-	hostname := strings.ToLower(site.Hostname)
+// setDeclared stores a declared route under its hostname. The caller holds r.mu.
+func (r *Router) setDeclared(route *Route) {
+	route.Hostname = strings.ToLower(route.Hostname)
 
-	// A declared static site takes the hostname. Docker routes are discovered,
-	// so a container appearing on a hostname the config file already names must
-	// not displace it — LookupStatic runs first for the same reason.
+	// A declared route takes the hostname. Docker routes are discovered, so a
+	// container appearing on a hostname the config file already names must not
+	// displace it — Resolve asks the declared routes first for the same reason.
 	//
 	// Reporting rather than refusing: registration used to return here, so a
 	// config reload dropped any static site whose hostname a container had
 	// since taken, and it stayed gone until roji restarted.
-	if hidden := r.dockerRouteOn(hostname); hidden != nil {
-		slog.Warn("static site hides a Docker route on the same hostname",
-			"hostname", hostname,
+	if hidden := r.dockerRouteOn(route.Hostname); hidden != nil {
+		slog.Warn("declared site hides a Docker route on the same hostname",
+			"hostname", route.Hostname,
 			"docker_service", hidden.Backend.ServiceName,
 			"docker_path", hidden.PathPrefix,
-			"static_root", site.Root)
+			"kind", route.Kind(),
+			"target", declaredTarget(route))
 	}
 
-	route := &Route{
-		Hostname:      hostname,
-		StaticBackend: site,
+	// The config file can name a hostname twice, under one key or across both.
+	// The later one wins, as it always has for static sites.
+	if existing, ok := r.declaredRoutes[route.Hostname]; ok {
+		slog.Warn("hostname is declared more than once, the later declaration wins",
+			"hostname", route.Hostname,
+			"dropped_kind", existing.Kind(),
+			"dropped_target", declaredTarget(existing),
+			"kind", route.Kind(),
+			"target", declaredTarget(route))
 	}
 
-	r.staticRoutes[hostname] = route
+	r.declaredRoutes[route.Hostname] = route
 
-	slog.Info("static site added",
-		"hostname", site.Hostname,
-		"root", site.Root)
+	slog.Info("declared site added",
+		"hostname", route.Hostname,
+		"kind", route.Kind(),
+		"target", declaredTarget(route))
+}
+
+// ReplaceDeclared swaps the whole set of declared routes — those with a
+// StaticBackend or a LocalBackend — for routes. It is the only way in: startup
+// registers what the config file says and a reload registers what it says now.
+// A declared route is keyed by hostname alone, so a PathPrefix on one is
+// ignored.
+//
+// One step rather than a clear followed by adds: in the gap between the two, a
+// request for a declared hostname falls through to whatever Docker route the
+// declaration was hiding.
+func (r *Router) ReplaceDeclared(routes []*Route) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.declaredRoutes = make(map[string]*Route, len(routes))
+	for _, route := range routes {
+		r.setDeclared(route)
+	}
 
 	// Notify SSE subscribers
 	go r.notifySubscribers()
 }
 
-// RemoveStaticSite removes a static file hosting route
-func (r *Router) RemoveStaticSite(hostname string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	hostname = strings.ToLower(hostname)
-	if route, ok := r.staticRoutes[hostname]; ok {
-		delete(r.staticRoutes, hostname)
-		slog.Info("static site removed",
-			"hostname", route.Hostname)
-
-		// Notify SSE subscribers
-		go r.notifySubscribers()
-	}
-}
-
-// LookupStatic finds a static route for a given hostname
-func (r *Router) LookupStatic(hostname string) *Route {
+// LookupDeclared finds the route the config file declares for a hostname
+func (r *Router) LookupDeclared(hostname string) *Route {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	hostname = strings.ToLower(hostname)
-	return r.staticRoutes[hostname]
+	return r.declaredRoutes[strings.ToLower(hostname)]
 }
 
-// ClearStaticSites removes all static site routes
-func (r *Router) ClearStaticSites() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.staticRoutes = make(map[string]*Route)
-	slog.Info("all static sites cleared")
-
-	// Notify SSE subscribers
-	go r.notifySubscribers()
+// Resolve finds the route that serves a hostname and path, which is the order
+// of precedence in one place: a declared route owns its hostname outright, and
+// only a hostname the config file does not name goes to the Docker routes.
+func (r *Router) Resolve(hostname, path string) *Route {
+	if route := r.LookupDeclared(hostname); route != nil {
+		return route
+	}
+	return r.Lookup(hostname, path)
 }
 
 // matchPathPrefix reports whether path falls under prefix, and returns what
@@ -366,7 +460,8 @@ func matchPathPrefix(path, prefix string) (rest string, ok bool) {
 	return rest, true
 }
 
-// Lookup finds a route for a given hostname and path
+// Lookup finds a Docker route for a given hostname and path. Use Resolve to
+// find what actually serves a request.
 func (r *Router) Lookup(hostname, path string) *Route {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -393,6 +488,7 @@ func (r *Router) backendRouteInfo(route *Route) RouteInfo {
 		target = fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port)
 	}
 	return RouteInfo{
+		Kind:          KindDocker,
 		Hostname:      route.Hostname,
 		PathPrefix:    route.PathPrefix,
 		Target:        target,
@@ -424,15 +520,15 @@ func (r *Router) ListRoutes() []RouteInfo {
 		}
 	}
 
-	// Add static routes
-	for _, route := range r.staticRoutes {
+	for _, route := range r.declaredRoutes {
 		infos = append(infos, RouteInfo{
+			Kind:         route.Kind(),
 			Hostname:     route.Hostname,
-			Target:       route.StaticBackend.Root,
-			ServiceName:  "static",
-			IsStatic:     true,
-			IndexEnabled: route.StaticBackend.Index,
-			HasBasicAuth: route.StaticBackend.BasicAuth != nil,
+			Target:       declaredTarget(route),
+			ServiceName:  route.ServiceName(),
+			IndexEnabled: route.StaticBackend != nil && route.StaticBackend.Index,
+			HasBasicAuth: route.BasicAuth() != nil,
+			TunnelURL:    r.tunnelURL(route),
 		})
 	}
 
@@ -449,6 +545,9 @@ func (r *Router) ListRoutes() []RouteInfo {
 
 // RouteInfo is a display-friendly route representation
 type RouteInfo struct {
+	// Kind is one of KindDocker, KindStatic and KindLocal. Which of the fields
+	// below mean anything follows from it.
+	Kind          string `json:"kind"`
 	Hostname      string `json:"hostname"`
 	PathPrefix    string `json:"pathPrefix,omitempty"`
 	Target        string `json:"target"`
@@ -458,13 +557,12 @@ type RouteInfo struct {
 	ProjectName   string `json:"projectName,omitempty"`
 	Warning       string `json:"warning,omitempty"`
 	Network       string `json:"network,omitempty"`
-	IsStatic      bool   `json:"isStatic,omitempty"`
 	IndexEnabled  bool   `json:"indexEnabled,omitempty"` // For static sites: directory listing enabled
 	HasBasicAuth  bool   `json:"hasBasicAuth,omitempty"` // Whether basic auth is enabled
 	// TunnelURL is the address a route answers to from the internet, empty for
-	// one that does not. It is the only spelling of "published": a route opted
-	// in with roji.tunnel while no tunnel is configured reaches nobody, and
-	// saying so twice invites the two answers to disagree.
+	// one that does not. It is the only spelling of "published": a route that
+	// opted in while no tunnel is configured reaches nobody, and saying so twice
+	// invites the two answers to disagree.
 	TunnelURL string `json:"tunnelUrl,omitempty"`
 }
 

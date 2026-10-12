@@ -79,6 +79,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	d.AddCheck(&checks.CAInstall{})
 	d.AddCheck(&checks.ServerCert{})
 	d.AddCheck(&checks.DNS{})
+	d.AddCheck(&checks.Sites{})
 	d.AddCheck(&checks.Tunnel{})
 
 	// Run checks (or fix)

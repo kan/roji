@@ -36,6 +36,7 @@ type Config struct {
 	LogLevel      string
 	DataDir       string              // Directory for persistent data (project history)
 	StaticSites   []config.StaticSite // Static file hosting sites
+	ProxySites    []config.ProxySite  // Servers on the host given a hostname
 	ConfigPath    string              // Path to config file (for reload)
 	Tunnel        *config.Tunnel      // Cloudflare Tunnel; nil or incomplete means no tunnel
 }
@@ -198,12 +199,12 @@ func run(ctx context.Context, cfg Config) error {
 		router.SetTunnelDomains(tunnelDomains(cfg))
 	}
 
-	// Register static sites
-	registerStaticSites(cfg, router)
+	// Register the sites declared in the config file
+	router.ReplaceDeclared(declaredRoutes(cfg.StaticSites, cfg.ProxySites, cfg.BaseDomain, cfg.DashboardHost))
 
 	// Set up config reload callback
 	handler.SetConfigReloader(func() error {
-		return reloadStaticSites(cfg.ConfigPath, cfg.BaseDomain, cfg.DashboardHost, router)
+		return reloadDeclaredSites(cfg.ConfigPath, cfg.BaseDomain, cfg.DashboardHost, router)
 	})
 
 	// Discover existing containers and projects
@@ -603,108 +604,62 @@ func handleStopEvent(ctx context.Context, client *docker.Client, router *proxy.R
 	printRoutes(router)
 }
 
-func reloadStaticSites(configPath, baseDomain, dashboardHost string, router *proxy.Router) error {
-	// Reload settings from config file
+// reloadDeclaredSites reads the config file again and replaces the declared
+// routes with what it now says. Everything else in the file needs a restart.
+func reloadDeclaredSites(configPath, baseDomain, dashboardHost string, router *proxy.Router) error {
 	settings, err := config.Load(configPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Clear existing static sites
-	router.ClearStaticSites()
-
-	// Re-register static sites with new settings
-	for _, site := range settings.StaticSites {
-		// Resolve hostname: if no dot, append base domain
-		hostname := site.Host
-		if !strings.Contains(hostname, ".") {
-			hostname = hostname + "." + baseDomain
-		}
-
-		// Expand path
-		root := config.ExpandPath(site.Root)
-
-		// Validate that the directory exists
-		info, err := os.Stat(root)
-		if err != nil {
-			if os.IsNotExist(err) {
-				slog.Warn("static site root directory does not exist",
-					"host", hostname,
-					"root", root)
-			} else {
-				slog.Warn("failed to stat static site root",
-					"host", hostname,
-					"root", root,
-					"error", err)
-			}
-			continue
-		}
-		if !info.IsDir() {
-			slog.Warn("static site root is not a directory",
-				"host", hostname,
-				"root", root)
-			continue
-		}
-
-		// Register the static site
-		router.AddStaticSite(&proxy.StaticBackend{
-			Hostname:      hostname,
-			Root:          root,
-			Index:         site.IndexEnabled(),
-			DashboardHost: dashboardHost,
-			BasicAuth:     site.GetBasicAuth(),
-		})
-	}
-
+	router.ReplaceDeclared(declaredRoutes(settings.StaticSites, settings.ProxySites, baseDomain, dashboardHost))
 	return nil
 }
 
-func registerStaticSites(cfg Config, router *proxy.Router) {
-	if len(cfg.StaticSites) == 0 {
-		return
-	}
+// declaredRoutes builds the routes the config file declares: its static sites
+// and its servers on the host. A site that cannot be served is reported and
+// left out, so one bad entry does not take the others with it.
+//
+// Which sites those are is config.ResolveSites' decision, shared with
+// `roji doctor`; this turns the answer into routes and log lines.
+func declaredRoutes(staticSites []config.StaticSite, proxySites []config.ProxySite, baseDomain, dashboardHost string) []*proxy.Route {
+	var routes []*proxy.Route
 
-	for _, site := range cfg.StaticSites {
-		// Resolve hostname: if no dot, append base domain
-		hostname := site.Host
-		if !strings.Contains(hostname, ".") {
-			hostname = hostname + "." + cfg.BaseDomain
+	for _, site := range config.ResolveSites(staticSites, proxySites, baseDomain, dashboardHost) {
+		if site.Err != nil {
+			slog.Warn("declared site cannot be served, skipping", "host", site.Hostname, "error", site.Err)
+			continue
+		}
+		if !site.CertCovered {
+			slog.Warn("declared site is not one level under the base domain, so roji's certificate does not cover it",
+				"host", site.Hostname,
+				"domain", baseDomain)
+		}
+		if site.Unpublishable {
+			slog.Warn("declared site asks for the tunnel but is outside the base domain, so it has no public name",
+				"host", site.Hostname,
+				"domain", baseDomain)
 		}
 
-		// Expand path (in case it wasn't already expanded)
-		root := config.ExpandPath(site.Root)
-
-		// Validate that the directory exists
-		info, err := os.Stat(root)
-		if err != nil {
-			if os.IsNotExist(err) {
-				slog.Warn("static site root directory does not exist",
-					"host", hostname,
-					"root", root)
-			} else {
-				slog.Warn("failed to stat static site root",
-					"host", hostname,
-					"root", root,
-					"error", err)
+		route := &proxy.Route{Hostname: site.Hostname}
+		if site.Static != nil {
+			route.StaticBackend = &proxy.StaticBackend{
+				Root:      site.Root,
+				Index:     site.Static.IndexEnabled(),
+				BasicAuth: site.Static.GetBasicAuth(),
+				Tunnel:    site.Static.Tunnel,
 			}
-			continue
+		} else {
+			route.LocalBackend = &proxy.LocalBackend{
+				Target:    site.Target,
+				BasicAuth: site.Proxy.Auth.BasicAuth(),
+				Tunnel:    site.Proxy.Tunnel,
+			}
 		}
-		if !info.IsDir() {
-			slog.Warn("static site root is not a directory",
-				"host", hostname,
-				"root", root)
-			continue
-		}
-
-		// Register the static site
-		router.AddStaticSite(&proxy.StaticBackend{
-			Hostname:      hostname,
-			Root:          root,
-			Index:         site.IndexEnabled(),
-			DashboardHost: cfg.DashboardHost,
-			BasicAuth:     site.GetBasicAuth(),
-		})
+		routes = append(routes, route)
 	}
+
+	return routes
 }
 
 func printBanner(cfg Config) {
@@ -716,6 +671,9 @@ func printBanner(cfg Config) {
 	fmt.Printf("  %s\n", i18n.Tf("server.banner.dashboard", cfg.DashboardHost))
 	if len(cfg.StaticSites) > 0 {
 		fmt.Printf("  %s\n", i18n.Tf("server.banner.static", len(cfg.StaticSites)))
+	}
+	if len(cfg.ProxySites) > 0 {
+		fmt.Printf("  %s\n", i18n.Tf("server.banner.proxy", len(cfg.ProxySites)))
 	}
 	if cfg.Tunnel.Enabled() {
 		fmt.Printf("  %s\n", i18n.Tf("server.banner.tunnel", cfg.Tunnel.Domain, cfg.Tunnel.ListenPort()))

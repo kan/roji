@@ -75,6 +75,7 @@ var validTopLevelKeys = map[string]string{
 	"log_level":    "string",
 	"auto_cert":    "bool",
 	"static_sites": "array",
+	"proxy_sites":  "array",
 	"tunnel":       "object",
 }
 
@@ -134,6 +135,13 @@ func validateTopLevel(rawMap map[string]any, result *ValidationResult) {
 			}
 		}
 
+		// Specific validation for proxy_sites
+		if key == "proxy_sites" {
+			if sites, ok := value.([]any); ok {
+				validateProxySites(sites, result)
+			}
+		}
+
 		// Specific validation for tunnel
 		if key == "tunnel" {
 			if tunnel, ok := value.(map[string]any); ok {
@@ -173,38 +181,96 @@ func validateTunnel(tunnel map[string]any, result *ValidationResult) {
 
 // Valid static_site keys
 var validStaticSiteKeys = map[string]string{
-	"host":  "string",
-	"root":  "string",
-	"index": "bool",
-	"auth":  "object",
+	"host":   "string",
+	"root":   "string",
+	"index":  "bool",
+	"auth":   "object",
+	"tunnel": "bool",
+}
+
+// Valid proxy_site keys
+var validProxySiteKeys = map[string]string{
+	"host":   "string",
+	"target": "string",
+	"auth":   "object",
+	"tunnel": "bool",
+}
+
+// validateSite runs the checks every site declared in the config file gets,
+// whichever array it is in. key names the array, i is the site's index in it,
+// and required is the key the site needs besides host.
+//
+// It returns the site and the path its issues are reported under, for the
+// checks that apply to one kind of site only. ok is false for an entry that is
+// not an object, which has nothing further to check.
+func validateSite(key string, i int, site any, valid map[string]string, required string, result *ValidationResult) (siteMap map[string]any, pathPrefix string, ok bool) {
+	siteMap, ok = site.(map[string]any)
+	if !ok {
+		result.Issues = append(result.Issues, ValidationIssue{
+			Path:    fmt.Sprintf("%s[%d]", key, i),
+			Type:    "invalid_type",
+			Message: fmt.Sprintf("expected object, got %T", site),
+		})
+		return nil, "", false
+	}
+
+	// Get host for better error messages
+	host, _ := siteMap["host"].(string)
+	pathPrefix = fmt.Sprintf("%s[%d]", key, i)
+	if host != "" {
+		pathPrefix = fmt.Sprintf("%s[%d] (host: %s)", key, i, host)
+	}
+
+	validateKeys(siteMap, valid, pathPrefix, result)
+	requireKeys(siteMap, []string{"host", required}, pathPrefix, result)
+
+	// Validate auth if present
+	if auth, ok := siteMap["auth"]; ok {
+		validateSiteAuth(auth, pathPrefix, result)
+	}
+
+	return siteMap, pathPrefix, true
 }
 
 // validateStaticSites validates the static_sites array
 func validateStaticSites(sites []any, result *ValidationResult) {
 	for i, site := range sites {
-		siteMap, ok := site.(map[string]any)
+		validateSite("static_sites", i, site, validStaticSiteKeys, "root", result)
+	}
+}
+
+// validateProxySites validates the proxy_sites array
+func validateProxySites(sites []any, result *ValidationResult) {
+	for i, site := range sites {
+		siteMap, pathPrefix, ok := validateSite("proxy_sites", i, site, validProxySiteKeys, "target", result)
 		if !ok {
+			continue
+		}
+
+		target, ok := siteMap["target"].(string)
+		if !ok {
+			continue // missing or mistyped, and already reported as such
+		}
+
+		u, err := ParseProxyTarget(target)
+		if err != nil {
 			result.Issues = append(result.Issues, ValidationIssue{
-				Path:    fmt.Sprintf("static_sites[%d]", i),
-				Type:    "invalid_type",
-				Message: fmt.Sprintf("expected object, got %T", site),
+				Path:    pathPrefix + ".target",
+				Type:    "invalid_value",
+				Message: fmt.Sprintf("'%s' is not a usable target: %v", target, err),
 			})
 			continue
 		}
 
-		// Get host for better error messages
-		host, _ := siteMap["host"].(string)
-		pathPrefix := fmt.Sprintf("static_sites[%d]", i)
-		if host != "" {
-			pathPrefix = fmt.Sprintf("static_sites[%d] (host: %s)", i, host)
-		}
-
-		validateKeys(siteMap, validStaticSiteKeys, pathPrefix, result)
-		requireKeys(siteMap, []string{"host", "root"}, pathPrefix, result)
-
-		// Validate auth if present
-		if auth, ok := siteMap["auth"]; ok {
-			validateStaticSiteAuth(auth, pathPrefix, result)
+		// Allowed, since which machines to trust is the user's call, but worth
+		// saying: requests leave this machine unencrypted, and a typo here is
+		// more likely than an intent to proxy across the network.
+		if !IsLoopbackHost(u.Hostname()) {
+			result.Issues = append(result.Issues, ValidationIssue{
+				Path:    pathPrefix + ".target",
+				Type:    "suspicious_value",
+				Message: fmt.Sprintf("'%s' is not on this machine; requests to it are sent unencrypted over the network", target),
+			})
 		}
 	}
 }
@@ -221,8 +287,8 @@ var validBasicAuthKeys = map[string]string{
 	"realm": "string",
 }
 
-// validateStaticSiteAuth validates the auth configuration for a static site
-func validateStaticSiteAuth(auth any, pathPrefix string, result *ValidationResult) {
+// validateSiteAuth validates the auth configuration for a declared site
+func validateSiteAuth(auth any, pathPrefix string, result *ValidationResult) {
 	authMap, ok := auth.(map[string]any)
 	if !ok {
 		result.Issues = append(result.Issues, ValidationIssue{

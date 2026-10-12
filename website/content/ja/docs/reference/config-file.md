@@ -66,6 +66,17 @@ static_sites:
         user: admin
         pass: secret
         realm: Private Area       # 任意、デフォルトは "Restricted"
+    tunnel: false                 # トンネルで外部公開する（デフォルト: false）
+
+# ホスト上（Docker の外）で動いているサーバー
+proxy_sites:
+  - host: app                       # 短縮名 -> app.dev.localhost
+    target: http://localhost:5173   # サーバーの URL。スキーム必須、http のみ
+    auth:                           # BASIC認証（static_sites と同じ書き方）
+      basic:
+        user: admin
+        pass: secret
+    tunnel: false                   # トンネルで外部公開する（デフォルト: false）
 
 # 外部公開（省略可。domain と name が揃ったときだけ有効）
 tunnel:
@@ -75,7 +86,8 @@ tunnel:
   auto_start: false     # roji が cloudflared を起動するか
 ```
 
-`static_sites` と `tunnel` は設定ファイル専用で、対応する環境変数は無い。
+`static_sites`、`proxy_sites`、`tunnel` は設定ファイル専用で、対応する環境変数は無い。
+`proxy_sites` の使い方は[ホスト上の開発サーバー](/ja/docs/guides/local-proxy/)ガイド、
 トンネルの使い方は[外部公開（トンネル）](/ja/docs/guides/tunnel/)ガイドを参照。
 
 ## 設定の管理
@@ -93,6 +105,7 @@ rojiは起動時に設定ファイルを検証します：
 
 - **不明なキー**は警告として報告（タイポの検出）
 - **型エラー**が報告される（例: intが必要な場所にstring）
-- **必須フィールドの欠落** — `static_sites` のhost、rootなど
+- **必須フィールドの欠落** — `static_sites` の `host` と `root`、`proxy_sites` の `host` と `target` など
+- **使えない値** — `proxy_sites` の target が `http://` の URL でない、または別のマシンを指している
 
 `roji doctor` で完全な検証レポートを確認できます。

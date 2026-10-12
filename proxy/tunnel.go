@@ -74,7 +74,8 @@ func (d TunnelDomains) ToPublic(local string) (string, bool) {
 //
 //   - the dashboard and its API are never published. `/_api/projects/{name}/up`
 //     starts containers and `/_api/logs` reads traffic, both unauthenticated
-//   - a route is published only if it says so, with `roji.tunnel=true`
+//   - a route is published only if it says so: `roji.tunnel=true` on a
+//     container, `tunnel: true` on a site declared in the config file
 //
 // cloudflared connects from 127.0.0.1 like any local browser, so no property of
 // the request tells the two apart. The separate listener does, which is why the
@@ -125,23 +126,12 @@ func (h *TunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A static site declared on this hostname wins downstream — Handler checks
-	// LookupStatic before Lookup — so approving the Docker route here would
-	// publish the static site instead of the route that opted in. Static sites
-	// have no opt-in of their own, so the hostname is refused outright.
-	if h.router.LookupStatic(local) != nil {
-		slog.Warn("tunnel request for a hostname a static site claims refused",
-			"host", hostname,
-			"local_host", local,
-			"path", r.URL.Path)
-		bareNotFound(w)
-		return
-	}
-
-	// Static sites carry no opt-in, so Lookup — Docker routes only — is the
-	// whole published set.
-	route := h.router.Lookup(local, r.URL.Path)
-	if route == nil || route.Backend == nil || !route.Backend.Tunnel {
+	// Resolve, the same call Handler makes, so the route judged here is the one
+	// that would answer. Asking the Docker routes alone would approve a
+	// published container on a hostname that a declared site has taken over,
+	// and publish the site in its place.
+	route := h.router.Resolve(local, r.URL.Path)
+	if route == nil || !route.Published() {
 		slog.Debug("tunnel request for a route that is not published",
 			"host", hostname,
 			"local_host", local,
@@ -150,7 +140,7 @@ func (h *TunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hand on the local hostname. Everything downstream — the second Lookup,
+	// Hand on the local hostname. Everything downstream — the second Resolve,
 	// the request log, the Host the backend receives — is written against it,
 	// and a dev server checking its allowed hosts expects it too.
 	out := r.Clone(context.WithValue(r.Context(), tunneledKey{}, true))

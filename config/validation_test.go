@@ -387,3 +387,111 @@ func TestValidateConfigYAML_TunnelValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateConfigYAML_ProxySiteValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		yaml       string
+		wantClean  bool
+		wantIssues []string
+	}{
+		{
+			name: "complete site",
+			yaml: `proxy_sites:
+  - host: api
+    target: http://127.0.0.1:8787
+    tunnel: true
+    auth:
+      basic:
+        user: admin
+        pass: secret
+`,
+			wantClean: true,
+		},
+		{
+			name: "localhost names are on this machine",
+			yaml: `proxy_sites:
+  - host: api
+    target: http://localhost:8787
+  - host: app
+    target: http://[::1]:5173
+`,
+			wantClean: true,
+		},
+		{
+			name: "missing target",
+			yaml: `proxy_sites:
+  - host: api
+`,
+			wantIssues: []string{"missing required key 'target'"},
+		},
+		{
+			name: "port shorthand is not a spelling",
+			yaml: `proxy_sites:
+  - host: api
+    port: 8787
+`,
+			wantIssues: []string{"unknown key 'port'", "missing required key 'target'"},
+		},
+		{
+			name: "target without a scheme",
+			yaml: `proxy_sites:
+  - host: api
+    target: 127.0.0.1:8787
+`,
+			wantIssues: []string{"is not a usable target"},
+		},
+		{
+			name: "https target",
+			yaml: `proxy_sites:
+  - host: api
+    target: https://127.0.0.1:8787
+`,
+			wantIssues: []string{"use http"},
+		},
+		{
+			name: "target on another machine",
+			yaml: `proxy_sites:
+  - host: api
+    target: http://192.168.1.20:8787
+`,
+			wantIssues: []string{"is not on this machine"},
+		},
+		{
+			name: "static sites take the tunnel key too",
+			yaml: `static_sites:
+  - host: docs
+    root: /var/www/docs
+    tunnel: true
+`,
+			wantClean: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ValidateConfigYAML([]byte(tt.yaml))
+			messages := result.FormatMessages()
+
+			if tt.wantClean {
+				if result.HasIssues() {
+					t.Errorf("expected no issues, got: %v", messages)
+				}
+				return
+			}
+
+			for _, want := range tt.wantIssues {
+				found := false
+				for _, msg := range messages {
+					if strings.Contains(msg, want) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected an issue mentioning %q, got: %v", want, messages)
+				}
+			}
+		})
+	}
+}

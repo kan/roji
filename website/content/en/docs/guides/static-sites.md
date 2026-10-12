@@ -73,6 +73,26 @@ static_sites:
 
 See the [Basic Authentication](/docs/guides/basic-auth/) guide for more details.
 
+## Publishing Through the Tunnel
+
+A static site stays private unless it opts in to the
+[tunnel](/docs/guides/tunnel/):
+
+```yaml
+static_sites:
+  - host: docs
+    root: ~/projects/docs/build
+    tunnel: true        # reachable as https://docs.example.com
+```
+
+Everything under `root` becomes readable from the internet, directory listing
+included unless `index: false`. Add `auth` if that is more than you intend.
+
+Dotfiles are the exception: through the tunnel, a path with a segment starting
+with `.` (`.env`, `.git/config`) gets a 404 and is left out of listings. Only
+`.well-known/` is served. Symbolic links are followed, so a link pointing
+outside `root` publishes what it points at.
+
 ## Dashboard Integration
 
 Static sites appear on the dashboard alongside Docker-based routes. The dashboard shows:

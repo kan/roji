@@ -29,6 +29,10 @@ auto_cert: true                        # Auto-generate certificates
 static_sites:                          # Static file hosting (see Static Sites guide)
   - host: docs
     root: ~/projects/docs/build
+
+proxy_sites:                           # Servers on the host (see Dev Servers on the Host guide)
+  - host: app
+    target: http://localhost:5173
 ```
 
 ### Managing the Config File

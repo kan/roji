@@ -64,6 +64,25 @@ empty one, a typo — leaves the route private. roji picks up every container on
 its network without being asked, so publishing by default would put all of them
 on the internet. Hence the explicit opt-in.
 
+Sites declared in the config file opt in with a `tunnel` key of their own,
+which takes `true` or `false`:
+
+```yaml
+# ~/.config/roji/config.yaml
+proxy_sites:
+  - host: hook
+    target: http://127.0.0.1:8787
+    tunnel: true
+static_sites:
+  - host: docs
+    root: ~/projects/docs/build
+    tunnel: true
+```
+
+A declared site holds its hostname ahead of any container, and the tunnel
+follows that: when a site without `tunnel: true` shares a hostname with a
+labelled container, the hostname is not published.
+
 ## The DNS record
 
 Pointing `*.{domain}` at the tunnel is yours to do. roji deliberately holds no
@@ -108,7 +127,7 @@ That separation is what makes the following refusals possible.
   credentials, and `/_api/logs` reads request logs
 - The dashboard hostname and the base domain
 - Docker routes without `roji.tunnel`
-- Static sites (`static_sites:` has no opt-in spelling, so none are published)
+- Static sites and proxy sites without `tunnel: true`
 
 Every refusal answers with the same bare 404. Wording them differently would
 tell whoever is probing which hostnames exist.
@@ -130,7 +149,6 @@ label with no `tunnel:` block behind it publishes nothing, and shows no badge.
 
 - A `roji tunnel start/stop/status` command. With `auto_start: false` you run
   `cloudflared tunnel run` yourself
-- Publishing static sites
 - Restarting cloudflared after a crash. roji is not a process manager, so it
   reports the exit and leaves the tunnel down — better than a tunnel that keeps
   failing to authenticate and retrying in silence

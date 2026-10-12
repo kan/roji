@@ -73,6 +73,26 @@ static_sites:
 
 詳細は[BASIC認証](/ja/docs/guides/basic-auth/)ガイドを参照。
 
+## トンネルで外部公開する
+
+静的サイトは、[トンネル](/ja/docs/guides/tunnel/)の公開対象に指定しない限り非公開です。
+
+```yaml
+static_sites:
+  - host: docs
+    root: ~/projects/docs/build
+    tunnel: true        # https://docs.example.com で到達できる
+```
+
+`root` 以下のすべてがインターネットから読めるようになります。`index: false` に
+しない限り、ディレクトリ一覧も見えます。公開範囲を絞りたい場合は `auth` を
+追加してください。
+
+ドットファイルは例外です。トンネル経由では、`.` で始まる要素を含むパス
+（`.env`、`.git/config` など）は 404 になり、ディレクトリ一覧にも出ません。
+`.well-known/` だけは配信します。シンボリックリンクはたどるので、`root` の外を
+指すリンクがあると、その先も公開されます。
+
 ## ダッシュボード連携
 
 静的サイトはDockerベースのルートと並んでダッシュボードに表示されます。ダッシュボードでは：

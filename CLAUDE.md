@@ -48,7 +48,7 @@
 roji/
 ├── cmd/roji/
 │   ├── main.go              # エントリーポイント
-│   └── cmd/                  # Cobraコマンド（root, routes, version, health, server, config, doctor, ca, service, log）
+│   └── cmd/                  # Cobraコマンド（root, routes, version, health, server, config, doctor, ca, service, log, credits）
 ├── docker/
 │   ├── client.go            # Docker API ラッパー
 │   ├── compose.go           # Docker Compose CLI実行（up/down/restart/logs）
@@ -70,7 +70,8 @@ roji/
 ├── config/
 │   ├── labels.go            # ラベルパーサー
 │   ├── paths.go             # XDGパスユーティリティ
-│   └── settings.go          # 設定ファイル読み込み
+│   ├── settings.go          # 設定ファイル読み込み
+│   └── sites.go             # 宣言したサイト（static_sites / proxy_sites）の解決
 ├── doctor/
 │   ├── check.go             # Doctor インターフェース
 │   └── checks/              # 各チェック実装
@@ -116,12 +117,21 @@ roji/
 
 ホスト名を複数のものが主張したときの規則（v1.1.1 で明確化）。
 
-1. **設定ファイルで宣言した静的サイト**が最優先。Docker ルートは自動検出される
-   ものなので、後から起動したコンテナが既に宣言済みのホスト名を奪えない
-   （ハンドラも `LookupStatic` を先に引く）。隠れた Docker ルートは警告ログに出る
+1. **設定ファイルで宣言したルート**（静的サイトとローカルプロキシ。以下
+   「宣言ルート」）が最優先。Docker ルートは自動検出されるものなので、後から
+   起動したコンテナが既に宣言済みのホスト名を奪えない。隠れた Docker ルートは
+   警告ログに出る。宣言ルートのキーはホスト名だけで、パスプレフィックスは
+   持たない。同じホスト名を 2 回宣言したら後の宣言が勝つ（`static_sites` →
+   `proxy_sites` の順に読む）
 2. **Docker ルート同士**はルーティングキー（ホスト名 + パスプレフィックス）で
    衝突を判定する。同じキーを主張したら後から来たものが勝ち、`Backend.Warning` に
    記録されてダッシュボードに出る。同じホスト名でもプレフィックスが違えば衝突しない
+
+**「宣言 > 検出」の順序は `Router.Resolve` の 1 か所で実装している。**
+ハンドラもトンネルのガードも `Resolve` を呼ぶこと。`Lookup`（Docker ルート
+だけを引く）を直接呼ぶと、宣言ルートが隠している Docker ルートを見てしまう。
+ルートの種別を増やすときは `Router` にマップを足さず、`Route` のバックエンドを
+増やして `declaredRoutes` に入れる（優先順位の段数を増やさないため）。
 
 `Backend.Warning` の文言は `handler.go` の `handleRouteWarning` が
 `strings.Contains` で見て警告ページの種別を決めている。`"hostname conflict"`
@@ -145,19 +155,44 @@ v1.2.0 で追加。Cloudflare Tunnel を通して選んだルートだけを外�
    開けられないようにしてある。`/_api/projects/{name}/up` は無認証で
    コンテナを起動でき、`/_api/logs` はリクエストログを読める
 2. ダッシュボードホストとベースドメイン
-3. `roji.tunnel=true` が無い Docker ルート（**明示オプトイン**。roji は
-   ネットワーク上のコンテナをラベル無しで拾うので、既定で公開すると
-   全部が外に出る）
-4. 静的サイト（オプトインの綴りが無いため現状すべて非公開）
+3. 公開を宣言していないルート（**明示オプトイン**）。Docker ルートは
+   `roji.tunnel=true` ラベル、宣言ルートは設定ファイルの `tunnel: true`。
+   判定は `Route.Published()` の 1 本。roji はネットワーク上のコンテナを
+   ラベル無しで拾うので、既定で公開すると全部が外に出る
 
 拒否は理由によらず同じ素の 404 を返す。文言を分けるとどのホスト名が
 存在するかを教えてしまう。
 
 ガードを通った後も同じ規律が要る。ガードと `Handler` はそれぞれ独立に
-`Lookup` するので、その間にコンテナが消えるとリクエストは not found ページに
-落ちる。このページは全ルート（ホスト名・コンテナ名・プロジェクト名・
-バックエンドの ip:port）を列挙するので、トンネル由来のリクエストには
-素の 404 を返す（`isTunneled`）。
+`Resolve` するので、その間にコンテナが消えたり設定が再読み込みされたりすると、
+ガードが見たものと違うルートに当たる。`Handler` 側で次の 4 つを守ること
+（いずれも `isTunneled` で分岐している）。
+
+- ルートが無ければ素の 404。not found ページは全ルート（ホスト名・コンテナ名・
+  プロジェクト名・バックエンドの ip:port）を列挙する
+- 見つかったルートが `Published()` でなければ素の 404。ガードが承認したのは
+  別のルートだったことになる
+- ローカルプロキシの転送先に繋がらないときも素の 404。案内ページは転送先の
+  アドレスを表示する
+
+- Docker ルートに `Warning` が付いているときも素の 404。警告ページは
+  サービス名とダッシュボードのホスト名を表示する
+
+**roji が自分で生成するページを足すときは、トンネル由来のリクエストに何を
+返すかを必ず決めること。** ガードを通ったリクエストも `Handler` の同じ分岐を
+通るので、何も決めなければ、ローカルの開発者向けに書いたページがそのまま
+外へ出る。
+
+静的サイトは、トンネル由来のときだけ次のように振る舞う
+（`Handler.serveStaticSite`）。
+
+- 生成するページ（ディレクトリ一覧など）にダッシュボードへのリンクを出さない
+- `.` で始まる要素を含むパスは素の 404 にし、ディレクトリ一覧にも出さない
+  （`.env` や `.git/` を公開しないため）。`.well-known/` だけは配信する
+
+静的サイトは GET と HEAD にしか応答しない（`ServeStaticFile`）。
+`checkBasicAuth` は CORS のプリフライトのために OPTIONS を素通しするので、
+メソッドを絞らないと認証付きの静的サイトのファイルが OPTIONS で読める。
 
 トンネル用ポートが `http_port` / `https_port` と衝突したらトンネルを開かない。
 どちらのリスナーが勝つかは `bind` 次第で、`bind` に 127.0.0.1 が無ければ
@@ -196,8 +231,8 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 | `ROJI_HTTPS_PORT` | HTTPSポート | `443` |
 | `ROJI_AUTO_CERT` | 証明書自動生成 | `true` |
 
-トンネル（`tunnel:`）と静的サイト（`static_sites:`）は設定ファイル専用で、
-対応する環境変数は無い。
+トンネル（`tunnel:`）、静的サイト（`static_sites:`）、ローカルプロキシ
+（`proxy_sites:`）は設定ファイル専用で、対応する環境変数は無い。
 
 ### API エンドポイント
 
@@ -216,7 +251,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 | `/_api/projects/{name}/restart` | プロジェクト再起動（`docker compose restart`） |
 | `/_api/projects/{name}/logs` | プロジェクトログ（SSEストリーム） |
 | `/_api/projects/{name}/delete` | プロジェクト履歴削除 |
-| `/_api/config/reload` | 設定ファイル再読み込み（静的サイト更新） |
+| `/_api/config/reload` | 設定ファイル再読み込み（静的サイトとローカルプロキシを更新） |
 
 ## 実装済み機能（v0.1.0 → v1.3.0）
 
@@ -335,6 +370,53 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   - `auto_start: true` で roji が cloudflared を起動・停止する
 - `roji doctor` が cloudflared の導入・ログイン・named tunnel の存在を確認
 - ダッシュボードに 🌐 バッジと公開 URL を表示
+
+### ローカルプロキシ（v1.3.0 より後、未リリース）
+- `proxy_sites:` でホスト上の dev サーバー（`vite dev` / `wrangler dev` 等）に
+  ホスト名を付ける。バックエンドの種類は Docker コンテナ、静的ディレクトリ、
+  ホストの TCP ポートの 3 つ
+  - `target` はスキーム付きの URL 1 本（`http` のみ）。`port:` の略記は
+    入れない。同じサイトの綴りを 2 つにしないため（`roji.path` を空文字列に
+    正規化したのと同じ判断）
+  - プロキシ処理は `Handler.proxyTo` が Docker ルートと共有する。WebSocket、
+    SSE、gRPC、`Host` を要求元のまま渡す挙動、クエリ文字列の保持は、ここに
+    書けば両方に効く。ローカルプロキシ用に `httputil` を別に呼ぶ実装を
+    足さないこと
+  - 転送先に繋がらないときは案内ページ（`unreachable.html`、502）を返す。
+    登録時に転送先へ接続できるかは確かめない。dev サーバーが未起動なのは
+    通常の状態で、案内ページを返すにはルートが要るため
+- 宣言ルートの公開オプトイン（`proxy_sites` と `static_sites` の `tunnel: true`）
+- `/_api/routes` の `kind`（`docker` / `static` / `local`）。`isStatic` は
+  廃止した（破壊的変更）
+- 設定の再読み込みは `Router.ReplaceDeclared` で宣言ルートを一括で入れ替える。
+  消してから足す実装に戻さないこと（その隙間に、宣言ルートが隠していた
+  Docker ルートがリクエストに答える）
+- どのサイトを登録するかは `config.ResolveSites` が決め、サーバー
+  （`declaredRoutes`）と `roji doctor`（`checks.Sites`）が同じ結果を読む。
+  登録の条件を足すときは `ResolveSites` に足すこと。片方にだけ書くと、doctor の
+  報告と実際の登録が食い違う
+  - 登録しないもの: root がディレクトリでない静的サイト、`target` が解釈
+    できないローカルプロキシ、ダッシュボードのホスト名かベースドメインを名乗る
+    サイト（ダッシュボードが先に応答するので到達できない）
+  - 登録するが警告するもの: 証明書が対応しないホスト名（ベースドメインの
+    1 階層下だけが対応する）、`tunnel: true` なのにベースドメインの外にある
+    ホスト名（公開用の名前が作れない）
+- `roji doctor` の「宣言したサイト」チェック。上の内容と、ローカルプロキシの
+  転送先が listen しているかを報告する。いずれも警告で、`--fix` は無い
+- 証明書が対応する範囲は `config.CertCoversHost` が答える。certgen は SAN に
+  `*.*.{domain}` も入れているが、ワイルドカードは先頭の 1 ラベルにしか
+  効かないので 2 階層の名前には対応しない。`certgen` のテストが、生成した
+  証明書と `CertCoversHost` の一致を検査している
+- バックエンドへの接続は 10 秒で打ち切る（`backendDialTimeout`）。ローカル
+  プロキシは応答しないアドレスを指せるため
+
+**意図的に入れていないもの:**
+
+- 宣言ルートの `path:`。`pathRoutes` と同じ最長一致のソートを 2 か所に持つ
+  ことになる
+- `roji serve` / `roji proxy` のような一時起動のコマンド
+- 転送先の死活監視
+- `https` の転送先。dev サーバーの自己署名証明書を検証できない
 
 ## 開発フロー
 
@@ -535,6 +617,12 @@ tunnel:
   name: roji            # cloudflared tunnel create で作った named tunnel
   port: 8080            # トンネル専用リスナー（127.0.0.1 固定）
   auto_start: false     # roji が cloudflared を起動するか
+
+# ホスト上の dev サーバー（省略可）
+proxy_sites:
+  - host: api                      # ドット無し -> api.{domain}
+    target: http://127.0.0.1:8787  # スキーム必須、http のみ
+    tunnel: false                  # 外部公開のオプトイン（static_sites にも同じキーがある）
 ```
 
 - [x] **config コマンド**
@@ -577,6 +665,7 @@ Run 'roji doctor --fix' to auto-fix where possible
 - CA証明書のシステムインストール状態（修復可能、WSLではWindows側も確認）
 - サーバー証明書の有効期限（修復可能）
 - DNS解決（*.localhost）
+- 宣言したサイト（設定時のみ: 静的サイトの root、ローカルプロキシの転送先、使えないホスト名）
 - トンネル（設定時のみ: cloudflared の導入・ログイン・named tunnel の存在）
 
 **フラグ:**
@@ -861,7 +950,6 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji
 
 - `roji tunnel start/stop/status` コマンド。`auto_start: false` のときは
   ユーザーが `cloudflared tunnel run <name>` を回す前提
-- 静的サイトの公開。`static_sites:` にオプトインの綴りが無い
 - cloudflared のクラッシュ後の自動再起動。roji はプロセスマネージャでは
   ないので、落ちたことを報告して放置する（認証に失敗し続けるトンネルが
   黙って再試行を繰り返すのを避ける）

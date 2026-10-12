@@ -29,6 +29,56 @@ func freePort(t *testing.T) int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
+func TestDeclaredRoutes(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "file.txt")
+	if err := os.WriteFile(file, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := declaredRoutes(
+		[]config.StaticSite{
+			{Host: "docs", Root: root, Tunnel: true},
+			{Host: "missing", Root: filepath.Join(root, "nope")},
+			{Host: "notadir", Root: file},
+		},
+		[]config.ProxySite{
+			{Host: "api", Target: "http://127.0.0.1:8787", Tunnel: true},
+			{Host: "app.example.com", Target: "http://localhost:5173"},
+			{Host: "bad", Target: "127.0.0.1:8787"},
+			// The dashboard answers on its hostname before any route is looked
+			// at, so a site there would be listed and never reached.
+			{Host: "roji", Target: "http://127.0.0.1:9000"},
+		},
+		"dev.localhost", "roji.dev.localhost",
+	)
+
+	// A site that cannot be served is left out without taking the rest with it.
+	// A dev server that is not running is not such a site: nothing here dials.
+	got := make(map[string]*proxy.Route)
+	for _, route := range routes {
+		got[route.Hostname] = route
+	}
+	if len(got) != 3 {
+		t.Fatalf("declared %d routes, want docs, api and app.example.com: %+v", len(got), got)
+	}
+
+	docs := got["docs.dev.localhost"]
+	if docs == nil || docs.Kind() != proxy.KindStatic || docs.StaticBackend.Root != root || !docs.Published() {
+		t.Errorf("docs = %+v", docs)
+	}
+
+	api := got["api.dev.localhost"]
+	if api == nil || api.Kind() != proxy.KindLocal || api.LocalBackend.Target.Host != "127.0.0.1:8787" || !api.Published() {
+		t.Errorf("api = %+v", api)
+	}
+
+	// A hostname with a dot is taken as written, and the tunnel is opt-in.
+	if app := got["app.example.com"]; app == nil || app.Published() {
+		t.Errorf("app.example.com = %+v, want a route that is not published", app)
+	}
+}
+
 func TestListenAll(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>[[call .T "unreachable.title"]] - roji</title>
+    <link rel="icon" type="image/svg+xml" href="https://[[.DashboardHost]]/_assets/favicon.svg">
+    <script>
+        (function() {
+            const saved = localStorage.getItem('roji-theme');
+            const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+    <link rel="stylesheet" href="https://[[.DashboardHost]]/_assets/theme.css">
+    <style>
+        /* Page-specific styles */
+        body { max-width: 600px; margin: 50px auto; }
+        h1 { color: var(--warning-border); }
+        .warning-box {
+            background: var(--warning-bg);
+            border: 1px solid var(--warning-border);
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .warning-box h3 { color: var(--warning-text); margin-top: 0; }
+        .fix-hint { background: var(--bg-card); padding: 15px; border-radius: 5px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>&#x1F50C; [[call .T "unreachable.title"]]</h1>
+    <p>[[printf (call .T "unreachable.message") .Hostname]]</p>
+
+    <div class="warning-box">
+        <h3>[[call .T "unreachable.target"]] <code>[[.Target]]</code></h3>
+        <p>[[call .T "unreachable.nothing_listening"]]</p>
+    </div>
+
+    <div class="fix-hint">
+        <h3>&#x1F527; [[call .T "warning.how_to_fix"]]</h3>
+        <p>[[call .T "unreachable.hint"]]</p>
+        <p>[[call .T "unreachable.config_hint"]]</p>
+    </div>
+
+    [[if .DashboardHost]]
+    <p><a href="https://[[.DashboardHost]]">&#x2190; [[call .T "warning.back_to_dashboard"]]</a></p>
+    [[end]]
+</body>
+</html>

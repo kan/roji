@@ -310,7 +310,7 @@ func TestStaticSiteAuth(t *testing.T) {
 			site: StaticSite{
 				Host: "test",
 				Root: "/tmp",
-				Auth: &StaticSiteAuth{
+				Auth: &SiteAuth{
 					Basic: &BasicAuth{
 						User:  "admin",
 						Pass:  "secret",
@@ -328,7 +328,7 @@ func TestStaticSiteAuth(t *testing.T) {
 			site: StaticSite{
 				Host: "test",
 				Root: "/tmp",
-				Auth: &StaticSiteAuth{},
+				Auth: &SiteAuth{},
 			},
 			hasAuth: false,
 		},
@@ -586,6 +586,149 @@ tunnel:
 	}
 	if !settings.Tunnel.AutoStart {
 		t.Error("expected AutoStart true")
+	}
+}
+
+func TestLoadProxySitesFromFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := `proxy_sites:
+  - host: api
+    target: http://127.0.0.1:8787
+    tunnel: true
+    auth:
+      basic:
+        user: admin
+        pass: secret
+  - host: app
+    target: http://localhost:5173
+static_sites:
+  - host: docs
+    root: /var/www/docs
+    tunnel: true
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	settings, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(settings.ProxySites) != 2 {
+		t.Fatalf("ProxySites = %+v, want 2 sites", settings.ProxySites)
+	}
+	api := settings.ProxySites[0]
+	if api.Host != "api" || api.Target != "http://127.0.0.1:8787" || !api.Tunnel {
+		t.Errorf("first site = %+v", api)
+	}
+	if auth := api.Auth.BasicAuth(); auth == nil || auth.User != "admin" {
+		t.Errorf("first site auth = %+v, want user admin", auth)
+	}
+	app := settings.ProxySites[1]
+	if app.Tunnel || app.Auth.BasicAuth() != nil {
+		t.Errorf("second site = %+v, want neither tunnel nor auth: both are opt-in", app)
+	}
+	if !settings.StaticSites[0].Tunnel {
+		t.Error("the static site's tunnel key was not read")
+	}
+}
+
+func TestParseProxyTarget(t *testing.T) {
+	tests := []struct {
+		target  string
+		wantErr bool
+	}{
+		{"http://127.0.0.1:8787", false},
+		{"http://localhost:5173", false},
+		{"http://[::1]:3000", false},
+		{"http://127.0.0.1:8787/base", false},
+		{"http://127.0.0.1", false},
+		{"127.0.0.1:8787", true},
+		{"8787", true},
+		{"", true},
+		{"http://:8787", true},
+		{"http://localhost:", true},
+		{"http://localhost:0", true},
+		{"http://localhost:99999", true},
+		{"http://localhost:65535", false},
+		{"https://127.0.0.1:8787", true},
+		{"ws://127.0.0.1:8787", true},
+		{"http://user:pass@127.0.0.1:8787", true},
+		{"http://127.0.0.1:8787/?debug=1", true},
+		{"http://127.0.0.1:8787/#top", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.target, func(t *testing.T) {
+			u, err := ParseProxyTarget(tt.target)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseProxyTarget(%q) = %v, %v; wantErr %v", tt.target, u, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestIsLoopbackHost(t *testing.T) {
+	tests := map[string]bool{
+		"127.0.0.1":       true,
+		"127.0.0.2":       true,
+		"::1":             true,
+		"localhost":       true,
+		"LOCALHOST":       true,
+		"app.localhost":   true,
+		"192.168.1.20":    false,
+		"0.0.0.0":         false,
+		"example.com":     false,
+		"notlocalhost":    false,
+		"localhost.evil.": false,
+	}
+
+	for host, want := range tests {
+		if got := IsLoopbackHost(host); got != want {
+			t.Errorf("IsLoopbackHost(%q) = %v, want %v", host, got, want)
+		}
+	}
+}
+
+func TestResolveSiteHost(t *testing.T) {
+	tests := []struct {
+		host, want string
+	}{
+		{"api", "api.dev.localhost"},
+		{"API", "api.dev.localhost"},
+		{"api.dev.localhost", "api.dev.localhost"},
+		{"private.example.com", "private.example.com"},
+	}
+
+	for _, tt := range tests {
+		if got := ResolveSiteHost(tt.host, "dev.localhost"); got != tt.want {
+			t.Errorf("ResolveSiteHost(%q) = %q, want %q", tt.host, got, tt.want)
+		}
+	}
+}
+
+func TestCertCoversHost(t *testing.T) {
+	tests := []struct {
+		hostname, baseDomain string
+		want                 bool
+	}{
+		{"api.dev.localhost", "dev.localhost", true},
+		{"API.Dev.Localhost", "dev.localhost", true},
+		{"dev.localhost", "dev.localhost", true},
+		// A wildcard covers one label, whatever the certificate lists.
+		{"a.b.dev.localhost", "dev.localhost", false},
+		{"private.example.com", "dev.localhost", false},
+		{"apidev.localhost", "dev.localhost", false},
+		{".dev.localhost", "dev.localhost", false},
+		{"api.localhost", "localhost", true},
+		{"a.b.localhost", "localhost", false},
+	}
+
+	for _, tt := range tests {
+		if got := CertCoversHost(tt.hostname, tt.baseDomain); got != tt.want {
+			t.Errorf("CertCoversHost(%q, %q) = %v, want %v", tt.hostname, tt.baseDomain, got, tt.want)
+		}
 	}
 }
 

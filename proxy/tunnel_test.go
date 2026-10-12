@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -123,7 +122,18 @@ func TestTunnelHandler_Refuses(t *testing.T) {
 	router := NewRouter()
 	router.AddBackend(tunnelTestBackend("web.dev.localhost", true))
 	router.AddBackend(tunnelTestBackend("private.dev.localhost", false))
-	router.AddStaticSite(&StaticBackend{Hostname: "docs.dev.localhost", Root: t.TempDir(), Index: true})
+	declare(router, &Route{
+		Hostname:      "docs.dev.localhost",
+		StaticBackend: &StaticBackend{Root: t.TempDir(), Index: true},
+	})
+	declare(router, localRoute(t, "api.dev.localhost", "http://127.0.0.1:9"))
+	// A declared site owns its hostname, so the published container it hides
+	// must not get the hostname approved on the site's behalf.
+	router.AddBackend(tunnelTestBackend("hidden.dev.localhost", true))
+	declare(router, &Route{
+		Hostname:      "hidden.dev.localhost",
+		StaticBackend: &StaticBackend{Root: t.TempDir(), Index: true},
+	})
 
 	tests := []struct {
 		name string
@@ -180,10 +190,22 @@ func TestTunnelHandler_Refuses(t *testing.T) {
 			path: "/_assets/petite-vue.min.js",
 		},
 		{
-			name: "static site",
+			name: "static site without the key",
 			host: "docs.example.com",
 			path: "/",
-			why:  "static sites carry no opt-in",
+			why:  "publishing is opt-in per site",
+		},
+		{
+			name: "server on the host without the key",
+			host: "api.example.com",
+			path: "/",
+			why:  "publishing is opt-in per site",
+		},
+		{
+			name: "unpublished site hiding a published container",
+			host: "hidden.example.com",
+			path: "/",
+			why:  "the site answers on this hostname, not the container that opted in",
 		},
 	}
 
@@ -277,10 +299,10 @@ func TestHandler_NotFoundOverTunnelNamesNothing(t *testing.T) {
 	router.AddBackend(tunnelTestBackend("web.dev.localhost", true))
 	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", nil, nil)
 
-	request := func(tunneled bool) *httptest.ResponseRecorder {
+	request := func(viaTunnel bool) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodGet, "http://gone.dev.localhost/", nil)
-		if tunneled {
-			r = r.WithContext(context.WithValue(r.Context(), tunneledKey{}, true))
+		if viaTunnel {
+			r = tunneled(r)
 		}
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, r)

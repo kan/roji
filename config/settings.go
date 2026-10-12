@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,17 +12,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// StaticSiteAuth holds authentication configuration for a static site
-type StaticSiteAuth struct {
+// SiteAuth holds authentication configuration for a site declared in the
+// config file.
+type SiteAuth struct {
 	Basic *BasicAuth `yaml:"basic,omitempty"` // Basic authentication
+}
+
+// BasicAuth returns the basic auth configuration if set
+func (a *SiteAuth) BasicAuth() *BasicAuth {
+	if a == nil {
+		return nil
+	}
+	return a.Basic
 }
 
 // StaticSite represents a static file hosting configuration
 type StaticSite struct {
-	Host  string          `yaml:"host"`            // Hostname or subdomain (e.g., "docs" or "docs.example.com")
-	Root  string          `yaml:"root"`            // Root directory path (supports ~ expansion)
-	Index *bool           `yaml:"index,omitempty"` // Enable directory listing (default: true, set false to disable)
-	Auth  *StaticSiteAuth `yaml:"auth,omitempty"`  // Authentication configuration
+	Host   string    `yaml:"host"`             // Hostname or subdomain (e.g., "docs" or "docs.example.com")
+	Root   string    `yaml:"root"`             // Root directory path (supports ~ expansion)
+	Index  *bool     `yaml:"index,omitempty"`  // Enable directory listing (default: true, set false to disable)
+	Auth   *SiteAuth `yaml:"auth,omitempty"`   // Authentication configuration
+	Tunnel bool      `yaml:"tunnel,omitempty"` // Publish through the tunnel (default: false)
 }
 
 // IndexEnabled returns whether directory listing is enabled (default: true)
@@ -34,10 +45,88 @@ func (s *StaticSite) IndexEnabled() bool {
 
 // GetBasicAuth returns the basic auth configuration if set
 func (s *StaticSite) GetBasicAuth() *BasicAuth {
-	if s.Auth == nil {
-		return nil
+	return s.Auth.BasicAuth()
+}
+
+// ProxySite gives a hostname to a server already listening on the host — a dev
+// server started outside Docker, such as `vite dev` or `wrangler dev`.
+type ProxySite struct {
+	Host string `yaml:"host"` // Hostname or subdomain, resolved like StaticSite.Host
+
+	// Target is the URL of the server, e.g. "http://127.0.0.1:8787". A URL is
+	// the only spelling: a `port:` shorthand would leave two ways to write the
+	// same site.
+	Target string `yaml:"target"`
+
+	Auth   *SiteAuth `yaml:"auth,omitempty"`   // Authentication configuration
+	Tunnel bool      `yaml:"tunnel,omitempty"` // Publish through the tunnel (default: false)
+}
+
+// ParseProxyTarget parses the target of a ProxySite.
+//
+// The scheme is required and has to be http: roji terminates TLS itself, and a
+// dev server on the same machine has no certificate a proxy could verify. A
+// path is allowed and is prepended to every request. Credentials, a query and a
+// fragment have no meaning for a proxy target, so they are refused rather than
+// silently dropped.
+func ParseProxyTarget(target string) (*url.URL, error) {
+	// The usual mistake is leaving the scheme off, and what url.Parse makes of
+	// "127.0.0.1:8787" or "localhost:8787" — a parse error, or a URL whose
+	// scheme is "localhost" — explains nothing. Say what is wanted instead.
+	//
+	// Hostname rather than Host: "http://:8787" has a Host and names nothing.
+	u, err := url.Parse(target)
+	if err != nil || u.Hostname() == "" {
+		return nil, fmt.Errorf("want a URL such as http://127.0.0.1:8787")
 	}
-	return s.Auth.Basic
+	if u.Scheme != "http" {
+		return nil, fmt.Errorf("scheme %q is not supported, use http", u.Scheme)
+	}
+	// url.Parse checks that a port is digits and nothing more, so "localhost:"
+	// and "localhost:99999" both get through it and neither can be dialed.
+	if port := u.Port(); port != "" || strings.HasSuffix(u.Host, ":") {
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+			return nil, fmt.Errorf("port %q is not between 1 and 65535", port)
+		}
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, fmt.Errorf("credentials, a query and a fragment are not supported")
+	}
+	return u, nil
+}
+
+// IsLoopbackHost reports whether host, as written in a URL, names this machine:
+// a loopback address, "localhost", or a name under it. RFC 6761 reserves the
+// last two for loopback, so no resolving is needed to say so.
+func IsLoopbackHost(host string) bool {
+	host = strings.ToLower(host)
+	return IsLoopbackAddr(host) || host == "localhost" || strings.HasSuffix(host, ".localhost")
+}
+
+// ResolveSiteHost returns the full hostname of a site declared in the config
+// file: a name without a dot is a subdomain of the base domain.
+func ResolveSiteHost(host, baseDomain string) string {
+	if !strings.Contains(host, ".") {
+		host = host + "." + baseDomain
+	}
+	return strings.ToLower(host)
+}
+
+// CertCoversHost reports whether the certificate roji generates for baseDomain
+// is valid for hostname: the base domain itself, or one label under it. Any
+// other name is served with a certificate the browser rejects.
+//
+// One label only. The certificate also lists "*.*.{domain}", but a wildcard
+// stands for a single leftmost label, so that entry matches nothing. A test in
+// certgen holds this function to what the generated certificate accepts.
+func CertCoversHost(hostname, baseDomain string) bool {
+	hostname = strings.ToLower(hostname)
+	baseDomain = strings.ToLower(baseDomain)
+	if hostname == baseDomain {
+		return true
+	}
+	label, ok := strings.CutSuffix(hostname, "."+baseDomain)
+	return ok && label != "" && !strings.Contains(label, ".")
 }
 
 // DefaultTunnelPort is the port the tunnel listener takes when the tunnel is
@@ -117,6 +206,7 @@ type Settings struct {
 	LogLevel    string       `yaml:"log_level"`              // Log level (debug, info, warn, error)
 	AutoCert    bool         `yaml:"auto_cert"`              // Auto-generate certificates
 	StaticSites []StaticSite `yaml:"static_sites,omitempty"` // Static file hosting sites
+	ProxySites  []ProxySite  `yaml:"proxy_sites,omitempty"`  // Servers on the host given a hostname
 	Tunnel      *Tunnel      `yaml:"tunnel,omitempty"`       // Cloudflare Tunnel for outside access
 }
 
@@ -230,6 +320,9 @@ func (s *Settings) loadFromFile(path string) error {
 			fileSettings.StaticSites[i].Root = ExpandPath(fileSettings.StaticSites[i].Root)
 		}
 		s.StaticSites = fileSettings.StaticSites
+	}
+	if _, ok := rawMap["proxy_sites"]; ok {
+		s.ProxySites = fileSettings.ProxySites
 	}
 	if _, ok := rawMap["tunnel"]; ok {
 		s.Tunnel = fileSettings.Tunnel

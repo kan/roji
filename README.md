@@ -25,7 +25,8 @@ A simple reverse proxy for local development environments. Automatically discove
 - **Request Mocking**: Define mock responses via labels for frontend development
 - **Basic Authentication**: Protect routes with username/password via labels or config
 - **Static File Hosting**: Serve static files with directory listing
-- **Public Access**: Publish selected routes through a Cloudflare Tunnel, opt-in per container
+- **Dev Servers on the Host**: Give `vite dev`, `wrangler dev` and the like a hostname and HTTPS, next to your containers
+- **Public Access**: Publish selected routes through a Cloudflare Tunnel, opt-in per route
 - **Service Management**: Run as system service (systemd/launchd/Windows Service)
 - **Environment Diagnostics**: `roji doctor` checks and fixes common issues
 
@@ -147,12 +148,17 @@ static_sites:                          # Static file hosting
   - host: docs
     root: ~/projects/docs/build
 
+proxy_sites:                           # Dev servers running on the host
+  - host: app
+    target: http://localhost:5173
+
 tunnel:                                # Public access via Cloudflare Tunnel
   domain: example.com                  # Zone on your Cloudflare account
   name: roji                           # Named tunnel to run
 ```
 
-Routes stay private until a container opts in with `roji.tunnel=true`. The
+Routes stay private until a container opts in with `roji.tunnel=true`, or a
+site in the config file with `tunnel: true`. The
 dashboard and its API are never published. See the
 [Public Access guide](https://roji-proxy.dev/docs/guides/tunnel/).
 

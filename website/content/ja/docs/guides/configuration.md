@@ -30,6 +30,10 @@ auto_cert: true                        # 証明書の自動生成
 static_sites:                          # 静的ファイルホスティング（静的サイトガイド参照）
   - host: docs
     root: ~/projects/docs/build
+
+proxy_sites:                           # ホスト上のサーバー（ホスト上の開発サーバーガイド参照）
+  - host: app
+    target: http://localhost:5173
 ```
 
 ### 設定ファイルの管理

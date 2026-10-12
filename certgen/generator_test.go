@@ -8,7 +8,46 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/kan/roji/config"
 )
+
+// config.CertCoversHost tells the user which hostnames the certificate is good
+// for without reading the certificate, so it has to agree with what is
+// generated here.
+func TestGenerator_CertMatchesCertCoversHost(t *testing.T) {
+	for _, baseDomain := range []string{"dev.localhost", "localhost"} {
+		tempDir := t.TempDir()
+		if err := NewGenerator(tempDir, baseDomain).EnsureCerts(); err != nil {
+			t.Fatalf("EnsureCerts() error = %v", err)
+		}
+
+		certPEM, err := os.ReadFile(filepath.Join(tempDir, "cert.pem"))
+		if err != nil {
+			t.Fatalf("failed to read cert.pem: %v", err)
+		}
+		block, _ := pem.Decode(certPEM)
+		if block == nil {
+			t.Fatal("failed to decode cert PEM")
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatalf("failed to parse certificate: %v", err)
+		}
+
+		for _, label := range []string{"", "api.", "a.b.", "a.b.c."} {
+			hostname := label + baseDomain
+			covered := cert.VerifyHostname(hostname) == nil
+			if got := config.CertCoversHost(hostname, baseDomain); got != covered {
+				t.Errorf("CertCoversHost(%q, %q) = %v, but the generated certificate says %v",
+					hostname, baseDomain, got, covered)
+			}
+		}
+		if config.CertCoversHost("api.example.com", baseDomain) || cert.VerifyHostname("api.example.com") == nil {
+			t.Errorf("a name outside %s is reported as covered", baseDomain)
+		}
+	}
+}
 
 func TestGenerator_EnsureCerts_NewCerts(t *testing.T) {
 	// Create temp directory

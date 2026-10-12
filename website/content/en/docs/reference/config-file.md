@@ -65,6 +65,17 @@ static_sites:
         user: admin
         pass: secret
         realm: Private Area       # Optional, defaults to "Restricted"
+    tunnel: false                 # Publish through the tunnel (default: false)
+
+# Servers running on the host, outside Docker
+proxy_sites:
+  - host: app                       # Short name -> app.dev.localhost
+    target: http://localhost:5173   # URL of the server; scheme required, http only
+    auth:                           # Basic authentication, as for static_sites
+      basic:
+        user: admin
+        pass: secret
+    tunnel: false                   # Publish through the tunnel (default: false)
 
 # Public access (optional; on only when both domain and name are set)
 tunnel:
@@ -74,9 +85,11 @@ tunnel:
   auto_start: false     # whether roji starts cloudflared for you
 ```
 
-`static_sites` and `tunnel` are config-file only; neither has an environment
-variable. See the [Public Access (Tunnel)](/docs/guides/tunnel/) guide for how
-the tunnel works.
+`static_sites`, `proxy_sites` and `tunnel` are config-file only; none has an
+environment variable. See the
+[Dev Servers on the Host](/docs/guides/local-proxy/) guide for `proxy_sites`
+and the [Public Access (Tunnel)](/docs/guides/tunnel/) guide for how the
+tunnel works.
 
 ## Managing Config
 
@@ -93,6 +106,9 @@ roji validates the config file on startup:
 
 - **Unknown keys** are reported as warnings (catches typos)
 - **Type errors** are reported (e.g., string where int expected)
-- **Missing required fields** in `static_sites` (host, root) are flagged
+- **Missing required fields** in `static_sites` (host, root) and `proxy_sites`
+  (host, target) are flagged
+- **Unusable values** are reported: a `proxy_sites` target that is not an
+  `http://` URL, or one that points at another machine
 
 Run `roji doctor` for a full validation report.

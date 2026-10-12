@@ -82,10 +82,6 @@
             border-radius: 4px;
             font-size: 0.8rem;
         }
-        .service-name.static {
-            background: var(--bg-badge);
-            color: var(--link-color);
-        }
         .static-badge {
             background: var(--bg-input);
             color: var(--link-color);
@@ -863,7 +859,7 @@
                         </a>
                     </div>
                     <div v-if="route.target" class="route-target">
-                        <span v-if="route.isStatic">&#x1F4C1;</span>
+                        <span v-if="route.kind === 'static'">&#x1F4C1;</span>
                         &#x2192; {{route.target}}
                     </div>
                     <div v-if="route.tunnelUrl" class="route-tunnel">
@@ -873,7 +869,7 @@
                 </div>
                 <div class="route-info">
                     <button
-                        v-if="!route.isStatic && route.projectName"
+                        v-if="route.kind === 'docker' && route.projectName"
                         class="restart-btn stop"
                         :class="{ restarting: projectOperating === route.projectName && projectOperatingAction === 'down' }"
                         :disabled="projectOperating === route.projectName"
@@ -884,7 +880,7 @@
                         <span v-else>&#x23F9; {{t('dashboard.route.stop')}}</span>
                     </button>
                     <button
-                        v-if="!route.isStatic"
+                        v-if="route.kind === 'docker'"
                         class="restart-btn"
                         :class="{ restarting: restartingContainer === route.containerId }"
                         :disabled="restartingContainer === route.containerId"
@@ -900,13 +896,16 @@
                     <span v-if="route.hasBasicAuth" class="auth-badge" :title="t('dashboard.route.auth')">
                         &#x1F512; auth
                     </span>
-                    <span v-if="route.isStatic" :class="['static-badge', route.indexEnabled ? 'index-on' : 'index-off']" :title="route.indexEnabled ? t('dashboard.route.index_enabled') : t('dashboard.route.index_disabled')">
+                    <span v-if="route.kind === 'static'" :class="['static-badge', route.indexEnabled ? 'index-on' : 'index-off']" :title="route.indexEnabled ? t('dashboard.route.index_enabled') : t('dashboard.route.index_disabled')">
                         &#x1F4C1; {{t('dashboard.route.static')}}
                         <span v-if="route.indexEnabled" class="index-indicator">&#x1F4CB;</span>
                         <span v-else class="index-indicator">&#x1F512;</span>
                     </span>
+                    <span v-if="route.kind === 'local'" class="static-badge" :title="t('dashboard.route.local_title')">
+                        &#x1F50C; {{t('dashboard.route.local')}}
+                    </span>
                     <span v-if="route.network" class="network-name">{{route.network}}</span>
-                    <span :class="['service-name', route.isStatic ? 'static' : '']">{{route.serviceName}}</span>
+                    <span v-if="route.kind === 'docker'" class="service-name">{{route.serviceName}}</span>
                 </div>
             </div>
         </div>

@@ -18,15 +18,41 @@ import (
 
 // StaticBackend represents a static file hosting configuration
 type StaticBackend struct {
-	Hostname      string            // Full hostname (e.g., "docs.dev.localhost")
-	Root          string            // Absolute path to root directory
-	Index         bool              // Enable directory listing
-	DashboardHost string            // Dashboard hostname for footer link
-	BasicAuth     *config.BasicAuth // Basic authentication (optional)
+	Root      string            // Absolute path to root directory
+	Index     bool              // Enable directory listing
+	BasicAuth *config.BasicAuth // Basic authentication (optional)
+	Tunnel    bool              // Published through the tunnel
+}
+
+// isHiddenName reports whether a file or directory name is hidden by the
+// dotfile convention. ".well-known" is the exception: it exists to be fetched
+// from outside (RFC 8615).
+func isHiddenName(name string) bool {
+	return strings.HasPrefix(name, ".") && name != ".well-known"
+}
+
+// hasHiddenSegment reports whether any segment of a URL path is a hidden name.
+func hasHiddenSegment(urlPath string) bool {
+	for segment := range strings.SplitSeq(path.Clean("/"+urlPath), "/") {
+		if isHiddenName(segment) {
+			return true
+		}
+	}
+	return false
 }
 
 // ServeStaticFile serves a static file from the given root directory
 func ServeStaticFile(w http.ResponseWriter, r *http.Request, root string, enableIndex bool, dashboardHost string) {
+	// Files are read, never anything else. This is also what keeps basic auth
+	// meaningful here: checkBasicAuth lets OPTIONS through for the sake of CORS
+	// preflight, which a backend answers without a body and this would answer
+	// with the file.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	// Clean the request path to prevent directory traversal
 	reqPath := path.Clean(r.URL.Path)
 	if reqPath == "" || reqPath == "." {
@@ -144,6 +170,12 @@ func serveDirectoryListing(w http.ResponseWriter, r *http.Request, dirPath, root
 	// Build entry list
 	var items []DirectoryEntry
 	for _, entry := range entries {
+		// Through the tunnel a hidden file is refused, so it is not listed
+		// either: see Handler.serveStaticSite.
+		if isTunneled(r) && isHiddenName(entry.Name()) {
+			continue
+		}
+
 		info, err := entry.Info()
 		if err != nil {
 			continue

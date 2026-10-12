@@ -221,6 +221,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		LogLevel:      settings.LogLevel,
 		DataDir:       settings.DataDir,
 		StaticSites:   settings.StaticSites,
+		ProxySites:    settings.ProxySites,
 		ConfigPath:    actualConfigPath,
 		Tunnel:        settings.Tunnel,
 	}

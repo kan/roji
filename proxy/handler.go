@@ -12,6 +12,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -29,8 +30,16 @@ import (
 	"github.com/kan/roji/project"
 )
 
+// backendDialTimeout bounds connecting to a backend. Backends are on this
+// machine or its Docker networks, where a connection takes milliseconds.
+const backendDialTimeout = 10 * time.Second
+
 // sharedTransport is used for connection pooling across all proxied requests (HTTP/1.1)
 var sharedTransport = &http.Transport{
+	// A container either accepts or refuses at once. A proxy site's target can
+	// be an address that answers nothing at all, and without a bound the
+	// request waits out the kernel's connect timeout, minutes on Linux.
+	DialContext:         (&net.Dialer{Timeout: backendDialTimeout}).DialContext,
 	MaxIdleConns:        100,
 	MaxIdleConnsPerHost: 10,
 	IdleConnTimeout:     90 * time.Second,
@@ -132,7 +141,7 @@ func setProtoAndRealIP(out http.Header, remoteAddr string) {
 }
 
 // backendRewrite states what a backend receives, once, for every path that
-// proxies to a Docker backend. serveGRPC calls it and then overrides the one
+// proxies to a backend. serveGRPC calls it and then overrides the one
 // thing it needs differently.
 func backendRewrite(targetURL *url.URL, route *Route) func(*httputil.ProxyRequest) {
 	return func(pr *httputil.ProxyRequest) {
@@ -349,26 +358,33 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for static site route first
-	staticRoute := h.router.LookupStatic(hostname)
-	if staticRoute != nil {
-		// Check basic auth if configured
-		if staticRoute.StaticBackend != nil && !checkBasicAuth(w, r, staticRoute.StaticBackend.BasicAuth) {
-			return
-		}
-		h.serveStaticSite(w, r, staticRoute, hostname, startTime)
-		return
-	}
-
-	// Look up Docker route
-	route := h.router.Lookup(hostname, r.URL.Path)
+	// Declared routes first, then Docker routes
+	route := h.router.Resolve(hostname, r.URL.Path)
 	if route == nil {
 		h.handleNotFound(w, r, hostname)
 		return
 	}
 
+	// The tunnel guard approved whatever route held this hostname when it
+	// looked. A container stopping or a config reload in between can leave a
+	// different route here, one that never opted in, so ask again of the route
+	// that is about to answer.
+	if isTunneled(r) && !route.Published() {
+		bareNotFound(w)
+		return
+	}
+
 	// Check basic auth if configured
-	if route.Backend != nil && !checkBasicAuth(w, r, route.Backend.BasicAuth) {
+	if !checkBasicAuth(w, r, route.BasicAuth()) {
+		return
+	}
+
+	switch route.Kind() {
+	case KindStatic:
+		h.serveStaticSite(w, r, route, hostname, startTime)
+		return
+	case KindLocal:
+		h.proxyTo(w, r, route.LocalBackend.Target, route, hostname, startTime)
 		return
 	}
 
@@ -390,6 +406,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Scheme: "http",
 		Host:   fmt.Sprintf("%s:%d", route.Backend.Host, route.Backend.Port),
 	}
+
+	h.proxyTo(w, r, targetURL, route, hostname, startTime)
+}
+
+// proxyTo forwards a request to the server a route stands for, whichever kind
+// of route it is. Everything a backend relies on — WebSocket, SSE, gRPC, the
+// Host header it is sent, the query string kept verbatim — is decided here, so
+// a container and a server on the host are treated alike. The one difference is
+// the answer when a server on the host cannot be reached: see the error handler.
+func (h *Handler) proxyTo(w http.ResponseWriter, r *http.Request, targetURL *url.URL, route *Route, hostname string, startTime time.Time) {
+	service := route.ServiceName()
 
 	// Handle gRPC requests (HTTP/2)
 	if isGRPCRequest(r) {
@@ -422,6 +449,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"path", r.URL.Path,
 			"target", targetURL.String(),
 			"error", err)
+
+		// A server on the host that nothing listens on is the ordinary case of
+		// a dev server not started yet, so it gets a page saying so. roji can
+		// start a stopped Compose project but not a process it knows nothing
+		// about, so the page explains rather than offers a button.
+		if route.Kind() == KindLocal && isDialError(err) {
+			h.handleLocalUnreachable(w, r, hostname, targetURL)
+			return
+		}
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 	}
 
@@ -443,7 +479,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"path", r.URL.Path,
 			"status", resp.StatusCode,
 			"duration", duration.Round(time.Millisecond),
-			"target", route.Backend.ServiceName)
+			"target", service)
 
 		// Add to log buffer
 		h.logBuffer.Add(RequestLog{
@@ -453,7 +489,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Path:      r.URL.Path,
 			Status:    resp.StatusCode,
 			Duration:  duration.Milliseconds(),
-			Service:   route.Backend.ServiceName,
+			Service:   service,
 		})
 		return nil
 	}
@@ -468,7 +504,59 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"host", hostname,
 			"path", r.URL.Path,
 			"duration", time.Since(startTime).Round(time.Millisecond),
-			"target", route.Backend.ServiceName)
+			"target", service)
+	}
+}
+
+// isDialError reports whether a proxy error means the connection to the backend
+// was never made, as opposed to one that broke partway through an exchange.
+func isDialError(err error) bool {
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr.Op == "dial"
+}
+
+// translator returns the message lookup for the language a request asks for,
+// falling back to English and then to the key itself.
+func translator(r *http.Request) func(string) string {
+	msgs := i18n.Messages(i18n.DetectHTTP(r.Header.Get("Accept-Language")))
+	return func(key string) string {
+		if v, ok := msgs[key]; ok {
+			return v
+		}
+		if v, ok := i18n.Messages("en")[key]; ok {
+			return v
+		}
+		return key
+	}
+}
+
+// handleLocalUnreachable answers a request for a server on the host that is not
+// listening.
+func (h *Handler) handleLocalUnreachable(w http.ResponseWriter, r *http.Request, hostname string, targetURL *url.URL) {
+	// The page names the address roji was told to forward to, which describes
+	// the machine to whoever reads it. Through the tunnel that is a stranger,
+	// who gets what every other refusal there gets.
+	if isTunneled(r) {
+		bareNotFound(w)
+		return
+	}
+
+	data := struct {
+		Hostname      string
+		Target        string
+		DashboardHost string
+		T             func(string) string
+	}{
+		Hostname:      hostname,
+		Target:        targetURL.Host,
+		DashboardHost: h.dashboardHost,
+		T:             translator(r),
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusBadGateway)
+	if err := templates.ExecuteTemplate(w, "unreachable.html", data); err != nil {
+		slog.Error("failed to render unreachable template", "error", err)
 	}
 }
 
@@ -942,21 +1030,6 @@ func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request, hostnam
 		matchedProject = h.findProjectForHostname(hostname)
 	}
 
-	// Detect language from Accept-Language header
-	lang := i18n.DetectHTTP(r.Header.Get("Accept-Language"))
-	msgs := i18n.Messages(lang)
-	tFunc := func(key string) string {
-		if v, ok := msgs[key]; ok {
-			return v
-		}
-		// Fallback to English
-		enMsgs := i18n.Messages("en")
-		if v, ok := enMsgs[key]; ok {
-			return v
-		}
-		return key
-	}
-
 	data := struct {
 		Hostname      string
 		Routes        []RouteInfo
@@ -968,7 +1041,7 @@ func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request, hostnam
 		Routes:        routes,
 		DashboardHost: h.dashboardHost,
 		Project:       matchedProject,
-		T:             tFunc,
+		T:             translator(r),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1023,26 +1096,20 @@ func (h *Handler) handleRouteWarning(w http.ResponseWriter, r *http.Request, hos
 		"warning", route.Backend.Warning,
 		"container", route.Backend.ContainerName)
 
+	// The page names the service, the warning and the dashboard, and suggests
+	// edits to a compose file. A published container can carry a warning, so a
+	// request through the tunnel can get this far.
+	if isTunneled(r) {
+		bareNotFound(w)
+		return
+	}
+
 	// Determine warning type for template
 	warningType := "unknown"
 	if strings.Contains(route.Backend.Warning, "no port") {
 		warningType = "no_port"
 	} else if strings.Contains(route.Backend.Warning, "hostname conflict") {
 		warningType = "conflict"
-	}
-
-	// Detect language from Accept-Language header
-	lang := i18n.DetectHTTP(r.Header.Get("Accept-Language"))
-	msgs := i18n.Messages(lang)
-	tFunc := func(key string) string {
-		if v, ok := msgs[key]; ok {
-			return v
-		}
-		enMsgs := i18n.Messages("en")
-		if v, ok := enMsgs[key]; ok {
-			return v
-		}
-		return key
 	}
 
 	data := struct {
@@ -1058,7 +1125,7 @@ func (h *Handler) handleRouteWarning(w http.ResponseWriter, r *http.Request, hos
 		Warning:       route.Backend.Warning,
 		WarningType:   warningType,
 		DashboardHost: h.dashboardHost,
-		T:             tFunc,
+		T:             translator(r),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1136,8 +1203,23 @@ func (h *Handler) serveStaticSite(w http.ResponseWriter, r *http.Request, route 
 	// Create a response recorder to capture the status code
 	rw := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 
-	// Serve the static file
-	ServeStaticFile(rw, r, route.StaticBackend.Root, route.StaticBackend.Index, h.dashboardHost)
+	switch {
+	case !isTunneled(r):
+		ServeStaticFile(rw, r, route.StaticBackend.Root, route.StaticBackend.Index, h.dashboardHost)
+
+	// A directory published for what it shows also holds what it does not:
+	// .env, .git, editor leftovers. Locally those are the developer's own
+	// files; through the tunnel they are refused, like everything else there
+	// that was not meant to be seen. serveDirectoryListing leaves them out of
+	// the listing for the same reason.
+	case hasHiddenSegment(r.URL.Path):
+		bareNotFound(rw)
+
+	// The generated pages link to the dashboard, which a visitor arriving
+	// through the tunnel cannot reach and has no business learning the name of.
+	default:
+		ServeStaticFile(rw, r, route.StaticBackend.Root, route.StaticBackend.Index, "")
+	}
 
 	// Log the request
 	duration := time.Since(startTime)
@@ -1147,7 +1229,7 @@ func (h *Handler) serveStaticSite(w http.ResponseWriter, r *http.Request, route 
 		"path", r.URL.Path,
 		"status", rw.statusCode,
 		"duration", duration.Round(time.Millisecond),
-		"target", "static")
+		"target", route.ServiceName())
 
 	// Add to log buffer
 	h.logBuffer.Add(RequestLog{
@@ -1157,7 +1239,7 @@ func (h *Handler) serveStaticSite(w http.ResponseWriter, r *http.Request, route 
 		Path:      r.URL.Path,
 		Status:    rw.statusCode,
 		Duration:  duration.Milliseconds(),
-		Service:   "static",
+		Service:   route.ServiceName(),
 	})
 }
 
@@ -1233,7 +1315,7 @@ func (h *Handler) serveGRPC(w http.ResponseWriter, r *http.Request, targetURL *u
 				"path", r.URL.Path,
 				"grpc-status", grpcStatus,
 				"duration", duration.Round(time.Millisecond),
-				"target", route.Backend.ServiceName)
+				"target", route.ServiceName())
 
 			// Add to log buffer
 			h.logBuffer.Add(RequestLog{
@@ -1243,7 +1325,7 @@ func (h *Handler) serveGRPC(w http.ResponseWriter, r *http.Request, targetURL *u
 				Path:      r.URL.Path,
 				Status:    resp.StatusCode,
 				Duration:  duration.Milliseconds(),
-				Service:   route.Backend.ServiceName,
+				Service:   route.ServiceName(),
 			})
 			return nil
 		},

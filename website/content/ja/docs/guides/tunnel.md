@@ -64,6 +64,25 @@ services:
 無しで拾うので、既定で公開すると全部が外に出てしまう。だから明示的な
 オプトインにしてある。
 
+設定ファイルで宣言したサイトは、それぞれの `tunnel` キーで公開対象にする。
+値は `true` か `false`。
+
+```yaml
+# ~/.config/roji/config.yaml
+proxy_sites:
+  - host: hook
+    target: http://127.0.0.1:8787
+    tunnel: true
+static_sites:
+  - host: docs
+    root: ~/projects/docs/build
+    tunnel: true
+```
+
+宣言したサイトはコンテナより優先してホスト名を保持し、トンネルもそれに従う。
+`tunnel: true` の無いサイトとラベル付きのコンテナが同じホスト名を使って
+いる場合、そのホスト名は公開されない。
+
 ## DNS レコード
 
 `*.{domain}` をトンネルに向ける設定は手動で行う。roji に Cloudflare の API
@@ -108,7 +127,7 @@ cloudflared は 127.0.0.1 から接続してくるので、リクエストの中
   `/_api/logs` はリクエストログを読める
 - ダッシュボードのホスト名とベースドメイン
 - `roji.tunnel` の無い Docker ルート
-- 静的サイト（`static_sites:` にオプトインの綴りが無いため、現状すべて非公開）
+- `tunnel: true` の無い静的サイトと proxy サイト
 
 拒否はどの理由でも同じ素の 404 を返す。理由ごとに文言を分けると、どの
 ホスト名が存在するかを外に教えてしまうため。
@@ -130,7 +149,6 @@ cloudflared の導入、ログイン状態、named tunnel の存在を確認す�
 
 - `roji tunnel start/stop/status` コマンド。`auto_start: false` のときは
   `cloudflared tunnel run` を自分で回す前提
-- 静的サイトの公開
 - cloudflared がクラッシュした後の自動再起動。roji はプロセスマネージャでは
   ないので、落ちたことをログに出して放置する。認証に失敗し続けるトンネルが
   黙って再試行を繰り返す方が困るため

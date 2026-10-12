@@ -289,14 +289,13 @@ func TestRouter_StaticRoutes(t *testing.T) {
 	router := NewRouter()
 
 	// Add a static site
-	static := &StaticBackend{
-		Hostname: "docs.dev.localhost",
-		Root:     "/var/www/docs",
-	}
-	router.AddStaticSite(static)
+	declare(router, &Route{
+		Hostname:      "docs.dev.localhost",
+		StaticBackend: &StaticBackend{Root: "/var/www/docs"},
+	})
 
 	// Lookup should find the static route
-	route := router.LookupStatic("docs.dev.localhost")
+	route := router.LookupDeclared("docs.dev.localhost")
 	if route == nil {
 		t.Fatal("Expected to find static route")
 	}
@@ -308,7 +307,7 @@ func TestRouter_StaticRoutes(t *testing.T) {
 	routes := router.ListRoutes()
 	found := false
 	for _, r := range routes {
-		if r.Hostname == "docs.dev.localhost" && r.IsStatic {
+		if r.Hostname == "docs.dev.localhost" && r.Kind == KindStatic {
 			found = true
 			break
 		}
@@ -317,9 +316,9 @@ func TestRouter_StaticRoutes(t *testing.T) {
 		t.Error("Expected static route in ListRoutes")
 	}
 
-	// Remove static site
-	router.RemoveStaticSite("docs.dev.localhost")
-	route = router.LookupStatic("docs.dev.localhost")
+	// A reload whose config no longer names the site removes it
+	router.ReplaceDeclared(nil)
+	route = router.LookupDeclared("docs.dev.localhost")
 	if route != nil {
 		t.Error("Expected static route to be removed")
 	}
@@ -342,15 +341,16 @@ func TestHandler_BasicAuth_StaticRoute(t *testing.T) {
 	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	// Add static site with basic auth
-	router.AddStaticSite(&StaticBackend{
-		Hostname:      "protected.dev.localhost",
-		Root:          tmpDir,
-		Index:         true,
-		DashboardHost: "roji.dev.localhost",
-		BasicAuth: &config.BasicAuth{
-			User:  "admin",
-			Pass:  "secret",
-			Realm: "Protected Docs",
+	declare(router, &Route{
+		Hostname: "protected.dev.localhost",
+		StaticBackend: &StaticBackend{
+			Root:  tmpDir,
+			Index: true,
+			BasicAuth: &config.BasicAuth{
+				User:  "admin",
+				Pass:  "secret",
+				Realm: "Protected Docs",
+			},
 		},
 	})
 
@@ -484,45 +484,47 @@ func TestRouter_StaticSiteTakesTheHostname(t *testing.T) {
 				Host: "172.17.0.2", Port: 8080,
 				Hostname: "docs.dev.localhost", PathPrefix: tt.pathPrefix,
 			})
-			router.AddStaticSite(&StaticBackend{
-				Hostname: "docs.dev.localhost",
-				Root:     "/var/www/docs",
-				Index:    true,
+			declare(router, &Route{
+				Hostname:      "docs.dev.localhost",
+				StaticBackend: &StaticBackend{Root: "/var/www/docs", Index: true},
 			})
 
-			if router.LookupStatic("docs.dev.localhost") == nil {
-				t.Error("the static site was not registered, so the Docker route would serve the hostname")
+			route := router.Resolve("docs.dev.localhost", "/api/users")
+			if route == nil || route.Kind() != KindStatic {
+				t.Errorf("Resolve returned %+v, want the static site: a declared route owns its hostname", route)
 			}
 		})
 	}
 }
 
 // TestRouter_ConfigReloadKeepsStaticSite covers what `roji config reload` does:
-// ClearStaticSites, then register everything from the file again.
+// replace the declared routes with everything the file now says.
 //
 // Registration used to refuse a hostname a Docker route already held, so a
 // reload silently dropped such a site and it stayed gone until roji restarted.
 // Nothing about the config had changed.
 func TestRouter_ConfigReloadKeepsStaticSite(t *testing.T) {
 	router := NewRouter()
-	site := func() *StaticBackend {
-		return &StaticBackend{Hostname: "docs.dev.localhost", Root: "/var/www/docs", Index: true}
+	sites := func() []*Route {
+		return []*Route{{
+			Hostname:      "docs.dev.localhost",
+			StaticBackend: &StaticBackend{Root: "/var/www/docs", Index: true},
+		}}
 	}
 
-	router.AddStaticSite(site())
+	router.ReplaceDeclared(sites())
 	router.AddBackend(&docker.Backend{
 		ContainerID: "api", ContainerName: "api", ServiceName: "api",
 		Host: "172.17.0.2", Port: 8080,
 		Hostname: "docs.dev.localhost",
 	})
-	if router.LookupStatic("docs.dev.localhost") == nil {
+	if router.LookupDeclared("docs.dev.localhost") == nil {
 		t.Fatal("the static site is missing before the reload")
 	}
 
-	router.ClearStaticSites()
-	router.AddStaticSite(site())
+	router.ReplaceDeclared(sites())
 
-	if router.LookupStatic("docs.dev.localhost") == nil {
+	if router.LookupDeclared("docs.dev.localhost") == nil {
 		t.Error("the reload dropped the static site")
 	}
 }

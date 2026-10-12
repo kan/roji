@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `proxy_sites` in the config file gives a hostname to a server running on the
+  host itself, such as `vite dev` or `wrangler dev`, the way a container gets
+  one. WebSocket, SSE, gRPC and the forwarding headers behave as they do for
+  containers. When nothing is listening on the target, the request gets a page
+  naming the address and what to start. See
+  [Dev Servers on the Host](https://roji-proxy.dev/docs/guides/local-proxy/).
+
+  ```yaml
+  proxy_sites:
+    - host: app
+      target: http://localhost:5173
+  ```
+
+- Sites declared in the config file can be published through the tunnel with
+  `tunnel: true`, under both `proxy_sites` and `static_sites`. Static sites had
+  no way to opt in before and were always private. Through the tunnel a static
+  site does not serve or list dotfiles (`.env`, `.git/`), `.well-known/`
+  excepted.
+
+- `roji doctor` checks the declared sites: a static site whose root is not a
+  directory, a proxy site nothing is listening behind, a hostname roji's
+  certificate does not cover, a hostname that is the dashboard's, and a site
+  that asks for the tunnel but has no public name.
+
+### Changed
+
+- **Breaking:** routes in `/_api/routes` and the `/_api/events` stream carry a
+  `kind` field (`docker`, `static` or `local`) in place of the `isStatic`
+  boolean.
+
+- Pages a static site generates, such as the directory listing, no longer link
+  to the dashboard when the request came through the tunnel.
+
+- A static site declared on the dashboard's hostname or the base domain is no
+  longer registered. The dashboard answers on those names first, so such a
+  site was listed and never reachable.
+
+- Connecting to a backend gives up after 10 seconds instead of waiting out the
+  operating system's connect timeout.
+
+### Fixed
+
+- A static site protected with Basic authentication served its files to an
+  `OPTIONS` request without credentials. The check lets `OPTIONS` through for
+  CORS preflight, and the static file server answered it like a `GET`. Static
+  sites now answer only `GET` and `HEAD`.
+
+- A published container with a warning (no exposed port, a hostname conflict)
+  answered tunnel requests with the warning page, which names the service and
+  the dashboard. It now gets the same bare 404 as every other refusal.
+
+- A config reload cleared the declared sites before adding them back. A
+  request arriving in between for a static site's hostname was answered by the
+  Docker route the site was hiding, if there was one. The set is now replaced
+  in one step.
+
+- The tunnel guard and the proxy each resolve a request's route. When the
+  route changed in between — a config reload, a container stopping — a request
+  the guard had approved could be answered by a route that never opted in. The
+  proxy now checks the route it is about to serve.
+
 ## [1.3.0] - 2026-09-30
 
 Distribution release. The installer runs the binary it downloads with `sudo`
