@@ -55,6 +55,33 @@ Vite and Wrangler ignore `PORT`. Started without `--port {port}` they open
 their usual port, the URL roji printed shows an error page, and after 20
 seconds `roji run` says that nothing is listening on the port it chose.
 
+### Passing the hostname to the command
+
+Some servers have to know the address they are reached at: to build OAuth
+metadata, absolute redirects, or a list of allowed hosts. The hostname depends
+on the base domain, which is a setting of each machine, so it cannot be written
+into a script that is checked in. The command gets it the same two ways as the
+port:
+
+| In the arguments | Environment variable | Value |
+|---|---|---|
+| `{host}` | `ROJI_HOST` | `app.dev.localhost` |
+| `{url}` | `ROJI_URL` | `https://app.dev.localhost` |
+
+The URL includes the port when roji's `https_port` is not 443. Both values are
+the ones the running roji answered with.
+
+The variable is not `HOST`, because many dev servers read `HOST` as the address
+to listen on.
+
+A Worker that looks at the origin of the request needs both the hostname and
+the protocol, since `wrangler dev` otherwise presents the request as plain
+`http`:
+
+```bash
+roji run api -- npx wrangler dev --port {port} --host {host} --upstream-protocol https
+```
+
 The `--` is required. Everything after it belongs to the command, which is
 what keeps its flags from being read as roji's.
 

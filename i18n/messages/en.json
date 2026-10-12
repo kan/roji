@@ -37,7 +37,7 @@
   "cmd.routes.header": "📋 Registered Routes (%d):",
 
   "cmd.run.short": "Start a dev server on a free port and give it a hostname",
-  "cmd.run.long": "Pick a free port, route https://<name>.<domain> to it, and run the command.\n\nThe port is passed to the command as the PORT environment variable and replaces\nevery {port} in its arguments. The route is removed when the command exits.",
+  "cmd.run.long": "Pick a free port, route https://<name>.<domain> to it, and run the command.\n\nThe port is passed to the command as the PORT environment variable and replaces\nevery {port} in its arguments. The hostname and the URL are passed the same\nway: {host} and ROJI_HOST, {url} and ROJI_URL. The route is removed when the\ncommand exits.",
   "cmd.run.usage": "usage: roji run <name> -- <command> [args...]\nThe \"--\" is required: everything after it is the command to run.",
   "cmd.run.started": "roji: %s -> localhost:%d",
   "cmd.run.cert_warning": "roji: %s is not one level under %s, so roji's certificate does not cover it and browsers will reject it.",

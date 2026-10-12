@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `roji run` passes the hostname and the URL of the route to the command, the
+  way it passes the port: `{host}` and `{url}` in the arguments are replaced,
+  and `ROJI_HOST` and `ROJI_URL` are set. A server that has to know its own
+  origin no longer needs the hostname written into the command, where it would
+  only be right for one machine's `domain`.
+
+  ```bash
+  roji run api -- npx wrangler dev --port {port} --host {host} --upstream-protocol https
+  ```
+
 ### Internal
 
 - The release build pins GoReleaser to an exact version instead of `~> v2`.

@@ -37,7 +37,7 @@
   "cmd.routes.header": "📋 登録済みルート (%d件):",
 
   "cmd.run.short": "空きポートで開発サーバーを起動し、ホスト名を付ける",
-  "cmd.run.long": "空きポートを選び、https://<name>.<domain> をそこへ向けてからコマンドを実行します。\n\nポートは環境変数 PORT としてコマンドに渡り、引数の中の {port} もすべて置き換えます。\nコマンドが終了すると、ルートは取り消されます。",
+  "cmd.run.long": "空きポートを選び、https://<name>.<domain> をそこへ向けてからコマンドを実行します。\n\nポートは環境変数 PORT としてコマンドに渡り、引数の中の {port} もすべて置き換えます。\nホスト名と URL も同じ 2 つの方法で渡ります（{host} と ROJI_HOST、{url} と ROJI_URL）。\nコマンドが終了すると、ルートは取り消されます。",
   "cmd.run.usage": "使い方: roji run <name> -- <command> [args...]\n\"--\" は省略できません。それより後ろが、実行するコマンドです。",
   "cmd.run.started": "roji: %s -> localhost:%d",
   "cmd.run.cert_warning": "roji: %s は %s の 1 階層下ではないため、roji の証明書が対応しておらず、ブラウザに拒否されます。",

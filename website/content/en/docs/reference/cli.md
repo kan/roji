@@ -159,8 +159,9 @@ roji run web -- npm run dev
 
 Picks a free port, routes `https://<name>.<domain>` to it on the running roji,
 and runs the command. The port replaces every `{port}` in the arguments and is
-set as the `PORT` environment variable. The route is removed when the command
-exits, and the command's exit code is passed through.
+set as the `PORT` environment variable. The hostname and the URL are passed the
+same way: `{host}` and `ROJI_HOST`, `{url}` and `ROJI_URL`. The route is removed
+when the command exits, and the command's exit code is passed through.
 
 roji has to be running. See
 [Dev Servers on the Host](/docs/guides/local-proxy/) for details.

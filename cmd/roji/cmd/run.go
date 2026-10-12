@@ -30,6 +30,18 @@ const (
 	// roji run chose.
 	portPlaceholder = "{port}"
 
+	// hostPlaceholder and urlPlaceholder are replaced by the hostname the
+	// route got and by the address a browser opens it at. A server that has to
+	// know its own origin (OAuth metadata, absolute redirects) cannot have it
+	// written into a checked-in script: the base domain is per machine.
+	hostPlaceholder = "{host}"
+	urlPlaceholder  = "{url}"
+
+	// The same two as environment variables. Not HOST: tools read that as the
+	// address to listen on (HOST=0.0.0.0), and would try to bind the hostname.
+	hostEnv = "ROJI_HOST"
+	urlEnv  = "ROJI_URL"
+
 	// leaseRequestTimeout bounds one call to the lease endpoint, which is on
 	// this machine.
 	leaseRequestTimeout = 3 * time.Second
@@ -49,7 +61,9 @@ var runCmd = &cobra.Command{
 	Long: `Pick a free port, route https://<name>.<domain> to it, and run the command.
 
 The port is passed to the command as the PORT environment variable and replaces
-every {port} in its arguments. The route is removed when the command exits.`,
+every {port} in its arguments. The hostname and the URL are passed the same
+way: {host} and ROJI_HOST, {url} and ROJI_URL. The route is removed when the
+command exits.`,
 	Example: `  roji run app -- npx vite --port {port}
   roji run api -- npx wrangler dev --port {port}
   roji run web -- bin/rails server`,
@@ -93,7 +107,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	l.hostname = lease.Hostname
+	l.hostname, l.url = lease.Hostname, lease.URL
 
 	fmt.Fprintln(os.Stderr, i18n.Tf("cmd.run.started", lease.URL, port))
 	if !lease.CertCovered {
@@ -119,13 +133,18 @@ func runRun(cmd *cobra.Command, args []string) error {
 func runWithLease(l *leaseHolder, command []string) int {
 	port := l.request.Port
 	portValue := strconv.Itoa(port)
+	placeholders := strings.NewReplacer(
+		portPlaceholder, portValue,
+		hostPlaceholder, l.hostname,
+		urlPlaceholder, l.url,
+	)
 	for i, arg := range command {
-		command[i] = strings.ReplaceAll(arg, portPlaceholder, portValue)
+		command[i] = placeholders.Replace(arg)
 	}
 
 	child := exec.Command(command[0], command[1:]...)
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
-	child.Env = append(os.Environ(), "PORT="+portValue)
+	child.Env = append(os.Environ(), "PORT="+portValue, hostEnv+"="+l.hostname, urlEnv+"="+l.url)
 
 	relay := newSignalRelay(child)
 
@@ -244,9 +263,12 @@ type leaseHolder struct {
 	client   *http.Client // One for every request, so renewals share a connection
 	request  proxy.LeaseRequest
 
-	// hostname is the name as roji resolved it, known once the route is
-	// registered.
+	// hostname is the name as roji resolved it, and url the address a browser
+	// opens it at. Both are the running roji's answer, known once the route is
+	// registered: its domain and HTTPS port are the ones in effect, which the
+	// config file this CLI read may no longer match.
 	hostname string
+	url      string
 }
 
 func newLeaseHolder(settings *config.Settings, host string, port int) *leaseHolder {

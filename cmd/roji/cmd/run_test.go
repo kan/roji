@@ -142,6 +142,31 @@ func TestRunWithLease_PassesThePort(t *testing.T) {
 	}
 }
 
+// The hostname is per machine (the base domain is a setting), so a command
+// that needs its own origin has to be told it.
+func TestRunWithLease_PassesTheHostnameAndURL(t *testing.T) {
+	l := newLeaseHolder(runTestSettings(freePort(t)), "app", testPort)
+	l.hostname, l.url = "app.dev.localhost", "https://app.dev.localhost:8443"
+
+	out := filepath.Join(t.TempDir(), "out")
+	code := runWithLease(l, []string{
+		"sh", "-c", `printf '%s %s %s %s' "$ROJI_HOST" "$ROJI_URL" "$1" "$2" > "$0"`, out,
+		"--host={host}:{port}", "{url}/callback",
+	})
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "app.dev.localhost https://app.dev.localhost:8443 --host=app.dev.localhost:5173 https://app.dev.localhost:8443/callback"
+	if string(got) != want {
+		t.Errorf("the command received %q, want %q", got, want)
+	}
+}
+
 // roji run is a wrapper, so a script that checks the command's exit code has
 // to see the command's.
 func TestRunWithLease_ExitCode(t *testing.T) {
