@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.0] - 2026-10-12
+
+`roji run` tells the command the hostname it was given. v1.4.0 passed only the
+port, which left a server that needs its own origin with a hostname to be typed
+by hand.
 
 ### Added
 
@@ -917,6 +921,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.5.0]: https://github.com/kan/roji/releases/tag/v1.5.0
 [1.4.0]: https://github.com/kan/roji/releases/tag/v1.4.0
 [1.3.0]: https://github.com/kan/roji/releases/tag/v1.3.0
 [1.2.0]: https://github.com/kan/roji/releases/tag/v1.2.0

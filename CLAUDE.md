@@ -259,7 +259,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 | `/_api/config/reload` | 設定ファイル再読み込み（静的サイトとローカルプロキシを更新）。応答の `sites` に各サイトの結果が入る |
 | `/_api/leases` | `roji run` のルートの登録・更新（POST）と取り消し（DELETE）。CLI 専用 |
 
-## 実装済み機能（v0.1.0 → v1.4.0）
+## 実装済み機能（v0.1.0 → v1.5.0）
 
 ### コア機能
 - ネットワークベースの自動検出（Docker Events監視）
@@ -444,7 +444,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   vite と wrangler は `PORT` を読まないので、環境変数だけでは足りない。
   ツールごとに `--port` を自動で足す方式にはしない（ツールの引数の仕様に
   追従し続けることになる）
-- **ホスト名と URL も同じ 2 つの方法で渡す。** `{host}` と `ROJI_HOST`、
+- **ホスト名と URL も同じ 2 つの方法で渡す**（v1.5.0 から）。`{host}` と `ROJI_HOST`、
   `{url}` と `ROJI_URL`。自分のオリジンを知らないと動かない dev サーバーが
   あり（OAuth のメタデータ等）、ホスト名はベースドメイン次第なので
   `package.json` のスクリプトには書けない
@@ -677,7 +677,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
      pre-release と版付きの Docker イメージだけを出す。イメージの `latest` と
      cask は更新しない
 
-## ロードマップ（v0.7.0 → v1.4.0）
+## ロードマップ（v0.7.0 → v1.5.0）
 
 ### バージョン計画
 
@@ -692,6 +692,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 | **v1.2.0** | 外部公開 | Cloudflare Tunnel ラッパー（`roji.tunnel` オプトイン、専用リスナー + ガード） |
 | **v1.3.0** | 配布 | install.sh のチェックサムと attestation の検証、`--version`、`roji credits` |
 | **v1.4.0** | ホスト上の dev サーバー | `proxy_sites`、`roji run`、`roji config reload`、宣言ルートのトンネル公開、ビルドと公開の分離 |
+| **v1.5.0** | `roji run` へのホスト名の受け渡し | `{host}` / `{url}`、`ROJI_HOST` / `ROJI_URL` |
 
 ---
 
