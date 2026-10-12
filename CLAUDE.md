@@ -259,7 +259,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 | `/_api/config/reload` | 設定ファイル再読み込み（静的サイトとローカルプロキシを更新）。応答の `sites` に各サイトの結果が入る |
 | `/_api/leases` | `roji run` のルートの登録・更新（POST）と取り消し（DELETE）。CLI 専用 |
 
-## 実装済み機能（v0.1.0 → v1.3.0）
+## 実装済み機能（v0.1.0 → v1.4.0）
 
 ### コア機能
 - ネットワークベースの自動検出（Docker Events監視）
@@ -337,7 +337,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
     更新せず、リリース手順で再生成する
   - gocredits は `go.mod` の `tool` と、テストだけで使う依存を含めない
 - GoReleaser v2（マルチプラットフォーム）
-- ビルドと公開の分離（v1.3.0 より後）
+- ビルドと公開の分離（v1.4.0 から）
   - `release-build.yml`（reusable workflow）がビルドと attest だけを行う。権限は
     `contents: read` と attestation 用の 3 つで、secrets は渡さない
   - `release.yml` の `publish` ジョブが、受け取った成果物からリリース、Docker
@@ -377,7 +377,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 - `roji doctor` が cloudflared の導入・ログイン・named tunnel の存在を確認
 - ダッシュボードに 🌐 バッジと公開 URL を表示
 
-### ローカルプロキシ（v1.3.0 より後、未リリース）
+### ローカルプロキシ (v1.4.0)
 - `proxy_sites:` でホスト上の dev サーバー（`vite dev` / `wrangler dev` 等）に
   ホスト名を付ける。バックエンドの種類は Docker コンテナ、静的ディレクトリ、
   ホストの TCP ポートの 3 つ
@@ -424,7 +424,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 - 転送先の死活監視
 - `https` の転送先。dev サーバーの自己署名証明書を検証できない
 
-### roji run（v1.3.0 より後、未リリース）
+### roji run (v1.4.0)
 
 `roji run <name> -- <command>` は、空きポートを選び、稼働中の roji に
 `https://<name>.{domain}` → `http://localhost:{port}` のルートを登録してから
@@ -516,7 +516,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 - `roji serve`（静的ディレクトリの一時配信）
 - 名前の省略（カレントディレクトリ名からの推測）と、ポートの指定
 
-### roji config reload（v1.3.0 より後、未リリース）
+### roji config reload (v1.4.0)
 
 `roji config reload` は、稼働中の roji に `POST /_api/config/reload` を送り、
 結果を表示する。それまで再読み込みはダッシュボードのボタンと API でしか
@@ -660,7 +660,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
      pre-release と版付きの Docker イメージだけを出す。イメージの `latest` と
      cask は更新しない
 
-## ロードマップ（v0.7.0 → v1.3.0）
+## ロードマップ（v0.7.0 → v1.4.0）
 
 ### バージョン計画
 
@@ -674,6 +674,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 | **v1.1.1** | ルーティング修正 | ホスト名+プレフィックスの衝突検出、静的サイト優先の明確化 |
 | **v1.2.0** | 外部公開 | Cloudflare Tunnel ラッパー（`roji.tunnel` オプトイン、専用リスナー + ガード） |
 | **v1.3.0** | 配布 | install.sh のチェックサムと attestation の検証、`--version`、`roji credits` |
+| **v1.4.0** | ホスト上の dev サーバー | `proxy_sites`、`roji run`、`roji config reload`、宣言ルートのトンネル公開、ビルドと公開の分離 |
 
 ---
 

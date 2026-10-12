@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.0] - 2026-10-12
+
+Dev servers on the host. roji has routed containers and static directories;
+a `vite dev` or `wrangler dev` started outside Docker had no way in. It gets a
+hostname now, either from the config file or by being started through
+`roji run`, which also picks its port.
 
 ### Added
 
@@ -90,6 +95,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   route changed in between — a config reload, a container stopping — a request
   the guard had approved could be answered by a route that never opted in. The
   proxy now checks the route it is about to serve.
+
+### Security
+
+- Built with Go 1.27.2, which fixes three denial-of-service vulnerabilities in
+  the standard library that roji's listeners are exposed to: crafted HTTP
+  `Range` headers (CVE-2026-78667), excessive HTTP/2 `SETTINGS` frames
+  (CVE-2026-78669), and repeated ECH extension references in a TLS handshake
+  (CVE-2026-97031). v1.3.0 was built with Go 1.27.1.
+
+### Internal
+
+- Dependency updates: `github.com/moby/moby/api` 1.56.1,
+  `github.com/moby/moby/client` 0.6.2, golangci-lint v2.14.0, and
+  `golang.org/x/net` 0.60.0. The last is not linked into the roji binary — the
+  development tools in `go.mod` pull it in — and was raised for the
+  vulnerabilities reported against 0.59.0.
 
 ## [1.3.0] - 2026-09-30
 
@@ -875,6 +896,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.4.0]: https://github.com/kan/roji/releases/tag/v1.4.0
 [1.3.0]: https://github.com/kan/roji/releases/tag/v1.3.0
 [1.2.0]: https://github.com/kan/roji/releases/tag/v1.2.0
 [1.1.1]: https://github.com/kan/roji/releases/tag/v1.1.1
