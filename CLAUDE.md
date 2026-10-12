@@ -25,7 +25,8 @@
   - `net/http/httputil` - ReverseProxy（標準ライブラリ）
   - `crypto/x509`, `crypto/tls` - 証明書生成（標準ライブラリ）
 - **フロントエンド**: Petite Vue（~6KB、ビルド不要）
-- **配布**: Docker イメージ (ghcr.io/kan/roji)
+- **配布**: ネイティブバイナリ（GitHub Releases / install.sh / Homebrew）。
+  Docker イメージ (ghcr.io/kan/roji) は開発・テスト用
 
 ## アーキテクチャ
 
@@ -217,7 +218,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 | `/_api/projects/{name}/delete` | プロジェクト履歴削除 |
 | `/_api/config/reload` | 設定ファイル再読み込み（静的サイト更新） |
 
-## 実装済み機能（v0.1.0 → v1.2.0）
+## 実装済み機能（v0.1.0 → v1.3.0）
 
 ### コア機能
 - ネットワークベースの自動検出（Docker Events監視）
@@ -342,17 +343,37 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 1. **実装** — テストまで含めて書き、`go build ./...` / `go test ./...` /
    `gofmt -l .`（何も出ない）/ `go vet ./...` / `golangci-lint run` が通る
    状態にする。いずれも CI で検査される
-2. **`/code-review`** — Claude がスキルとして自分で実行する（ユーザーに実行を
-   頼まない）。実装が終わったらコミットせずに回す
-3. **指摘への対応** — 採用しなかった指摘は理由を添えて報告する
-4. **`/simplify`** — 再利用・簡素化・効率・抽象度の観点で仕上げる。
-   `/code-review` がバグを、`/simplify` が品質を見るので順序を入れ替えない
-   （バグ修正で構造が変わると簡素化の前提も変わるため）
+2. **`/simplify`** — 大規模な変更のときだけ回す。再利用・簡素化・効率・抽象度の
+   観点でコードを書き換える。実装が終わったらコミットせずに回す
+3. **`/code-review medium`** — バグの観点で見る。effort は必ず `medium` と
+   明示する（省くと最後に指定したレベルが引き継がれるため）。**`--fix` は
+   付けない**
+4. **指摘への対応** — 1 件ずつ採否を決めて自分で反映する。採用しなかった指摘は
+   理由を添えて報告する。反映したら手順 1 の検査を通し直す
 5. **コミット** — ユーザーの承認を得てから
+
+どちらのスキルも Claude が自分で実行する（ユーザーに実行を頼まない）。
+
+変更の規模で、通す手順を決める。
+
+| 規模 | 目安 | 手順 |
+|---|---|---|
+| 大規模 | 新しいモジュールや機構の追加、複数ファイルにまたがる構造の変更 | `/simplify` → `/code-review medium` |
+| 中規模 | 既存の構造の中でのロジックの追加や変更 | `/code-review medium` のみ |
+| 小規模 | 数行の修正、定数や文言の変更、分岐が増えない修正 | スキップ可 |
+
+**`/simplify` と `/code-review` は必ず直列で実行する。並列で起動しない。**
+`/simplify` の書き換えが終わってから `/code-review` を起動する。`/code-review` を
+後にするのは、書き換えが済んだ最終形のコードをバグの観点で見るため。並列に
+動かすと、`/code-review` は書き換え前のコードを見ることになり、`/simplify` が
+入れた不具合も見逃す。
 
 対象外（このフローを通さない）:
 
-- ドキュメントのみの変更（`README.md`、`CLAUDE.md`、`website/` 等）
+- ドキュメントのみの変更（`README.md`、`CLAUDE.md`、`website/` 等）。ただし
+  `CLAUDE.md` を変更したときは、コミット前に
+  `/claude-api prompt-audit CLAUDE.md` を実行し、指摘を 1 件ずつ採否を決めて
+  反映する
 - dependabot PR のローカルマージなど、レビュー済み変更の取り込み
 
 ## リリース手順
@@ -418,7 +439,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
      pre-release と版付きの Docker イメージだけを出す。イメージの `latest` と
      cask は更新しない
 
-## ロードマップ（v0.7.0 → v1.2.0）
+## ロードマップ（v0.7.0 → v1.3.0）
 
 ### バージョン計画
 
@@ -431,6 +452,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 | **v1.1.0** | 安全な既定値 | `bind` 設定（既定をループバックのみに変更＝破壊的）、ルーティング/WebSocket の修正、lint 導入 |
 | **v1.1.1** | ルーティング修正 | ホスト名+プレフィックスの衝突検出、静的サイト優先の明確化 |
 | **v1.2.0** | 外部公開 | Cloudflare Tunnel ラッパー（`roji.tunnel` オプトイン、専用リスナー + ガード） |
+| **v1.3.0** | 配布 | install.sh のチェックサムと attestation の検証、`--version`、`roji credits` |
 
 ---
 
@@ -501,7 +523,7 @@ domain: dev.localhost
 bind: 127.0.0.1,::1
 certs_dir: ~/.local/share/roji/certs
 data_dir: ~/.local/share/roji
-dashboard: dev.localhost
+dashboard: roji.dev.localhost
 log_level: info
 http_port: 80
 https_port: 443
@@ -741,6 +763,7 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji
 - `--local` / `--global` - インストール先指定
 - `--upgrade` - アップグレード確認スキップ
 - `--no-service` - サービス登録スキップ
+- `--version X.Y.Z` - 最新版の代わりに指定した版を入れる（`ROJI_VERSION` でも可）
 
 **旧版:** `install-docker.sh`（Docker Mode 用）は v1.0.0 で削除した
 
@@ -818,14 +841,6 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji
   - 既存セクションの拡充
   - プラットフォーム別の注意事項（WSL、macOS、Linux）
   - `roji doctor` との連携説明
-
-#### 実装順序
-
-1. 破壊的変更の整理 + Docker Mode廃止（影響範囲が広いため最初に）
-2. ダッシュボード機能強化（Recent Projects削除機能）
-3. パッケージマネージャー対応（Homebrew Formula）
-4. 多言語対応 (i18n)
-5. ドキュメント整備（最後にまとめて更新）
 
 ---
 
