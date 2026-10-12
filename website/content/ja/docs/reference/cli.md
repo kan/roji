@@ -137,6 +137,26 @@ roji log --no-follow   # 現在のログを表示して終了
 
 起動中のサーバーから全登録ルートを一覧表示。
 
+## `roji run`
+
+空きポートで開発サーバーを起動し、ホスト名を付ける。
+
+```bash
+roji run <name> -- <command> [args...]
+
+roji run app -- npx vite --port {port}
+roji run api -- npx wrangler dev --port {port}
+roji run web -- npm run dev
+```
+
+空きポートを選び、稼働中の roji で `https://<name>.<domain>` をそこへ向けてから、
+コマンドを実行する。ポートは引数の中の `{port}` をすべて置き換え、環境変数
+`PORT` にも入る。コマンドが終了するとルートは取り消され、コマンドの終了コードが
+そのまま返る。
+
+roji が動いている必要がある。詳細は
+[ホスト上の開発サーバー](/ja/docs/guides/local-proxy/)を参照。
+
 ## `roji version`
 
 バージョン、コミットハッシュ、ビルド日、Goバージョンを表示。

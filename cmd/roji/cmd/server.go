@@ -44,6 +44,11 @@ type Config struct {
 const (
 	// MaxLogFileSize is the maximum size of log file before rotation (10MB)
 	MaxLogFileSize = 10 * 1024 * 1024
+
+	// leaseExpiryInterval is how often lapsed `roji run` routes are swept. It
+	// is how late the dashboard can be in dropping one; routing stops on time
+	// regardless.
+	leaseExpiryInterval = 5 * time.Second
 )
 
 // setupLogging configures logging to stdout and optionally to a file.
@@ -217,6 +222,9 @@ func run(ctx context.Context, cfg Config) error {
 	eventCh := watcher.Watch(ctx)
 
 	go handleEvents(ctx, dockerClient, router, projectStore, eventCh)
+
+	// Routes registered by `roji run` lapse when it stops renewing them.
+	go router.RunLeaseExpiry(ctx, leaseExpiryInterval)
 
 	// Start HTTP and HTTPS servers
 	httpServer := startHTTPServer(cfg)

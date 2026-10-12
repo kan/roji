@@ -40,6 +40,13 @@ Automatically discovers Docker Compose services and makes them accessible via *.
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() error {
+	// Before cobra does anything, since it prints help and checks arguments
+	// ahead of any hook it offers: text set later than this comes out
+	// untranslated in --help and in argument errors. The language depends on
+	// the environment alone, so nothing needs parsing first.
+	i18n.Init()
+	updateCommandMessages()
+
 	return rootCmd.Execute()
 }
 
@@ -67,11 +74,6 @@ func init() {
 		"Directory for persistent data (project history)")
 	rootCmd.PersistentFlags().StringVar(&configFile, "config", "",
 		"Config file path (default: ~/.config/roji/config.yaml)")
-
-	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
-		i18n.Init()
-		updateCommandMessages()
-	}
 }
 
 func updateCommandMessages() {
@@ -100,6 +102,9 @@ func updateCommandMessages() {
 
 	routesCmd.Short = i18n.T("cmd.routes.short")
 	routesCmd.Long = i18n.T("cmd.routes.long")
+
+	runCmd.Short = i18n.T("cmd.run.short")
+	runCmd.Long = i18n.T("cmd.run.long")
 
 	doctorCmd.Short = i18n.T("cmd.doctor.short")
 	doctorCmd.Long = i18n.T("cmd.doctor.long")

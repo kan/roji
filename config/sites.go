@@ -50,21 +50,30 @@ type DeclaredSite struct {
 	Unpublishable bool
 }
 
+// ResolveSiteName works out what follows from a site's name alone: its
+// hostname, whether the certificate and the tunnel can serve it, and whether
+// the name is one roji keeps for itself. What the site serves is left unset.
+//
+// It is the part of ResolveSites that does not need a config file, for a site
+// that comes from somewhere else — `roji run` registering one over the API —
+// to be held to the same rules.
+func ResolveSiteName(host string, tunnel bool, baseDomain, dashboardHost string) DeclaredSite {
+	baseDomain = strings.ToLower(baseDomain)
+
+	site := DeclaredSite{Hostname: ResolveSiteHost(host, baseDomain)}
+	site.CertCovered = CertCoversHost(site.Hostname, baseDomain)
+	site.Unpublishable = tunnel && !strings.HasSuffix(site.Hostname, "."+baseDomain)
+	if site.Hostname == strings.ToLower(dashboardHost) || site.Hostname == baseDomain {
+		site.Err = fmt.Errorf("%w: %s", ErrSiteReservedHost, site.Hostname)
+	}
+	return site
+}
+
 // ResolveSites works out every site the config file declares, static sites
 // first and in the order written, which is the order they are registered in.
 func ResolveSites(staticSites []StaticSite, proxySites []ProxySite, baseDomain, dashboardHost string) []DeclaredSite {
-	baseDomain = strings.ToLower(baseDomain)
-	dashboardHost = strings.ToLower(dashboardHost)
-
-	// named fills in what follows from the hostname alone.
 	named := func(host string, tunnel bool) DeclaredSite {
-		site := DeclaredSite{Hostname: ResolveSiteHost(host, baseDomain)}
-		site.CertCovered = CertCoversHost(site.Hostname, baseDomain)
-		site.Unpublishable = tunnel && !strings.HasSuffix(site.Hostname, "."+baseDomain)
-		if site.Hostname == dashboardHost || site.Hostname == baseDomain {
-			site.Err = fmt.Errorf("%w: %s", ErrSiteReservedHost, site.Hostname)
-		}
-		return site
+		return ResolveSiteName(host, tunnel, baseDomain, dashboardHost)
 	}
 
 	sites := make([]DeclaredSite, 0, len(staticSites)+len(proxySites))

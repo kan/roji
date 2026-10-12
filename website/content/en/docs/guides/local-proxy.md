@@ -11,10 +11,74 @@ toc: true
 
 roji discovers containers on its own. A dev server you start on the host
 itself — `vite dev`, `wrangler dev`, `rails s` — is not a container, so
-nothing discovers it. The `proxy_sites` section of the config file gives such
-a server a hostname, HTTPS included, next to your containers.
+nothing discovers it. roji can still give such a server a hostname, HTTPS
+included, next to your containers.
 
-## Configuration
+There are two ways to do it:
+
+- **`roji run`** starts the dev server for you on a free port. Nothing to
+  configure, and no port to pick
+- **`proxy_sites`** in the config file names a port you chose. The hostname is
+  there whether or not the server is running
+
+## `roji run`: no port to pick
+
+```bash
+roji run app -- npx vite --port {port}
+# roji: https://app.dev.localhost -> localhost:41873
+```
+
+`roji run <name> -- <command>` picks a free port, routes
+`https://<name>.<domain>` to it, and runs the command. The route lasts as long
+as the command does.
+
+Every project gets a port nothing else is using, so two dev servers that both
+default to 5173 or 8787 stop colliding, and no project needs a port written
+into its config.
+
+### Passing the port to the command
+
+The command has to listen on the port roji chose. It gets it two ways:
+
+- `{port}` anywhere in the arguments is replaced with the port
+- The `PORT` environment variable is set to it
+
+Which one a tool reads is the tool's business:
+
+| Tool | How |
+|---|---|
+| Vite | `roji run app -- npx vite --port {port}` |
+| Wrangler | `roji run api -- npx wrangler dev --port {port}` |
+| Next.js, Rails, most others that read `PORT` | `roji run web -- npm run dev` |
+
+Vite and Wrangler ignore `PORT`. Started without `--port {port}` they open
+their usual port, the URL roji printed shows an error page, and after 20
+seconds `roji run` says that nothing is listening on the port it chose.
+
+The `--` is required. Everything after it belongs to the command, which is
+what keeps its flags from being read as roji's.
+
+### What `roji run` does and does not do
+
+- roji has to be running. `roji run` registers the route with it first, and
+  does not start the command if it cannot
+- The name follows the rule for `host` below. A name the config file declares
+  under `proxy_sites` or `static_sites` is refused, as is one another
+  `roji run` is using
+- A container routed to the same hostname is hidden while the command runs,
+  and `roji run` says so
+- The command's exit code is `roji run`'s; a command stopped by a signal is
+  reported as 128 plus the signal number, as a shell does (130 for Ctrl-C).
+  Ctrl-C and `kill` reach the command and everything it started, so `npx`
+  wrappers do not leave a server behind
+- The route can only be registered from the machine roji runs on, whatever
+  `bind` is set to
+- If `roji run` itself is killed outright (`kill -9`), the route goes away
+  within 30 seconds. The dev server it started is not stopped
+- The route is not published through the [tunnel](/docs/guides/tunnel/). Use
+  `proxy_sites` with `tunnel: true` for that
+
+## `proxy_sites`: a port you chose
 
 Add entries to `~/.config/roji/config.yaml`:
 

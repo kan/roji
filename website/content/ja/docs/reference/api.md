@@ -31,6 +31,7 @@ toc: true
 | `/_api/projects/{name}/logs` | GET | プロジェクトログのストリーム（SSE） |
 | `/_api/projects/{name}/delete` | DELETE | プロジェクト履歴から削除 |
 | `/_api/config/reload` | POST | 設定ファイルの再読み込み |
+| `/_api/leases` | POST, DELETE | `roji run` のルートの登録と取り消し。CLI 用で、このマシンからのリクエストだけを受け付け、`Origin` ヘッダーが付いていれば拒否する |
 
 ## ヘルスチェック
 

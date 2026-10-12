@@ -901,8 +901,11 @@
                         <span v-if="route.indexEnabled" class="index-indicator">&#x1F4CB;</span>
                         <span v-else class="index-indicator">&#x1F512;</span>
                     </span>
-                    <span v-if="route.kind === 'local'" class="static-badge" :title="t('dashboard.route.local_title')">
+                    <span v-if="route.kind === 'local' && !route.temporary" class="static-badge" :title="t('dashboard.route.local_title')">
                         &#x1F50C; {{t('dashboard.route.local')}}
+                    </span>
+                    <span v-else-if="route.kind === 'local'" class="static-badge" :title="t('dashboard.route.run_title')">
+                        &#x25B6; {{t('dashboard.route.run')}}
                     </span>
                     <span v-if="route.network" class="network-name">{{route.network}}</span>
                     <span v-if="route.kind === 'docker'" class="service-name">{{route.serviceName}}</span>

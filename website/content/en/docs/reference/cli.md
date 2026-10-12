@@ -137,6 +137,26 @@ Logs are automatically rotated when they exceed 10MB.
 
 List all registered routes from the running server.
 
+## `roji run`
+
+Start a dev server on a free port and give it a hostname.
+
+```bash
+roji run <name> -- <command> [args...]
+
+roji run app -- npx vite --port {port}
+roji run api -- npx wrangler dev --port {port}
+roji run web -- npm run dev
+```
+
+Picks a free port, routes `https://<name>.<domain>` to it on the running roji,
+and runs the command. The port replaces every `{port}` in the arguments and is
+set as the `PORT` environment variable. The route is removed when the command
+exits, and the command's exit code is passed through.
+
+roji has to be running. See
+[Dev Servers on the Host](/docs/guides/local-proxy/) for details.
+
 ## `roji version`
 
 Show version, commit hash, build date, and Go version.

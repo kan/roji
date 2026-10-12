@@ -37,8 +37,13 @@
 
     <div class="fix-hint">
         <h3>&#x1F527; [[call .T "warning.how_to_fix"]]</h3>
+        [[if .Temporary]]
+        <p>[[call .T "unreachable.run_hint"]]</p>
+        <p>[[call .T "unreachable.run_port_hint"]]</p>
+        [[else]]
         <p>[[call .T "unreachable.hint"]]</p>
         <p>[[call .T "unreachable.config_hint"]]</p>
+        [[end]]
     </div>
 
     [[if .DashboardHost]]

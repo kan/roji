@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       target: http://localhost:5173
   ```
 
+- `roji run <name> -- <command>` starts a dev server on a free port and routes
+  `https://<name>.<domain>` to it for as long as the command runs. The port is
+  passed as `PORT` and replaces `{port}` in the arguments, so projects that
+  share a default port no longer collide and none needs a port in its config.
+
+  ```bash
+  roji run app -- npx vite --port {port}
+  ```
+
 - Sites declared in the config file can be published through the tunnel with
   `tunnel: true`, under both `proxy_sites` and `static_sites`. Static sites had
   no way to opt in before and were always private. Through the tunnel a static
@@ -50,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operating system's connect timeout.
 
 ### Fixed
+
+- `--help` and errors about a command's arguments were printed in English
+  whatever the language. They are translated like the rest of the CLI.
 
 - A static site protected with Basic authentication served its files to an
   `OPTIONS` request without credentials. The check lets `OPTIONS` through for

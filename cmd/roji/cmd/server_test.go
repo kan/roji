@@ -21,12 +21,11 @@ import (
 func freePort(t *testing.T) int {
 	t.Helper()
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	port, err := pickFreePort()
 	if err != nil {
 		t.Fatalf("reserve port: %v", err)
 	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port
+	return port
 }
 
 func TestDeclaredRoutes(t *testing.T) {

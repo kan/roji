@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/docker"
@@ -33,6 +34,10 @@ type LocalBackend struct {
 	Target    *url.URL          // Where the server listens, e.g. http://127.0.0.1:8787
 	BasicAuth *config.BasicAuth // Basic authentication (optional)
 	Tunnel    bool              // Published through the tunnel
+
+	// Temporary marks a route `roji run` leased rather than one the config
+	// file declares: it goes away when the command does.
+	Temporary bool
 }
 
 // Route kinds, as reported in RouteInfo.Kind.
@@ -90,6 +95,12 @@ func (route *Route) BasicAuth() *config.BasicAuth {
 	}
 }
 
+// Temporary reports whether `roji run` leased the route, as opposed to the
+// config file declaring it or Docker running it.
+func (route *Route) Temporary() bool {
+	return route.LocalBackend != nil && route.LocalBackend.Temporary
+}
+
 // ServiceName is what the route is called in logs and listings. Declared routes
 // have no service, so they go by their kind.
 func (route *Route) ServiceName() string {
@@ -112,6 +123,13 @@ type Router struct {
 	// them — see Resolve.
 	declaredRoutes map[string]*Route // key: hostname (lowercase)
 
+	// Routes `roji run` registered through the API. Part of the declared tier
+	// as far as Resolve is concerned; see lease.
+	leases map[string]*lease // key: hostname (lowercase)
+
+	// now is the clock leases expire by, replaced in tests.
+	now func() time.Time
+
 	// Domain mapping used to name a published route's public URL. Zero when no
 	// tunnel is configured, in which case ListRoutes reports no URLs.
 	tunnelDomains TunnelDomains
@@ -127,6 +145,8 @@ func NewRouter() *Router {
 		routes:         make(map[string]*Route),
 		pathRoutes:     make(map[string][]*Route),
 		declaredRoutes: make(map[string]*Route),
+		leases:         make(map[string]*lease),
+		now:            time.Now,
 		subscribers:    make(map[*Subscriber]struct{}),
 	}
 }
@@ -239,7 +259,7 @@ func (r *Router) AddBackend(backend *docker.Backend) {
 	// declared first and the container arrived on its hostname afterwards. Said
 	// in the log and not in backend.Warning, which would outlive a reload that
 	// removes the site and leave a working container behind a warning page.
-	if declared, ok := r.declaredRoutes[hostname]; ok {
+	if declared := r.declaredOn(hostname); declared != nil {
 		slog.Warn("Docker route is hidden by a declared site on the same hostname",
 			"hostname", hostname,
 			"docker_service", backend.ServiceName,
@@ -406,6 +426,15 @@ func (r *Router) ReplaceDeclared(routes []*Route) {
 	r.declaredRoutes = make(map[string]*Route, len(routes))
 	for _, route := range routes {
 		r.setDeclared(route)
+
+		// The config file now names a hostname `roji run` was holding. The
+		// file wins, and the lease goes rather than lingering unseen behind
+		// the site: its owner is refused at its next renewal and says so.
+		if _, leased := r.leases[route.Hostname]; leased {
+			delete(r.leases, route.Hostname)
+			slog.Warn("leased route dropped, the config file now declares its hostname",
+				"hostname", route.Hostname)
+		}
 	}
 
 	// Notify SSE subscribers
@@ -417,7 +446,7 @@ func (r *Router) LookupDeclared(hostname string) *Route {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	return r.declaredRoutes[strings.ToLower(hostname)]
+	return r.declaredOn(strings.ToLower(hostname))
 }
 
 // Resolve finds the route that serves a hostname and path, which is the order
@@ -520,16 +549,27 @@ func (r *Router) ListRoutes() []RouteInfo {
 		}
 	}
 
-	for _, route := range r.declaredRoutes {
-		infos = append(infos, RouteInfo{
+	declaredInfo := func(route *Route) RouteInfo {
+		return RouteInfo{
 			Kind:         route.Kind(),
 			Hostname:     route.Hostname,
 			Target:       declaredTarget(route),
 			ServiceName:  route.ServiceName(),
 			IndexEnabled: route.StaticBackend != nil && route.StaticBackend.Index,
 			HasBasicAuth: route.BasicAuth() != nil,
+			Temporary:    route.Temporary(),
 			TunnelURL:    r.tunnelURL(route),
-		})
+		}
+	}
+
+	for _, route := range r.declaredRoutes {
+		infos = append(infos, declaredInfo(route))
+	}
+
+	for hostname := range r.leases {
+		if held := r.liveLease(hostname); held != nil {
+			infos = append(infos, declaredInfo(held.route))
+		}
 	}
 
 	// Sort by hostname for consistent output
@@ -558,6 +598,7 @@ type RouteInfo struct {
 	Warning       string `json:"warning,omitempty"`
 	Network       string `json:"network,omitempty"`
 	IndexEnabled  bool   `json:"indexEnabled,omitempty"` // For static sites: directory listing enabled
+	Temporary     bool   `json:"temporary,omitempty"`    // For local routes: registered by `roji run`, gone when it exits
 	HasBasicAuth  bool   `json:"hasBasicAuth,omitempty"` // Whether basic auth is enabled
 	// TunnelURL is the address a route answers to from the internet, empty for
 	// one that does not. It is the only spelling of "published": a route that

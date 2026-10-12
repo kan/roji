@@ -98,6 +98,16 @@ func hostForURL(host string) string {
 	return host
 }
 
+// httpsURL returns the address roji serves host at when its HTTPS listener is
+// on port, leaving the port out when it is the default one. host is in the
+// form a URL takes: see hostForURL.
+func httpsURL(host string, port int) string {
+	if port == 443 {
+		return "https://" + host
+	}
+	return fmt.Sprintf("https://%s:%d", host, port)
+}
+
 // stripURLPathPrefix removes a route's path prefix from an outbound URL,
 // keeping the decoded and encoded forms of the path in step.
 //
@@ -344,6 +354,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.serveLogsExport(w, r)
 			return
 		}
+		// Routes registered by `roji run`
+		if r.URL.Path == LeasePath {
+			h.serveLeases(w, r)
+			return
+		}
 		// Config reload endpoint
 		if r.URL.Path == "/_api/config/reload" {
 			h.serveConfigReload(w, r)
@@ -455,7 +470,7 @@ func (h *Handler) proxyTo(w http.ResponseWriter, r *http.Request, targetURL *url
 		// start a stopped Compose project but not a process it knows nothing
 		// about, so the page explains rather than offers a button.
 		if route.Kind() == KindLocal && isDialError(err) {
-			h.handleLocalUnreachable(w, r, hostname, targetURL)
+			h.handleLocalUnreachable(w, r, hostname, route.LocalBackend)
 			return
 		}
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
@@ -532,7 +547,7 @@ func translator(r *http.Request) func(string) string {
 
 // handleLocalUnreachable answers a request for a server on the host that is not
 // listening.
-func (h *Handler) handleLocalUnreachable(w http.ResponseWriter, r *http.Request, hostname string, targetURL *url.URL) {
+func (h *Handler) handleLocalUnreachable(w http.ResponseWriter, r *http.Request, hostname string, backend *LocalBackend) {
 	// The page names the address roji was told to forward to, which describes
 	// the machine to whoever reads it. Through the tunnel that is a stranger,
 	// who gets what every other refusal there gets.
@@ -544,11 +559,13 @@ func (h *Handler) handleLocalUnreachable(w http.ResponseWriter, r *http.Request,
 	data := struct {
 		Hostname      string
 		Target        string
+		Temporary     bool // Leased by `roji run`, which changes what there is to fix
 		DashboardHost string
 		T             func(string) string
 	}{
 		Hostname:      hostname,
-		Target:        targetURL.Host,
+		Target:        backend.Target.Host,
+		Temporary:     backend.Temporary,
 		DashboardHost: h.dashboardHost,
 		T:             translator(r),
 	}
@@ -1263,13 +1280,7 @@ type RedirectHandler struct {
 func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := hostForURL(hostWithoutPort(r.Host))
 
-	targetURL := fmt.Sprintf("https://%s", host)
-	if h.HTTPSPort != 443 {
-		targetURL = fmt.Sprintf("https://%s:%d", host, h.HTTPSPort)
-	}
-	targetURL += r.URL.RequestURI()
-
-	http.Redirect(w, r, targetURL, http.StatusMovedPermanently)
+	http.Redirect(w, r, httpsURL(host, h.HTTPSPort)+r.URL.RequestURI(), http.StatusMovedPermanently)
 }
 
 // serveGRPC handles gRPC requests by proxying to backend using HTTP/2

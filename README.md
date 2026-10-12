@@ -25,7 +25,7 @@ A simple reverse proxy for local development environments. Automatically discove
 - **Request Mocking**: Define mock responses via labels for frontend development
 - **Basic Authentication**: Protect routes with username/password via labels or config
 - **Static File Hosting**: Serve static files with directory listing
-- **Dev Servers on the Host**: Give `vite dev`, `wrangler dev` and the like a hostname and HTTPS, next to your containers
+- **Dev Servers on the Host**: Give `vite dev`, `wrangler dev` and the like a hostname and HTTPS, next to your containers. `roji run app -- npx vite --port {port}` picks a free port for you
 - **Public Access**: Publish selected routes through a Cloudflare Tunnel, opt-in per route
 - **Service Management**: Run as system service (systemd/launchd/Windows Service)
 - **Environment Diagnostics**: `roji doctor` checks and fixes common issues
