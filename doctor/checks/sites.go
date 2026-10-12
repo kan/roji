@@ -2,7 +2,6 @@ package checks
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/url"
 	"strings"
@@ -49,16 +48,9 @@ func (c *Sites) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult 
 
 	var findings []string
 	for _, site := range sites {
-		switch {
-		case errors.Is(site.Err, config.ErrSiteReservedHost):
-			findings = append(findings, i18n.Tf("doctor.check.sites.reserved", site.Hostname))
-		case errors.Is(site.Err, config.ErrSiteRoot):
-			findings = append(findings, i18n.Tf("doctor.check.sites.bad_root", site.Hostname, site.Root))
-		case errors.Is(site.Err, config.ErrSiteTarget):
-			findings = append(findings, i18n.Tf("doctor.check.sites.bad_target", site.Hostname, site.Proxy.Target, site.Err))
-		}
 		if site.Err != nil {
 			// roji does not serve the site, so nothing else about it matters.
+			findings = append(findings, SiteSkipMessage(site.SkipReason(), site.Hostname, site.Where(), site.Err.Error()))
 			continue
 		}
 
@@ -87,6 +79,29 @@ func (c *Sites) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult 
 		Message: i18n.Tf("doctor.check.sites.issues", len(findings), len(sites)),
 		// The report indents the first line of the details and no other.
 		Details: strings.Join(findings, "\n  "),
+	}
+}
+
+// SiteSkipMessage says, in the user's language, why a declared site is not
+// served. reason is one of config's SiteSkip codes, where is what the site was
+// to serve, and detail is the error as roji reported it.
+//
+// `roji config reload` uses it too, for the sites the running roji left out:
+// the same finding from the same source should read the same.
+func SiteSkipMessage(reason, hostname, where, detail string) string {
+	switch reason {
+	case config.SiteSkipReserved:
+		return i18n.Tf("doctor.check.sites.reserved", hostname)
+	case config.SiteSkipRoot:
+		return i18n.Tf("doctor.check.sites.bad_root", hostname, where)
+	case config.SiteSkipTarget:
+		return i18n.Tf("doctor.check.sites.bad_target", hostname, where, detail)
+	case config.SiteSkipDuplicate:
+		return i18n.Tf("doctor.check.sites.duplicate", hostname, where)
+	default:
+		// A reason this version does not know, from a newer roji. What it
+		// said is all there is to go on.
+		return i18n.Tf("doctor.check.sites.skipped", hostname, detail)
 	}
 }
 

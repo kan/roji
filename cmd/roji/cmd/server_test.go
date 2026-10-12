@@ -35,7 +35,7 @@ func TestDeclaredRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	routes := declaredRoutes(
+	routes, report := declaredRoutes(
 		[]config.StaticSite{
 			{Host: "docs", Root: root, Tunnel: true},
 			{Host: "missing", Root: filepath.Join(root, "nope")},
@@ -75,6 +75,32 @@ func TestDeclaredRoutes(t *testing.T) {
 	// A hostname with a dot is taken as written, and the tunnel is opt-in.
 	if app := got["app.example.com"]; app == nil || app.Published() {
 		t.Errorf("app.example.com = %+v, want a route that is not published", app)
+	}
+
+	// The report covers every declared site, in the order written, including
+	// the ones that were left out: it is how whoever asked for a reload learns
+	// that a site did not make it.
+	wantReport := []proxy.ReloadedSite{
+		{Hostname: "docs.dev.localhost", Kind: proxy.KindStatic, Target: root},
+		{Hostname: "missing.dev.localhost", Kind: proxy.KindStatic, Target: filepath.Join(root, "nope"), Skipped: config.SiteSkipRoot},
+		{Hostname: "notadir.dev.localhost", Kind: proxy.KindStatic, Target: file, Skipped: config.SiteSkipRoot},
+		{Hostname: "api.dev.localhost", Kind: proxy.KindLocal, Target: "http://127.0.0.1:8787"},
+		{Hostname: "app.example.com", Kind: proxy.KindLocal, Target: "http://localhost:5173", CertUncovered: true},
+		{Hostname: "bad.dev.localhost", Kind: proxy.KindLocal, Target: "127.0.0.1:8787", Skipped: config.SiteSkipTarget},
+		{Hostname: "roji.dev.localhost", Kind: proxy.KindLocal, Target: "http://127.0.0.1:9000", Skipped: config.SiteSkipReserved},
+	}
+	if len(report) != len(wantReport) {
+		t.Fatalf("report has %d entries, want %d: %+v", len(report), len(wantReport), report)
+	}
+	for i, want := range wantReport {
+		got := report[i]
+		if (got.Skipped != "") != (got.Detail != "") {
+			t.Errorf("%s: Skipped = %q, Detail = %q; a skipped site says why and no other does", got.Hostname, got.Skipped, got.Detail)
+		}
+		got.Detail = ""
+		if got != want {
+			t.Errorf("report[%d] = %+v, want %+v", i, got, want)
+		}
 	}
 }
 

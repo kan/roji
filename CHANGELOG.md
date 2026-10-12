@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   roji run app -- npx vite --port {port}
   ```
 
+- `roji config reload` applies changes to `static_sites` and `proxy_sites` to
+  the running roji, which until now took the dashboard's button or a call to
+  the API. It lists every declared site and says why any was left out, so a
+  site that did not make it is not mistaken for one that did. The static sites
+  guide has documented this command since v1.0.0; it now exists.
+
+  `/_api/config/reload` returns the same list under `sites`, along with the
+  file it read and the base domain it judged the sites against.
+
 - Sites declared in the config file can be published through the tunnel with
   `tunnel: true`, under both `proxy_sites` and `static_sites`. Static sites had
   no way to opt in before and were always private. Through the tunnel a static
@@ -39,8 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `roji doctor` checks the declared sites: a static site whose root is not a
   directory, a proxy site nothing is listening behind, a hostname roji's
-  certificate does not cover, a hostname that is the dashboard's, and a site
-  that asks for the tunnel but has no public name.
+  certificate does not cover, a hostname that is the dashboard's, a hostname
+  declared twice, and a site that asks for the tunnel but has no public name.
 
 ### Changed
 

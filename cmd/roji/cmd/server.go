@@ -205,10 +205,11 @@ func run(ctx context.Context, cfg Config) error {
 	}
 
 	// Register the sites declared in the config file
-	router.ReplaceDeclared(declaredRoutes(cfg.StaticSites, cfg.ProxySites, cfg.BaseDomain, cfg.DashboardHost))
+	declared, _ := declaredRoutes(cfg.StaticSites, cfg.ProxySites, cfg.BaseDomain, cfg.DashboardHost)
+	router.ReplaceDeclared(declared)
 
 	// Set up config reload callback
-	handler.SetConfigReloader(func() error {
+	handler.SetConfigReloader(func() (proxy.ConfigReload, error) {
 		return reloadDeclaredSites(cfg.ConfigPath, cfg.BaseDomain, cfg.DashboardHost, router)
 	})
 
@@ -614,14 +615,17 @@ func handleStopEvent(ctx context.Context, client *docker.Client, router *proxy.R
 
 // reloadDeclaredSites reads the config file again and replaces the declared
 // routes with what it now says. Everything else in the file needs a restart.
-func reloadDeclaredSites(configPath, baseDomain, dashboardHost string, router *proxy.Router) error {
+//
+// It returns what became of each site, for whoever asked for the reload.
+func reloadDeclaredSites(configPath, baseDomain, dashboardHost string, router *proxy.Router) (proxy.ConfigReload, error) {
 	settings, err := config.Load(configPath, nil)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return proxy.ConfigReload{}, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	router.ReplaceDeclared(declaredRoutes(settings.StaticSites, settings.ProxySites, baseDomain, dashboardHost))
-	return nil
+	routes, report := declaredRoutes(settings.StaticSites, settings.ProxySites, baseDomain, dashboardHost)
+	router.ReplaceDeclared(routes)
+	return proxy.ConfigReload{ConfigPath: configPath, Sites: report}, nil
 }
 
 // declaredRoutes builds the routes the config file declares: its static sites
@@ -629,11 +633,15 @@ func reloadDeclaredSites(configPath, baseDomain, dashboardHost string, router *p
 // left out, so one bad entry does not take the others with it.
 //
 // Which sites those are is config.ResolveSites' decision, shared with
-// `roji doctor`; this turns the answer into routes and log lines.
-func declaredRoutes(staticSites []config.StaticSite, proxySites []config.ProxySite, baseDomain, dashboardHost string) []*proxy.Route {
+// `roji doctor`; this turns the answer into routes, log lines, and a report
+// with one entry per declared site, registered or not.
+func declaredRoutes(staticSites []config.StaticSite, proxySites []config.ProxySite, baseDomain, dashboardHost string) ([]*proxy.Route, []proxy.ReloadedSite) {
 	var routes []*proxy.Route
+	var report []proxy.ReloadedSite
 
 	for _, site := range config.ResolveSites(staticSites, proxySites, baseDomain, dashboardHost) {
+		report = append(report, reloadedSite(site))
+
 		if site.Err != nil {
 			slog.Warn("declared site cannot be served, skipping", "host", site.Hostname, "error", site.Err)
 			continue
@@ -667,7 +675,30 @@ func declaredRoutes(staticSites []config.StaticSite, proxySites []config.ProxySi
 		routes = append(routes, route)
 	}
 
-	return routes
+	return routes, report
+}
+
+// reloadedSite describes a resolved site the way the reload API reports it.
+func reloadedSite(site config.DeclaredSite) proxy.ReloadedSite {
+	reported := proxy.ReloadedSite{
+		Hostname: site.Hostname,
+		Kind:     proxy.KindLocal,
+		Target:   site.Where(),
+		Skipped:  site.SkipReason(),
+	}
+	if site.Static != nil {
+		reported.Kind = proxy.KindStatic
+	}
+
+	if site.Err != nil {
+		reported.Detail = site.Err.Error()
+		return reported
+	}
+
+	// What will not work matters only for a site that is served.
+	reported.CertUncovered = !site.CertCovered
+	reported.Unpublishable = site.Unpublishable
+	return reported
 }
 
 func printBanner(cfg Config) {

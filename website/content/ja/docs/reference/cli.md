@@ -68,7 +68,14 @@ roji config show     # 現在の設定を表示
 roji config path     # 設定ファイルのパスを表示
 roji config init     # デフォルト設定ファイルを作成
 roji config edit     # $EDITORで開く
+roji config reload   # static_sites / proxy_sites の変更を稼働中の roji に反映
 ```
+
+`roji config reload` は、稼働中の roji に設定ファイルを読み直させる。宣言した
+サイトをすべて一覧し、登録されなかったものには理由を付けて表示する。この方法で
+反映されるのは `static_sites` と `proxy_sites` だけで、それ以外の変更は roji の
+再起動が要る。roji が動いていない場合と、roji が設定ファイルを読めなかった場合は
+失敗する。一部のサイトがスキップされただけなら成功として終了する。
 
 ## `roji ca`
 

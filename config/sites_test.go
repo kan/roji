@@ -7,6 +7,46 @@ import (
 	"testing"
 )
 
+// A hostname declared twice goes to the later site that can be served. The
+// earlier one is marked, so that it is reported as not served instead of being
+// dropped where nobody looks.
+func TestResolveSites_DuplicateHostname(t *testing.T) {
+	root := t.TempDir()
+
+	sites := ResolveSites(
+		[]StaticSite{
+			{Host: "docs", Root: root},
+			{Host: "api", Root: root},
+			{Host: "app", Root: root},
+		},
+		[]ProxySite{
+			{Host: "docs", Target: "http://127.0.0.1:3000"},
+			{Host: "DOCS.dev.localhost", Target: "http://127.0.0.1:4000"},
+			// Cannot be served itself, so it supersedes nothing.
+			{Host: "api", Target: "127.0.0.1:8787"},
+		},
+		"dev.localhost", "roji.dev.localhost",
+	)
+
+	want := []struct {
+		where  string
+		reason string
+	}{
+		{root, SiteSkipDuplicate},
+		{root, ""},
+		{root, ""},
+		{"http://127.0.0.1:3000", SiteSkipDuplicate},
+		{"http://127.0.0.1:4000", ""},
+		{"127.0.0.1:8787", SiteSkipTarget},
+	}
+	for i, w := range want {
+		if got := sites[i]; got.Where() != w.where || got.SkipReason() != w.reason {
+			t.Errorf("sites[%d] (%s): Where = %q, SkipReason = %q; want %q, %q",
+				i, got.Hostname, got.Where(), got.SkipReason(), w.where, w.reason)
+		}
+	}
+}
+
 func TestResolveSites(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file.txt")

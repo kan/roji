@@ -246,8 +246,55 @@ type StatusConfig struct {
 	HTTPSPort     int
 }
 
-// ConfigReloadFunc is a callback function to reload configuration
-type ConfigReloadFunc func() error
+// ReloadedSite says what a config reload did with one site the config file
+// declares. It is what `roji config reload` reports from: without it, a site
+// that was left out shows up only in roji's own log, and the reload looks like
+// it worked.
+type ReloadedSite struct {
+	Hostname string `json:"hostname"`
+	Kind     string `json:"kind"` // KindStatic or KindLocal
+
+	// Target is the static site's root or the proxy site's target: see
+	// config.DeclaredSite.Where.
+	Target string `json:"target"`
+
+	// Skipped is one of config's SiteSkip codes when the site was not
+	// registered, and empty when it was. Detail then says why, in English. A
+	// client meeting a code it does not know has Detail to show.
+	Skipped string `json:"skipped,omitempty"`
+	Detail  string `json:"detail,omitempty"`
+
+	// The site is registered and one of these will not work: browsers reject
+	// the hostname, or the tunnel it asks for has no public name to give it.
+	CertUncovered bool `json:"certUncovered,omitempty"`
+	Unpublishable bool `json:"unpublishable,omitempty"`
+}
+
+// ConfigReload is what a config reload did.
+type ConfigReload struct {
+	// ConfigPath is the file that was read: the one roji was started with,
+	// which need not be the one whoever asked for the reload has been editing.
+	ConfigPath string `json:"configPath"`
+
+	// Sites lists every site the config file declares, in the order written.
+	// A roji from before this field existed leaves it out.
+	Sites []ReloadedSite `json:"sites"`
+}
+
+// ConfigReloadResponse is the body of a successful /_api/config/reload.
+type ConfigReloadResponse struct {
+	Status string `json:"status"` // Always "reloaded"
+
+	// Domain is the base domain the sites were judged against. It is the
+	// running roji's, which a config file edited since it started may no
+	// longer agree with.
+	Domain string `json:"domain"`
+
+	ConfigReload
+}
+
+// ConfigReloadFunc is a callback function to reload configuration.
+type ConfigReloadFunc func() (ConfigReload, error)
 
 // Handler is the main HTTP handler for the reverse proxy
 type Handler struct {
@@ -920,7 +967,8 @@ func (h *Handler) serveConfigReload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reload configuration
-	if err := h.reloadConfig(); err != nil {
+	reloaded, err := h.reloadConfig()
+	if err != nil {
 		slog.Error("failed to reload config", "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -933,9 +981,17 @@ func (h *Handler) serveConfigReload(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info("configuration reloaded")
 
+	// An empty list and not null: a client tells "no sites declared" from "this
+	// roji does not report sites" by whether the field is there.
+	if reloaded.Sites == nil {
+		reloaded.Sites = []ReloadedSite{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"status": "reloaded",
+	_ = json.NewEncoder(w).Encode(ConfigReloadResponse{
+		Status:       "reloaded",
+		Domain:       h.baseDomain,
+		ConfigReload: reloaded,
 	})
 }
 

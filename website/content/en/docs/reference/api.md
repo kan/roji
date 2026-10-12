@@ -30,7 +30,7 @@ All API endpoints are served on the dashboard host (default: `https://roji.dev.l
 | `/_api/projects/{name}/restart` | POST | Restart all services in project |
 | `/_api/projects/{name}/logs` | GET | Stream project logs (SSE) |
 | `/_api/projects/{name}/delete` | DELETE | Remove project from history |
-| `/_api/config/reload` | POST | Reload config file |
+| `/_api/config/reload` | POST | Reload `static_sites` and `proxy_sites` from the config file. The response lists every declared site under `sites`, with `skipped` set on the ones that were not registered |
 | `/_api/leases` | POST, DELETE | Register and release the routes of `roji run`. For the CLI: accepted from this machine only, and refused when they carry an `Origin` header |
 
 ## Health Check

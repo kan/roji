@@ -256,7 +256,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 | `/_api/projects/{name}/restart` | プロジェクト再起動（`docker compose restart`） |
 | `/_api/projects/{name}/logs` | プロジェクトログ（SSEストリーム） |
 | `/_api/projects/{name}/delete` | プロジェクト履歴削除 |
-| `/_api/config/reload` | 設定ファイル再読み込み（静的サイトとローカルプロキシを更新） |
+| `/_api/config/reload` | 設定ファイル再読み込み（静的サイトとローカルプロキシを更新）。応答の `sites` に各サイトの結果が入る |
 | `/_api/leases` | `roji run` のルートの登録・更新（POST）と取り消し（DELETE）。CLI 専用 |
 
 ## 実装済み機能（v0.1.0 → v1.3.0）
@@ -403,7 +403,8 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   報告と実際の登録が食い違う
   - 登録しないもの: root がディレクトリでない静的サイト、`target` が解釈
     できないローカルプロキシ、ダッシュボードのホスト名かベースドメインを名乗る
-    サイト（ダッシュボードが先に応答するので到達できない）
+    サイト（ダッシュボードが先に応答するので到達できない）、同じホスト名が
+    後ろでもう一度宣言されているサイト
   - 登録するが警告するもの: 証明書が対応しないホスト名（ベースドメインの
     1 階層下だけが対応する）、`tunnel: true` なのにベースドメインの外にある
     ホスト名（公開用の名前が作れない）
@@ -514,6 +515,47 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 - `roji run` が SIGKILL されたときの dev サーバーの停止
 - `roji serve`（静的ディレクトリの一時配信）
 - 名前の省略（カレントディレクトリ名からの推測）と、ポートの指定
+
+### roji config reload（v1.3.0 より後、未リリース）
+
+`roji config reload` は、稼働中の roji に `POST /_api/config/reload` を送り、
+結果を表示する。それまで再読み込みはダッシュボードのボタンと API でしか
+行えなかった。
+
+- **反映されるのは `static_sites` と `proxy_sites` だけ。** コマンド名は設定の
+  全部が反映されるように読めるので、実行のたびにその旨を表示する
+  （`cmd.config.reload.scope`）。この表示を省かないこと
+- **API の応答に、宣言したサイトごとの結果を入れる**（`proxy.ReloadedSite`）。
+  登録されなかったサイトは roji のログにしか出ていなかったので、CLI からは
+  成功に見えていた。結果は `declaredRoutes` が `config.ResolveSites` から
+  作るので、サーバーが実際に行った登録と食い違わない
+  - 同じホスト名を 2 回宣言したときの「後の宣言が勝つ」も `ResolveSites` が
+    決め、負けた側に `ErrSiteDuplicate` を付ける。ルーターが黙って落とす
+    だけだと、負けた側が「登録済み」と報告されてしまう
+  - 登録されない理由の分類は `config.DeclaredSite.SkipReason` の 1 か所。
+    サーバーの報告、`roji doctor`、`roji config reload` がこのコードを使い、
+    文言は `checks.SiteSkipMessage` が選ぶ。理由を足すときはこの 2 つに足す
+  - 応答には、判定に使ったベースドメイン（`domain`）と読んだファイル
+    （`configPath`）も入れる。どちらも稼働中の roji のもので、CLI が読んだ
+    設定ファイルとは食い違いうる（起動後に `domain` を編集した、`--config` で
+    別のファイルを指して起動した、など）
+  - `sites` は、サイトが 1 件も無いときも空の配列で返す。`sites` の無い応答は
+    「この項目を返さない古い roji」を意味し、CLI はそれで見分ける
+  - 既存の `status` は残してある。ダッシュボードは HTTP ステータスしか
+    見ていない
+- **サイトがスキップされても終了コードは 0。** 残りのサイトは反映されており、
+  編集後に再読み込みするスクリプトが、以前から壊れていたサイトのせいで
+  止まるのを避ける。非 0 にするのは、roji に接続できない場合と、roji が
+  設定ファイル自体を読めなかった場合（何も変更されていない）
+- **CLI は、現在の設定ファイルが示す場所へリクエストを送る。** 起動後に
+  `domain`、`dashboard`、`https_port` を編集していると、稼働中の roji には
+  届かない。これは CLI 全般（`routes`、`health`、`run`）に共通の制約で、
+  解決していない。`config reload` は、応答が再読み込みのものでなければ、
+  設定ファイルのせいにせず再起動を案内する
+- サイトの問題を説明する文言は `roji doctor` のもの（`doctor.check.sites.*`）を
+  使う。同じ内容を同じ出どころから報告するので、文言を二重に持たない
+- `roji config edit` は、編集後に再読み込みしない。案内を表示するだけ。
+  編集と反映を分けたい場面があるため
 
 ## 開発フロー
 
@@ -727,6 +769,7 @@ proxy_sites:
   - `roji config path` - 設定ファイルパスを表示
   - `roji config init` - デフォルト設定ファイルを作成
   - `roji config edit` - エディタで設定を編集
+  - `roji config reload` - `static_sites` / `proxy_sites` の変更を稼働中の roji に反映
 
 #### roji doctor コマンド
 

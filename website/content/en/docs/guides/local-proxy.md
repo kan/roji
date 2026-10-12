@@ -156,14 +156,18 @@ A proxy site takes the whole hostname. There is no path prefix for it.
 
 ## Applying changes
 
-No restart needed. Click **Reload Config** in the dashboard, or call the API
-behind the button:
+No restart needed. Either:
 
 ```bash
-curl -X POST https://roji.dev.localhost/_api/config/reload
+roji config reload
 ```
 
-This is also how to point a site at a different port while roji is running.
+Or click **Reload Config** in the dashboard. This is also how to point a site
+at a different port while roji is running.
+
+The command lists every declared site and says which were registered. A site
+that was left out — a target that is not a URL, a hostname that is the
+dashboard's — is marked with the reason; the reload still applies the rest.
 
 ## Authentication
 

@@ -143,6 +143,8 @@ func updateCommandMessages() {
 	configInitCmd.Long = i18n.T("cmd.config.init.long")
 	configEditCmd.Short = i18n.T("cmd.config.edit.short")
 	configEditCmd.Long = i18n.T("cmd.config.edit.long")
+	configReloadCmd.Short = i18n.T("cmd.config.reload.short")
+	configReloadCmd.Long = i18n.T("cmd.config.reload.long")
 
 	serviceCmd.Short = i18n.T("cmd.service.short")
 	serviceCmd.Long = i18n.T("cmd.service.long")

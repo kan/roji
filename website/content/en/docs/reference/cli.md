@@ -68,7 +68,15 @@ roji config show     # Display current settings
 roji config path     # Show config file locations
 roji config init     # Create default config file
 roji config edit     # Open in $EDITOR
+roji config reload   # Apply static_sites / proxy_sites changes to the running roji
 ```
+
+`roji config reload` asks the running roji to read the config file again. It
+lists every declared site and marks the ones that were not registered, with
+the reason. Only `static_sites` and `proxy_sites` take effect this way;
+changes to anything else need roji to be restarted. The command fails when
+roji is not running or cannot read the file, and succeeds when some sites were
+skipped.
 
 ## `roji ca`
 
