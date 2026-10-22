@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-10-23
+
+Security release. No changes to roji's behavior.
+
+### Security
+
+- Built with Go 1.27.3, which adds a denylist to `crypto/x509` so that
+  certificate verification rejects known compromised intermediate certificates
+  (CVE-2026-111943). It covers systems whose trust store has not been updated
+  to distrust them. v1.5.0 was built with Go 1.27.2.
+
+### Internal
+
+- Dependency updates: `golang.org/x/text` 0.43.0,
+  `goreleaser/goreleaser-action` 7.3.0, and `github/codeql-action/upload-sarif`
+  4.39.0.
+- The documentation site build pins Hugo to 0.167.0 instead of `latest`.
+  Hugo 0.168.0 removed a config key the site uses, which failed the deploy of
+  an unchanged site. Moving to the replacement is tracked in
+  [#103](https://github.com/kan/roji/issues/103).
+
 ## [1.5.0] - 2026-10-12
 
 `roji run` tells the command the hostname it was given. v1.4.0 passed only the
@@ -921,6 +942,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.5.1]: https://github.com/kan/roji/releases/tag/v1.5.1
 [1.5.0]: https://github.com/kan/roji/releases/tag/v1.5.0
 [1.4.0]: https://github.com/kan/roji/releases/tag/v1.4.0
 [1.3.0]: https://github.com/kan/roji/releases/tag/v1.3.0
