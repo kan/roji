@@ -8,6 +8,10 @@ on:
   pull_request:
     branches: [main]
 
+# Jobs that need more (docker) list it themselves
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest

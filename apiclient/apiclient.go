@@ -22,6 +22,12 @@ import (
 
 // NewClient returns an HTTP client for talking to the local roji server.
 // TLS verification is disabled because roji serves a self-signed certificate.
+//
+// Verifying against roji's own CA was considered and left out. The connection
+// is to an address on this machine (loopback unless bind says otherwise) and
+// carries no secrets, while verification would break the CLI whenever the
+// certificate does not cover the dashboard hostname, has expired, or the CA is
+// not readable by the user running the CLI.
 func NewClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
