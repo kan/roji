@@ -4,12 +4,14 @@
 [[mounts]]
   source = "content/en"
   target = "content"
-  lang = "en"
+  [mounts.sites.matrix]
+    languages = ["en"]
 
 [[mounts]]
   source = "content/ja"
   target = "content"
-  lang = "ja"
+  [mounts.sites.matrix]
+    languages = ["ja"]
 
 ## data
 [[mounts]]

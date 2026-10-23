@@ -5,7 +5,7 @@ disableHugoGeneratorInject = true
 enableEmoji = true
 enableGitInfo = false
 enableRobotsTXT = true
-languageCode = "en-US"
+locale = "en-US"
 rssLimit = 10
 summarylength = 20
 
@@ -96,6 +96,9 @@ copyRight = "Copyright (c) 2024-2026 kan"
 [imaging]
   anchor = "Center"
   bgColor = "#ffffff"
-  hint = "photo"
-  quality = 85
   resampleFilter = "Lanczos"
+  [imaging.jpeg]
+    quality = 85
+  [imaging.webp]
+    hint = "photo"
+    quality = 85

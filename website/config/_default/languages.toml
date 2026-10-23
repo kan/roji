@@ -1,5 +1,5 @@
 [en]
-  languageName = "English"
+  label = "English"
   contentDir = "content/en"
   weight = 10
   [en.params]
@@ -8,7 +8,7 @@
     footer = 'Built with <a class="text-muted" href="https://gohugo.io/">Hugo</a> and <a class="text-muted" href="https://getdoks.org/">Doks</a>'
 
 [ja]
-  languageName = "日本語"
+  label = "日本語"
   contentDir = "content/ja"
   weight = 20
   [ja.params]
