@@ -20,8 +20,8 @@
     "@thulite/doks-core": "^1.9.4",
     "@thulite/images": "^3.3.4",
     "@thulite/inline-svg": "^1.2.2",
-    "@thulite/seo": "^2.4.3",
-    "thulite": "^2.6.5"
+    "@thulite/seo": "2.4.3",
+    "thulite": "^3.0.3"
   },
   "overrides": {
     "minimatch": "^10.2.2",

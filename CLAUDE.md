@@ -1135,7 +1135,20 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji
 - **技術**: Hugo + Doks テーマ、GitHub Pages
 - **ソース**: `website/` ディレクトリ（モノレポ）
 - **多言語**: EN / JA
-- **デプロイ**: GitHub Actions（`main` ブランチの `website/**` 変更時に自動デプロイ）
+- **デプロイ**: GitHub Actions（`main` ブランチの `website/**` か `deploy-site.yml` の
+  変更時に自動デプロイ）。PR では build ジョブだけを回し、デプロイしない
+- **ビルドに要るもの**: Hugo extended と Dart Sass。テーマ（thulite 3）が Sass を
+  Dart Sass で変換するので、ローカルでも `sass` が PATH に要る
+  - **Hugo と Dart Sass の版は `deploy-site.yml` で 1 つに固定する。** Hugo は
+    非推奨の設定キーを削除するので、`latest` だと変更していないサイトのデプロイが
+    落ちる（0.168.0 で `module.mounts.lang` が削除されたときに起きた）。Dart Sass は
+    3.0 でテーマと Bootstrap が使う `@import` を削除する
+  - 上げるときは手で行い、ビルドに新しい非推奨の警告が出ていないことを確かめる。
+    dependabot はどちらの版も更新しない
+- **テーマ由来で残っている警告**: `resources.PostProcess`（上流が未対応）と
+  `LanguageCode`（`@thulite/seo` 2.4.4 で直っているが、2.4.4 の `robots.txt` が
+  生成されない `sitemap-index.xml` を指すため、`package.json` で 2.4.3 に固定している）。Dart Sass の
+  非推奨警告（`@import` など）もテーマと Bootstrap の SCSS から出る
 
 ## 開発メモ
 

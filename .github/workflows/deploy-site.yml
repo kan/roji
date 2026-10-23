@@ -3,17 +3,24 @@ name: Deploy Website
 on:
   push:
     branches: [main]
-    paths: ['website/**']
+    paths: ['website/**', '.github/workflows/deploy-site.yml']
+  # Build only, so a change that breaks the site fails on the pull request
+  # instead of in the deploy after the merge
+  pull_request:
+    branches: [main]
+    paths: ['website/**', '.github/workflows/deploy-site.yml']
   workflow_dispatch:
 
+# The deploy job lists what it needs. The build job runs for pull requests
+# and stays read-only.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
+# A new push to a pull request supersedes its running build. Runs on main are
+# not cancelled; the deploy job has its own group below.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -40,9 +47,20 @@ jobs:
           hugo-version: '0.168.0'
           extended: true
 
-      - name: Setup Pages
-        id: pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      # thulite 3 compiles Sass with Dart Sass, which Hugo finds on PATH.
+      # Pinned with its checksum like Hugo above: Dart Sass 3.0 removes the
+      # @import rules the theme and Bootstrap still use. Raise it by hand.
+      - name: Install Dart Sass
+        env:
+          DART_SASS_VERSION: '1.106.1'
+          DART_SASS_SHA256: 'ad99cccb90de4ad2926e03e32d819c83baf32c3dbff56da92df0eed10e604d60'
+        run: |
+          archive="$RUNNER_TEMP/dart-sass.tar.gz"
+          curl -fsSL --retry 3 --retry-all-errors -o "$archive" \
+            "https://github.com/sass/dart-sass/releases/download/${DART_SASS_VERSION}/dart-sass-${DART_SASS_VERSION}-linux-x64.tar.gz"
+          echo "${DART_SASS_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/dart-sass" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         working-directory: ./website
@@ -55,11 +73,19 @@ jobs:
         run: hugo --gc --minify
 
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ./website/public
 
   deploy:
+    if: github.event_name != 'pull_request'
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
