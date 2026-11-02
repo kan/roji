@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The documentation site builds with Hugo 0.168.0 and the thulite 3 theme
   ([#103](https://github.com/kan/roji/issues/103)), and pull requests that touch
   it now build it.
-- Dependency updates: `github/codeql-action/upload-sarif` 4.39.1.
+- Dependency updates: `github/codeql-action/upload-sarif` 4.39.1 and
+  `docker/login-action` 4.7.0.
 
 ## [1.5.1] - 2026-10-23
 
