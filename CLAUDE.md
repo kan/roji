@@ -82,6 +82,8 @@ roji/
 ├── i18n/                    # CLI / ダッシュボードのメッセージ
 ├── apiclient/               # CLI から稼働中の roji API を呼ぶクライアント
 ├── test/                    # インテグレーション/E2Eテスト
+├── scripts/                 # リリース PR とリリースノート（CHANGELOG の節の書き換えと抽出）
+├── .tagpr                   # tagpr の設定（リリース PR）
 ├── credits.go               # LICENSE / CREDITS / THIRD_PARTY_NOTICES の埋め込み（roji credits）
 ├── CREDITS                  # 依存 Go モジュールのライセンス（gocredits で生成、コミットする）
 ├── THIRD_PARTY_NOTICES      # gocredits が拾わないもの（Go モジュールでない Petite Vue）
@@ -334,7 +336,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
     install.sh はアーカイブからバイナリしか残さないため
   - `go:embed` はビルド時にファイルが要るので、`CREDITS` はコミットする（リリース時
     だけ生成すると `go build` / `go install` が失敗する）。dependabot の PR ごとには
-    更新せず、リリース手順で再生成する
+    更新せず、リリース PR が作り直す（「リリース手順」の「リリース PR（tagpr）」）
   - gocredits は `go.mod` の `tool` と、テストだけで使う依存を含めない
 - GoReleaser v2（マルチプラットフォーム）
 - ビルドと公開の分離（v1.4.0 から）
@@ -588,7 +590,10 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
    付けない**
 4. **指摘への対応** — 1 件ずつ採否を決めて自分で反映する。採用しなかった指摘は
    理由を添えて報告する。反映したら手順 1 の検査を通し直す
-5. **コミット** — ユーザーの承認を得てから
+5. **CHANGELOG** — 利用者に届く変更は、同じコミットで `CHANGELOG.md` の
+   `## [Unreleased]` に書く。この節がそのままリリースノートになる
+   （「リリース手順」）。リリースの時にまとめて書かない
+6. **コミット** — ユーザーの承認を得てから
 
 どちらのスキルも Claude が自分で実行する（ユーザーに実行を頼まない）。
 
@@ -616,36 +621,84 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
 ## リリース手順
 
-1. **ドキュメント更新**
+**リリースは tagpr のリリース PR をマージして始める**（v1.5.1 の次の版から）。
+`CHANGELOG.md` の節の書き換え、`CREDITS` の再生成、タグはリリース PR と
+ワークフローが行う。**`Prepare for vX.Y.Z release` のコミットを手で作らない。
+タグも手で打たない**（打ち直すときを除く。下の「やり直し」）。
 
-   CHANGELOG.md に新バージョンの変更内容と末尾のリンク定義を追加する。
-
-   `CREDITS` を再生成する。依存が変わっていれば差分が出る。
-   `release.yml` の `test` ジョブが `go tool gocredits . | diff - CREDITS` で
-   検査するので、忘れるとリリースが止まる。
+1. **リリース PR を確かめる**
 
    ```bash
-   go tool gocredits -w .
+   gh pr list --label tagpr --state open --json number,title,headRefName
+   gh run list --workflow tagpr.yml --branch main -L 3
    ```
 
+   - **最新の tagpr の run が success であること。** 失敗していたら
+     `scripts/release-prepare.sh` の出力を読む。多いのは `## [Unreleased]` が
+     空のとき。main に CHANGELOG を書くコミットを push すると作り直される
+   - **版（PR のタイトル）が正しいこと。** 既定は patch。minor にするときは
+     リリース PR にラベルを付けて作り直す。roji は PR を使わずに main へ push
+     するので、`.tagpr` の `minorLabels` はほとんど効かない
+
+     ```bash
+     gh pr edit <番号> --add-label tagpr:minor
+     gh workflow run tagpr.yml --ref main
+     ```
+
+   - Files changed が `CHANGELOG.md`（見出しとリンク定義）と `CREDITS` だけで
+     あること
+   - **PR のタイトルの版と CHANGELOG の見出しの版が一致していること。** タグの版は
+     マージの時点のラベルで決まり、見出しは最後に作り直した時点の版のまま。
+     ラベルを付け外ししたら、作り直してからマージする。食い違ったままマージすると、
+     タグは打たれるが `release.yml` が節を見つけられずに止まる
+   - リリース PR の CI は承認待ち（`action_required`）で止まることがある
+     （GITHUB_TOKEN が作った PR のため）。そのときは今の head の run を承認する
+     （`gh api -X POST repos/kan/roji/actions/runs/<id>/approve`）
+
+2. **CHANGELOG の節を確かめる**
+
+   **この節がそのまま GitHub のリリースノートになる。** 前回のタグからの
+   コミットと突き合わせ、利用者に届く変更が載っているかを見る。直すときは
+   リリース PR のブランチではなく **main の `## [Unreleased]` を直す**
+   （ブランチは tagpr が作り直すたびに main から作られる）。
+
+   ```bash
+   git fetch origin
+   git show origin/<ブランチ>:CHANGELOG.md | sed -n '1,60p'
+   git log --oneline <前回のタグ>..origin/main
+   ```
+
+   見出しの日付は、tagpr が最後にリリース PR を作り直した日（日本時間）。
+   マージする日と違えば `gh workflow run tagpr.yml --ref main` で作り直す。
+
    `THIRD_PARTY_NOTICES` は手で管理する。`proxy/templates/petite-vue.min.js` を
-   差し替えたときに、版と著作権表示を更新する。Go モジュールの NOTICE ファイルは
-   gocredits が `CREDITS` に入れるので、手で写さない。
+   差し替えたときに、版と著作権表示を main で更新しておく。Go モジュールの
+   NOTICE ファイルは gocredits が `CREDITS` に入れるので、手で写さない。
 
    install.sh の URL は `main` 固定なので、リリースのたびの置換は要らない。
    install.sh は常に最新版を取りに行くため、URL をタグで固定しても版は固定
    されない。版の固定は `ROJI_VERSION` / `--version` で行う。
 
-2. **コミット & タグ**
+3. **リリース PR をマージする**
+
    ```bash
-   git add CHANGELOG.md CREDITS THIRD_PARTY_NOTICES
-   git commit -m "Prepare for vX.Y.Z release"
-   git tag -a vX.Y.Z -m "Release vX.Y.Z: [主要機能]"
-   git push origin main
-   git push origin vX.Y.Z
+   gh pr merge <番号> --squash --delete-branch
+   git switch main && git pull --ff-only
+   gh run list --workflow tagpr.yml --commit "$(git rev-parse HEAD)" -L 1
+   gh run list --workflow release.yml -L 1
    ```
 
-3. **確認**
+   マージの push で走る tagpr の run がマージコミットにタグを打ち、`release`
+   ジョブが `release.yml` をそのタグで起動する。**タグが打たれるまで main へ
+   push しない。** tagpr の run は前の run が終わるまで待ち、待っている run は
+   新しい push の run に置き換えられる（cancelled になる）。置き換えられたら、
+   マージコミットの run を `gh run rerun <run-id>` で再実行するとタグが打たれる。
+
+   リリースの直後は `## [Unreleased]` が空なので、次に CHANGELOG を書くまで
+   main への push ごとに tagpr の run が失敗する。これは想定どおりで、その間の
+   リリース PR はマージしない。
+
+4. **確認**
    - GitHub Actions → GitHub Release → Docker Image
    - リリースのアーカイブに attestation が付いていること
 
@@ -675,7 +728,64 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
      ステップをワークフローへ入れないこと
    - プレリリース（`v1.2.3-rc.1` のように `-` を含むタグ）は、GitHub の
      pre-release と版付きの Docker イメージだけを出す。イメージの `latest` と
-     cask は更新しない
+     cask は更新しない。tagpr はプレリリースのタグを打たないので、手でタグを
+     打って push する（`push: tags` で起動する）。リリースノートは CHANGELOG の
+     `## [Unreleased]` の節になる（空なら止まる）
+
+**やり直し**
+
+- `publish` ジョブだけが落ちたら、そのジョブを再実行する（上の「確認」）
+- 打ってあるタグで丸ごとやり直すなら `gh workflow run release.yml --ref vX.Y.Z`
+- 公開前に CHANGELOG やコードを直してタグを打ち直すなら、タグを消し
+  （`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`）、直したコミットの
+  先頭にタグを打って、main とタグを 1 回で push する
+  （`git push --atomic origin main vX.Y.Z`。`push: tags` で起動する）。main だけを
+  先に push すると、タグの無い間に tagpr が前の版からのリリース PR を作り直す。
+  CHANGELOG は main ではもう `## [X.Y.Z] - 日付` になっている節を直す。公開後は
+  打ち直せない
+
+### リリース PR（tagpr）
+
+- **main に push があるたびに `tagpr.yml` がリリース PR を作り直す。** ブランチは
+  `tagpr-from-v<前回の版>`。マージすると、次の run がマージコミットにタグを打つ。
+  設定は `.tagpr`
+- **版はタグだけで持つ**（`versionFile = -`）。バイナリの版は ldflags で
+  埋めるので、版を書いたファイルが無い。次の版はリリース PR のラベル
+  （`tagpr:minor` / `tagpr:major`、無ければ patch）で決まる
+- **リリース PR の中身は `scripts/release-prepare.sh` が作る**（`.tagpr` の
+  `postVersionCommand`）。`## [Unreleased]` を `## [X.Y.Z] - 日付` にし、その上に
+  空の `## [Unreleased]` を置き直し、末尾にリンク定義を足す。`CREDITS` も
+  差し替える。作り直しのたびに走るので、自分の出力に対してもう一度走らせても
+  何も変えない。`## [Unreleased]` が無いか空なら失敗する。失敗しても tagpr は
+  リリース PR を作るので、run が赤ならマージしない
+- **`CREDITS` は書き込みの権限の無いジョブ（`credits`）で生成して渡す。**
+  gocredits はサードパーティのコードで、tagpr のジョブはリポジトリへ push できる
+  トークンを持つ。tagpr のジョブでは依存のコードを走らせないこと
+- **CHANGELOG と GitHub のリリースは tagpr に作らせない**（`changelog = false` /
+  `release = false`）。tagpr の CHANGELOG は PR のタイトルを並べるだけで、
+  roji は PR を使わない。リリースは immutable releases なので、tagpr が公開すると
+  アセットを足せなくなる。draft は従来どおり `release.yml` の `publish` ジョブが作る
+- **リリースノートは CHANGELOG の節**（`scripts/release-notes.sh` にタグを渡す。
+  プレリリースのタグは `## [Unreleased]`）。`release.yml` の `test` ジョブがビルドの
+  前に節を確かめる。GoReleaser の changelog は使わない（`disable: true`）
+- **CHANGELOG の読み方（節の見出し、コードフェンス、末尾のリンク定義）は
+  `release-notes.sh` の 1 か所に置く。** `release-prepare.sh` は節の検査を
+  `release-notes.sh` に任せ、書き換えだけを行う。読み方を 2 か所に書くと、
+  リリース PR は通るのに `release.yml` の検査で落ちる
+- **`release.yml` は `workflow_dispatch` でタグを ref にして起動する**（`tagpr.yml`
+  の `release` ジョブ）。GITHUB_TOKEN で push したタグではワークフローが起動しないが、
+  `workflow_dispatch` は例外として起動できる。pike / musql のように `workflow_call`
+  で同じ run から呼ぶ形にはしないこと。`github.ref` が `refs/heads/main` になり、
+  attestation の source ref もそうなるので、install.sh の
+  `--source-ref refs/tags/vX.Y.Z` の検証が通らなくなる。ref がタグでない起動は
+  `test` ジョブの条件で止める
+- **トークンは GITHUB_TOKEN のまま**（GitHub App は作っていない）。tagpr が PR を
+  作るには、リポジトリ設定の「Allow GitHub Actions to create and approve pull
+  requests」が有効でなければならない。`workflow_dispatch` の権限（`actions: write`）は
+  `release` ジョブだけに付け、tagpr のジョブには付けない
+- **`tagpr` ジョブの `concurrency` は `cancel-in-progress: false`。** 同じブランチを
+  作り直し合わないように並べず、タグを打った直後に止めて成果物の無いタグを
+  残さないように止めない
 
 ## ロードマップ（v0.7.0 → v1.5.0）
 

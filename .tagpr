@@ -1,0 +1,19 @@
+# tagpr: keeps a release pull request open against main and tags the release
+# when it is merged. The workflow is .github/workflows/tagpr.yml; the release
+# steps and the reasons behind them are in CLAUDE.md ("リリース手順").
+[tagpr]
+	releaseBranch = main
+	vPrefix = true
+	# roji keeps its version only in Git tags (the binary gets it through
+	# ldflags). The next version comes from the release PR's labels:
+	# tagpr:minor / tagpr:major, otherwise a patch release.
+	versionFile = -
+	# CHANGELOG.md is written by hand under "## [Unreleased]";
+	# scripts/release-prepare.sh turns that section into the release's.
+	changelog = false
+	postVersionCommand = bash scripts/release-prepare.sh
+	# release.yml creates the GitHub release as a draft and publishes it once
+	# the assets are in place. Immutable releases are enabled, so a release
+	# published by tagpr could never receive them.
+	release = false
+	minorLabels = enhancement

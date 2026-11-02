@@ -1,0 +1,112 @@
+name: tagpr
+
+# Keeps the release pull request up to date and starts the release once it is
+# merged. Settings are in .tagpr; the release steps are in CLAUDE.md.
+#
+# - Each push to main rebuilds the release PR (branch tagpr-from-v<previous>)
+#   on top of main. scripts/release-prepare.sh stamps the CHANGELOG section
+#   and refreshes CREDITS.
+# - When the release PR is merged, the next run tags the merge commit and the
+#   release job starts release.yml on that tag.
+# - workflow_dispatch rebuilds the release PR, e.g. after adding tagpr:minor.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # gocredits is third-party code, so it runs here, with a read-only token,
+  # and hands its output to the tagpr job. Nothing in the tagpr job, which
+  # can push to the repository, runs code from dependencies.
+  credits:
+    name: Generate CREDITS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No cache: a cache written by another workflow must not reach what the
+      # tagpr job commits.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          cache: false
+
+      - name: Generate CREDITS
+        run: |
+          mkdir -p "$RUNNER_TEMP/credits"
+          go tool gocredits . > "$RUNNER_TEMP/credits/CREDITS"
+
+      - name: Upload CREDITS
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: credits
+          path: ${{ runner.temp }}/credits/CREDITS
+          retention-days: 1
+          if-no-files-found: error
+
+  tagpr:
+    name: Prepare the release pull request
+    needs: credits
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Runs never overlap (they would rebuild the same branch over each other),
+    # and a running one is not cancelled (stopped right after tagging, it
+    # would leave a tag without a release). GitHub still keeps only the newest
+    # pending run of the group: if a push lands while the run for the release
+    # PR's merge is waiting, that run is cancelled and nothing is tagged.
+    # Rerun it then; it checks out the merge commit and tags it (CLAUDE.md).
+    concurrency:
+      group: tagpr
+      cancel-in-progress: false
+    permissions:
+      contents: write       # Push the release branch and the tag
+      pull-requests: write  # Open and update the release PR
+      issues: read          # Read labels
+    # The credits artifact comes from this run, which needs no token permission
+    outputs:
+      tag: ${{ steps.tagpr.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download CREDITS
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: credits
+          path: ${{ runner.temp }}/credits
+
+      - name: Run tagpr
+        id: tagpr
+        uses: Songmu/tagpr@e1250d6c84e4425db82b5e90549d62dfe23e9ebe # v1.21.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Read by scripts/release-prepare.sh
+          ROJI_CREDITS: ${{ runner.temp }}/credits/CREDITS
+
+  # A tag pushed with GITHUB_TOKEN starts no workflow, but workflow_dispatch is
+  # exempt from that rule. Dispatching on the tag (rather than calling
+  # release.yml from this run) keeps github.ref at refs/tags/vX.Y.Z, which the
+  # build provenance records and install.sh checks with --source-ref.
+  release:
+    name: Start the release
+    needs: tagpr
+    if: needs.tagpr.outputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write  # workflow_dispatch
+    steps:
+      - name: Dispatch release.yml on the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.tagpr.outputs.tag }}
+        run: gh workflow run release.yml --ref "$TAG"

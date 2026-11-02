@@ -1,0 +1,20 @@
+# Categories of GitHub's generated release notes. tagpr uses them for the list
+# of pull requests in the body of the release PR. The release notes themselves
+# come from CHANGELOG.md, not from this file.
+changelog:
+  exclude:
+    labels:
+      - tagpr
+  categories:
+    - title: Features
+      labels:
+        - enhancement
+    - title: Bug Fixes
+      labels:
+        - bug
+    - title: Dependencies
+      labels:
+        - dependencies
+    - title: Other Changes
+      labels:
+        - "*"

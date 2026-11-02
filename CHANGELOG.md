@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Internal
+
+- Releases are prepared by [tagpr](https://github.com/Songmu/tagpr): a release
+  pull request carries the CHANGELOG section and the refreshed `CREDITS`, and
+  merging it tags the release. The GitHub release notes are now this file's
+  section for the version instead of a list of commits.
+- Workflows default to a read-only `GITHUB_TOKEN`; each job lists the
+  permissions it needs.
+- The documentation site builds with Hugo 0.168.0 and the thulite 3 theme
+  ([#103](https://github.com/kan/roji/issues/103)), and pull requests that touch
+  it now build it.
+- Dependency updates: `github/codeql-action/upload-sarif` 4.39.1.
+
 ## [1.5.1] - 2026-10-23
 
 Security release. No changes to roji's behavior.

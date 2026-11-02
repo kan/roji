@@ -29,7 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0  # GoReleaser reads the previous tag for the changelog
+          fetch-depth: 0  # GoReleaser resolves the current and previous tags
           persist-credentials: false
 
       # No cache: a cache written by another workflow must not reach the
@@ -40,8 +40,8 @@ jobs:
           go-version-file: 'go.mod'
           cache: false
 
-      # The token is this job's read-only one; the changelog is generated
-      # from the GitHub API.
+      # The token is this job's read-only one. The release notes come from
+      # CHANGELOG.md in the publish job, not from GoReleaser.
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
@@ -70,7 +70,7 @@ jobs:
       # reads, before anything is released.
       - name: Check release files
         run: |
-          ls dist/checksums.txt dist/CHANGELOG.md dist/homebrew/Casks/roji.rb \
+          ls dist/checksums.txt dist/homebrew/Casks/roji.rb \
             dist/roji_Linux_x86_64.tar.gz dist/roji_Linux_arm64.tar.gz
 
       # Paths are kept relative to dist/
@@ -82,7 +82,6 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
-            dist/CHANGELOG.md
             dist/homebrew/Casks/roji.rb
           retention-days: 1
           if-no-files-found: error

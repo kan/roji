@@ -1,17 +1,32 @@
 name: Release
 
+# tagpr.yml starts this with workflow_dispatch on the tag it pushed (a tag
+# pushed with GITHUB_TOKEN does not trigger push). The push trigger is for a
+# tag pushed by hand. Either way github.ref is the tag, which the build
+# provenance records and install.sh checks with --source-ref.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 # Each job lists what it needs
 permissions:
   contents: read
 
+# One run per tag. Not cancelled: a run stopped while publishing would leave
+# a half-done release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # Run tests before releasing
   test:
+    # workflow_dispatch can be started on a branch; release only tags. Every
+    # other job depends on this one, so this condition guards them all: keep
+    # any job added later behind `needs: test`.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,14 +34,21 @@ jobs:
         with:
           persist-credentials: false
 
+      # The publish job makes the release notes from this section. Stop here,
+      # before building, if the tag has none.
+      - name: Check the CHANGELOG section
+        env:
+          TAG: ${{ github.ref_name }}
+        run: bash scripts/release-notes.sh "$TAG" > /dev/null
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           cache: true
 
-      # CREDITS is committed and refreshed as part of the release steps
-      # (CLAUDE.md). Stop the release if that step was skipped.
+      # The release PR refreshes CREDITS (scripts/release-prepare.sh). Stop
+      # the release if the tag does not have the refreshed file.
       - name: Check CREDITS is up to date
         run: go tool gocredits . | diff - CREDITS
 
@@ -121,7 +143,9 @@ jobs:
 
           version="${TAG#v}"
           notes="$RUNNER_TEMP/release-notes.md"
-          cat dist/CHANGELOG.md > "$notes"
+          # The CHANGELOG.md section of the version ("Unreleased" for a
+          # pre-release); the test job has already checked it
+          bash scripts/release-notes.sh "$TAG" > "$notes"
           cat >> "$notes" <<EOF
 
           ## Docker Image

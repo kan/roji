@@ -99,35 +99,10 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+# release.yml writes the release notes from CHANGELOG.md
+# (scripts/release-notes.sh)
 changelog:
-  sort: asc
-  use: github
-  filters:
-    exclude:
-      - '^docs:'
-      - '^test:'
-      - '^chore:'
-      - '^ci:'
-      - Merge pull request
-      - Merge branch
-  groups:
-    - title: 'Features'
-      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
-      order: 0
-    - title: 'Bug Fixes'
-      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
-      order: 1
-    - title: 'Performance'
-      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
-      order: 2
-    - title: 'Refactoring'
-      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
-      order: 3
-    - title: 'Security'
-      regexp: '^.*?security(\([[:word:]]+\))??!?:.+$'
-      order: 4
-    - title: 'Other'
-      order: 999
+  disable: true
 
 # The cask's download URLs are built from this
 release:
