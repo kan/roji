@@ -755,13 +755,19 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
 - `publish` ジョブだけが落ちたら、そのジョブを再実行する（上の「確認」）
 - 打ってあるタグで丸ごとやり直すなら `gh workflow run release.yml --ref vX.Y.Z`
-- 公開前に CHANGELOG やコードを直してタグを打ち直すなら、タグを消し
-  （`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`）、直したコミットの
-  先頭にタグを打って、main とタグを 1 回で push する
-  （`git push --atomic origin main vX.Y.Z`。`push: tags` で起動する）。main だけを
-  先に push すると、タグの無い間に tagpr が前の版からのリリース PR を作り直す。
-  CHANGELOG は main ではもう `## [X.Y.Z] - 日付` になっている節を直す。公開後は
+- 公開前に CHANGELOG やコードを直してタグを打ち直すなら、次の順で行う。公開後は
   打ち直せない
+  1. タグを消す（`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`）
+  2. 直しを PR にして squash でマージする。CHANGELOG は、main ではもう
+     `## [X.Y.Z] - 日付` になっている節を直す
+  3. そのマージコミットにタグを打ち、タグだけを push する
+     （`git pull --ff-only && git tag vX.Y.Z <マージコミット> && git push origin vX.Y.Z`。
+     `push: tags` で `release.yml` が起動する）。main へは push しない
+  4. `gh workflow run tagpr.yml --ref main` でリリース PR を作り直す
+  - 手順 2 のマージで走る tagpr の run は赤になる。タグが無い間は、CHANGELOG に
+    最新のタグより新しい版の節があり、`release-prepare.mjs` がそれを検出して
+    落ちるため（「リリース PR（tagpr）」）。その間のリリース PR はマージしない。
+    手順 4 の後も `## [Unreleased]` が空なので赤のままで、リリースの直後と同じ
 
 ### リリース PR（tagpr）
 
