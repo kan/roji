@@ -10,8 +10,9 @@ export const lockPath = 'package-lock.json';
 
 /**
  * `package-lock.json` の版を、tagpr が書き換えた `package.json` の版に揃えた中身を返す。
- * 揃っていれば `null`。ファイルには書かない。**tagpr は lock を書き換えない**（版のファイル
- * として扱わない一覧に入っている）。
+ * 揃っていれば `null`。ファイルには書かない。**lock は tagpr に任せない**: tagpr は
+ * `package-lock.json` を自動では探さず、versionFile に書けば書き換えるが、今の版の最初の 1 か所
+ * だけなので、`version` と `packages[""].version` の 2 か所が揃わない。
  * @param {string} version tagpr が提案する版（`X.Y.Z`）
  * @returns {string | null}
  */
