@@ -36,9 +36,10 @@ const isLinkDefinition = (line) => /^\[[^\]]+\]: /.test(line);
 const isSectionHeading = (line, name) =>
   line === `## [${name}]` || line.startsWith(`## [${name}] `);
 
-// CommonMark のフェンス: 字下げ 3 文字まで、同じ記号 3 つ以上。閉じるのは開いたときと
-// 同じ記号で、同じ長さ以上で、後ろに何も無い行
-const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+// CommonMark のフェンス: 同じ記号 3 つ以上。閉じるのは開いたときと同じ記号で、同じ長さ
+// 以上で、後ろに何も無い行。字下げは問わない（CommonMark の上限は 3 文字だが、入れ子の
+// 項目の中のフェンスは 4 文字以上になる。CHANGELOG に字下げのコードブロックは書かない前提）
+const FENCE = /^ *(`{3,}|~{3,})(.*)$/;
 
 /**
  * 各行を `[行, コードフェンスの中か]` にする。フェンスを開く行は中、閉じる行は外に数える。
@@ -48,7 +49,9 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
  */
 function scan(text) {
   if (text.includes('\r')) {
-    throw new ReleaseError('CHANGELOG.md has CR line endings; save it with LF');
+    throw new ReleaseError(
+      'CHANGELOG.md has CR line endings; save it with LF (on Windows, add `CHANGELOG.md text eol=lf` to .gitattributes)',
+    );
   }
   /** @type {string | null} 開いているフェンスの記号の並び */
   let open = null;
@@ -158,6 +161,81 @@ export function readSection(text, name) {
     throw new ReleaseError(`The "## [${name}]" section of CHANGELOG.md is empty`);
   }
   return body;
+}
+
+// 箇条書きの項目を始める行（字下げを除いた先頭で見る）。前の行にはつながないが、
+// 次の行はつないでよい
+const LIST_ITEM = /^(?:[-*+]|\d+[.)])(?:\s|$)/;
+// 前後どちらともつながない行（字下げを除いた先頭で見る）: 見出し、引用、表の外側の `|`、
+// HTML のブロック（`<https://...>` のような autolink は除く）、区切り線、setext の下線。
+// コードフェンスは `FENCE` で、外側の `|` の無い表は区切りの行から別に見る
+const STANDALONE = /^(?:#{1,6}(?:\s|$)|>|\||<(?![A-Za-z][\w+.-]*:)[A-Za-z/!?]|(?:[-*_]\s*){3,}$|=+\s*$)/;
+// 表の区切りの行（`--- | ---`、`|:--|--:|`）
+const TABLE_DELIMITER = /^\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)+\|?$/;
+// 日本語の文字（漢字、かな、全角の記号と英数字）。この文字どうしの間の改行は空白にしない。
+// Script_Extensions で見るのは、「ー」「・」が Script では Common になるため。
+// 範囲はエスケープで書く（全角スペースをそのまま書くと、取り込み先の eslint の
+// no-irregular-whitespace に当たる）。U+3000-U+303F は CJK の記号と句読点、
+// U+FF00-U+FFEF は全角と半角の形
+const CJK = /[\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}\u{3000}-\u{303F}\u{FF00}-\u{FFEF}]/u;
+// 全角の句読点と括弧（、。，．・「」（）【】など）。前後の相手が英数字でも空白を入れない。
+// U+30FB は「・」、U+FF01-U+FF65 のうち英数字（０-９ Ａ-Ｚ ａ-ｚ）を除いたもの
+const CJK_PUNCT = /[\u{3000}-\u{303F}\u{30FB}\u{FF01}-\u{FF0F}\u{FF1A}-\u{FF20}\u{FF3B}-\u{FF40}\u{FF5B}-\u{FF65}]/u;
+// 強制改行: 行末の空白 2 つ以上か `\`
+const HARD_BREAK = /(?: {2}|\\)$/;
+
+/**
+ * **段落と箇条書きの中の折り返しを 1 行につなぐ。** GitHub の Release は本文の改行を
+ * そのまま改行として表示するので、80 桁ほどで折り返した CHANGELOG をそのまま渡すと、
+ * 項目の途中で改行が入る。CHANGELOG のファイルは折り返したままでよい。
+ *
+ * - つなぐのは、前の行が段落か項目の本文で、次の行が新しいブロックを始めない行のとき。
+ *   コードフェンスの中、見出し、表、引用、HTML のブロック、区切り線、強制改行（行末の
+ *   空白 2 つか `\`）はつながない
+ * - 数字とピリオドで始まる行（`2026. ...`）は、番号付きの次の項目と区別できないので
+ *   つながない。字下げのコードブロックは、項目の続きの行と区別できないので扱わない
+ * - 前の行の末尾と次の行の先頭がどちらも日本語の文字なら、間に何も入れない。どちらかが
+ *   全角の句読点か括弧（「、」「（」など）でも何も入れない（「、govulncheck」）。
+ *   それ以外は空白 1 つ（英文のほか、「の `x`」のような日本語と英数字の間も空白になる）
+ * @param {string} body 節の本文（`readSection` の結果）
+ * @returns {string}
+ */
+export function unwrapLines(body) {
+  const rows = scan(body);
+  // 表の行: 区切りの行と、その直前の見出しの行と、その後の行。表は空行か、別のブロックを
+  // 始める行（引用、項目、フェンスなど）で終わる（GFM）
+  const table = new Set();
+  const endsTable = (line) => {
+    const text = line.trim();
+    return text === '' || FENCE.test(line) || LIST_ITEM.test(text) || (!text.startsWith('|') && STANDALONE.test(text));
+  };
+  rows.forEach(([line, fenced], i) => {
+    if (fenced || i === 0 || !TABLE_DELIMITER.test(line.trim()) || !rows[i - 1][0].includes('|')) return;
+    table.add(i - 1);
+    for (let j = i; j < rows.length && !endsTable(rows[j][0]); j++) table.add(j);
+  });
+
+  /** @type {{ line: string, joinable: boolean }[]} */
+  const out = [];
+  rows.forEach(([line, fenced], i) => {
+    const text = line.trim();
+    // 段落か項目の本文の行か（コードフェンス、表、見出しなどではない）
+    const prose = !fenced && !FENCE.test(line) && !table.has(i) && text !== '' && !STANDALONE.test(text);
+    const prev = out[out.length - 1];
+    if (prose && !LIST_ITEM.test(text) && prev?.joinable) {
+      const head = prev.line.trimEnd();
+      // 前の行の最後の文字と次の行の最初の文字（サロゲートペアも 1 文字に数える）
+      const [last, first] = [[...head].at(-1), String.fromCodePoint(text.codePointAt(0))];
+      const sep = (CJK.test(last) && CJK.test(first)) || CJK_PUNCT.test(last) || CJK_PUNCT.test(first) ? '' : ' ';
+      // 前の行の末尾の空白は落とす（強制改行の行はつながないので、普通の空白しか無い）。
+      // 次の行の末尾の空白は残す（強制改行の空白 2 つを消さない）
+      prev.line = head + sep + line.trimStart();
+      prev.joinable = !HARD_BREAK.test(line);
+      return;
+    }
+    out.push({ line, joinable: prose && !HARD_BREAK.test(line) });
+  });
+  return out.map((r) => r.line).join('\n');
 }
 
 /**
