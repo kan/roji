@@ -82,7 +82,8 @@ roji/
 ├── i18n/                    # CLI / ダッシュボードのメッセージ
 ├── apiclient/               # CLI から稼働中の roji API を呼ぶクライアント
 ├── test/                    # インテグレーション/E2Eテスト
-├── scripts/                 # リリース PR とリリースノート（CHANGELOG の節の書き換えと抽出）
+├── scripts/                 # リリース PR の準備（release-prepare.sh）
+│   └── tagpr/               # CHANGELOG の節の書き換えと抽出（kan/tagpr-scripts の subtree。編集しない）
 ├── .tagpr                   # tagpr の設定（リリース PR）
 ├── credits.go               # LICENSE / CREDITS / THIRD_PARTY_NOTICES の埋め込み（roji credits）
 ├── CREDITS                  # 依存 Go モジュールのライセンス（gocredits で生成、コミットする）
@@ -594,6 +595,23 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
    `## [Unreleased]` に書く。この節がそのままリリースノートになる
    （「リリース手順」）。リリースの時にまとめて書かない
 6. **コミット** — ユーザーの承認を得てから
+7. **PR** — ブランチを push して PR を作り、マージする（下の「ブランチと PR」）。
+   push、PR の作成、マージはそれぞれユーザーの承認を得てから
+
+### ブランチと PR
+
+**変更はブランチを切って PR で入れる。main へ直接 push しない。** tagpr は前回の
+リリースから後にマージされた PR のラベルで次の版を決めるので、PR を通らない変更は
+版の判断から漏れる。ドキュメントだけの変更も同じ。
+
+- 通常の PR は squash でマージする（`gh pr merge <番号> --squash --delete-branch`）。
+  リリース PR と dependabot の PR も同じ
+- **`scripts/tagpr/` の subtree を含む PR（取り込みと `git subtree pull`）は
+  マージコミットで入れる**（`gh pr merge <番号> --merge --delete-branch`）。
+  squash すると、次の `git subtree pull` が前回の取り込みを見つけられず壊れる
+- 次の版を minor にするには、その PR に `enhancement` ラベルを付ける
+  （`.tagpr` の `minorLabels`）。付け忘れたら、リリース PR に `tagpr:minor` を
+  付けて作り直す（「リリース手順」）
 
 どちらのスキルも Claude が自分で実行する（ユーザーに実行を頼まない）。
 
@@ -635,10 +653,11 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
    - **最新の tagpr の run が success であること。** 失敗していたら
      `scripts/release-prepare.sh` の出力を読む。多いのは `## [Unreleased]` が
-     空のとき。main に CHANGELOG を書くコミットを push すると作り直される
+     空のとき。CHANGELOG を書く PR を main にマージすると作り直される
    - **版（PR のタイトル）が正しいこと。** 既定は patch。minor にするときは
-     リリース PR にラベルを付けて作り直す。roji は PR を使わずに main へ push
-     するので、`.tagpr` の `minorLabels` はほとんど効かない
+     リリース PR にラベルを付けて作り直す。前回のリリース以降にマージした PR が
+     `enhancement` ラベルを持っていれば、tagpr は minor を提案する（`.tagpr` の
+     `minorLabels`）
 
      ```bash
      gh pr edit <番号> --add-label tagpr:minor
@@ -690,7 +709,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
    マージの push で走る tagpr の run がマージコミットにタグを打ち、`release`
    ジョブが `release.yml` をそのタグで起動する。**タグが打たれるまで main へ
-   push しない。** tagpr の run は前の run が終わるまで待ち、待っている run は
+   ほかの PR をマージしない。** tagpr の run は前の run が終わるまで待ち、待っている run は
    新しい push の run に置き換えられる（cancelled になる）。置き換えられたら、
    マージコミットの run を `gh run rerun <run-id>` で再実行するとタグが打たれる。
 
@@ -752,26 +771,42 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 - **版はタグだけで持つ**（`versionFile = -`）。バイナリの版は ldflags で
   埋めるので、版を書いたファイルが無い。次の版はリリース PR のラベル
   （`tagpr:minor` / `tagpr:major`、無ければ patch）で決まる
+- **CHANGELOG を扱うスクリプトは `scripts/tagpr/`**（kan/tagpr-scripts を
+  `git subtree` で取り込んだもの。lily / wema / wema-kake と共有している）。
+  **`scripts/tagpr/` の中は編集しないこと。** 直すときは kan/tagpr-scripts を直し、
+  `git subtree pull -S --prefix=scripts/tagpr https://github.com/kan/tagpr-scripts.git main --squash`
+  で取り込む。`-S` を付ける（subtree のコミットには `commit.gpgsign` が効かない）。
+  その PR はマージコミットで入れる（「ブランチと PR」）。取り込みは CHANGELOG に
+  書かない
 - **リリース PR の中身は `scripts/release-prepare.sh` が作る**（`.tagpr` の
-  `postVersionCommand`）。`## [Unreleased]` を `## [X.Y.Z] - 日付` にし、その上に
-  空の `## [Unreleased]` を置き直し、末尾にリンク定義を足す。`CREDITS` も
-  差し替える。作り直しのたびに走るので、自分の出力に対してもう一度走らせても
-  何も変えない。`## [Unreleased]` が無いか空なら失敗する。失敗しても tagpr は
+  `postVersionCommand`）。`ROJI_CREDITS` を検査してから
+  `scripts/tagpr/release-prepare.mjs --changelog-only` を呼び、最後に `CREDITS` を
+  差し替える。この順にしているのは、落ちるときに何も書き換えないため。
+  `release-prepare.mjs` は `## [Unreleased]` を `## [X.Y.Z] - 日付` にし、その上に
+  空の `## [Unreleased]` を置き直し、末尾にリンク定義を足す。失敗するのは
+  `## [Unreleased]` が無いか空のときと、最新のタグより新しい版の節がすでにある
+  とき（リリース PR をマージしたのにタグが打たれていない。「リリース PR を
+  マージする」の手順でマージコミットの run を再実行する）。失敗しても tagpr は
   リリース PR を作るので、run が赤ならマージしない
 - **`CREDITS` は書き込みの権限の無いジョブ（`credits`）で生成して渡す。**
   gocredits はサードパーティのコードで、tagpr のジョブはリポジトリへ push できる
   トークンを持つ。tagpr のジョブでは依存のコードを走らせないこと
 - **CHANGELOG と GitHub のリリースは tagpr に作らせない**（`changelog = false` /
   `release = false`）。tagpr の CHANGELOG は PR のタイトルを並べるだけで、
-  roji は PR を使わない。リリースは immutable releases なので、tagpr が公開すると
-  アセットを足せなくなる。draft は従来どおり `release.yml` の `publish` ジョブが作る
-- **リリースノートは CHANGELOG の節**（`scripts/release-notes.sh` にタグを渡す。
-  プレリリースのタグは `## [Unreleased]`）。`release.yml` の `test` ジョブがビルドの
-  前に節を確かめる。GoReleaser の changelog は使わない（`disable: true`）
+  リリースノートには足りない（roji は利用者に届く変更を CHANGELOG に手で書く）。
+  リリースは immutable releases なので、tagpr が公開するとアセットを足せなくなる。draft は従来どおり `release.yml` の `publish` ジョブが作る
+- **リリースノートは CHANGELOG の節**（`scripts/tagpr/release-notes.mjs` にタグを
+  渡す。プレリリースのタグは `## [Unreleased]`）。`release.yml` の `test` ジョブが
+  ビルドの前に節を確かめる。GoReleaser の changelog は使わない（`disable: true`）
 - **CHANGELOG の読み方（節の見出し、コードフェンス、末尾のリンク定義）は
-  `release-notes.sh` の 1 か所に置く。** `release-prepare.sh` は節の検査を
-  `release-notes.sh` に任せ、書き換えだけを行う。読み方を 2 か所に書くと、
-  リリース PR は通るのに `release.yml` の検査で落ちる
+  `scripts/tagpr/changelog.mjs` の 1 か所にある。** roji 側に CHANGELOG を読む
+  処理を書かないこと。読み方を 2 か所に書くと、リリース PR は通るのに
+  `release.yml` の検査で落ちる。項目の中のリンクは参照形式でなくインラインで
+  書く。参照形式の定義は節の外（ファイル末尾のリンク定義のまとまり）に置かれる
+  ので、リリースノートに入らず、GitHub のリリースでリンクにならない
+- **スクリプトは repo のルートで実行する**（`CHANGELOG.md` を作業ディレクトリから
+  読む）。Node は組み込みのモジュールしか使わないので、ランナーに入っている
+  `node` で動き、setup-node は使っていない
 - **`release.yml` は `workflow_dispatch` でタグを ref にして起動する**（`tagpr.yml`
   の `release` ジョブ）。GITHUB_TOKEN で push したタグではワークフローが起動しないが、
   `workflow_dispatch` は例外として起動できる。pike / musql のように `workflow_call`

@@ -9,7 +9,8 @@
 	# tagpr:minor / tagpr:major, otherwise a patch release.
 	versionFile = -
 	# CHANGELOG.md is written by hand under "## [Unreleased]";
-	# scripts/release-prepare.sh turns that section into the release's.
+	# scripts/release-prepare.sh turns that section into the release's
+	# (through scripts/tagpr/release-prepare.mjs) and refreshes CREDITS.
 	changelog = false
 	postVersionCommand = bash scripts/release-prepare.sh
 	# release.yml creates the GitHub release as a draft and publishes it once

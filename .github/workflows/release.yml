@@ -39,7 +39,7 @@ jobs:
       - name: Check the CHANGELOG section
         env:
           TAG: ${{ github.ref_name }}
-        run: bash scripts/release-notes.sh "$TAG" > /dev/null
+        run: node scripts/tagpr/release-notes.mjs "$TAG" > /dev/null
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -145,7 +145,7 @@ jobs:
           notes="$RUNNER_TEMP/release-notes.md"
           # The CHANGELOG.md section of the version ("Unreleased" for a
           # pre-release); the test job has already checked it
-          bash scripts/release-notes.sh "$TAG" > "$notes"
+          node scripts/tagpr/release-notes.mjs "$TAG" > "$notes"
           cat >> "$notes" <<EOF
 
           ## Docker Image
