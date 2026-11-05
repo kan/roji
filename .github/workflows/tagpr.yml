@@ -5,6 +5,7 @@ name: tagpr
 #
 # - Each push to main rebuilds the release PR (branch tagpr-from-v<previous>)
 #   on top of main. scripts/release-prepare.sh stamps the CHANGELOG section
+#   (with scripts/tagpr/release-prepare.mjs, run by the node on the runner)
 #   and refreshes CREDITS.
 # - When the release PR is merged, the next run tags the merge commit and the
 #   release job starts release.yml on that tag.

@@ -100,7 +100,7 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
 # release.yml writes the release notes from CHANGELOG.md
-# (scripts/release-notes.sh)
+# (scripts/tagpr/release-notes.mjs)
 changelog:
   disable: true
 
