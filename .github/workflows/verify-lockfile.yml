@@ -1,0 +1,40 @@
+name: Verify Lockfile
+
+# Checks that .github/workflows/actions.lock matches the workflows' uses: and
+# that the pinned commits verify upstream (same as kan/tagpr-scripts). Actions
+# also enforces the lockfile at run time, but that only stops a run with
+# startup_failure before any job starts; this finds a broken lockfile before
+# it reaches main.
+#
+# Update the lockfile with gh actions-lock: run it again after changing a
+# uses: (CLAUDE.md, "配布・品質"). Dependabot rewrites the entries in its
+# actions update pull requests.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify actions.lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      # The extension is not 1.0 yet, so its version is pinned. Neither
+      # Dependabot nor actions.lock follows this version: when a new lockfile
+      # format makes --verify fail, raise it to the local gh actions-lock's.
+      - name: Install gh actions-lock
+        run: gh extension install github/gh-actions-lock --pin v0.4.1
+
+      - name: Verify actions.lock
+        run: gh actions-lock --verify
