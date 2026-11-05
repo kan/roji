@@ -357,10 +357,25 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
     再ビルドすると、v2.13.3 と v2.18.3 で `roji` バイナリと tar の層は一致し、
     `.tar.gz` のチェックサムだけが食い違った。範囲指定のままだと、ワークフローを
     再実行したときに別のチェックサムのアーカイブができる
-  - この `version:` は dependabot が更新しない（更新するのは action の SHA だけ）。
-    上げるときは手で、リリースとリリースの間に行う
-- ワークフローの `uses:` はコミット SHA で固定する（タグは付け替えられるため）。
-  末尾の `# vX.Y.Z` コメントを dependabot が SHA と一緒に更新する
+  - この `version:` は dependabot が更新しない。ワークフローで dependabot が更新するのは、
+    `uses:` の action の版と `actions.lock` だけ。上げるときは手で、リリースとリリースの間に行う
+- **action の固定は `.github/workflows/actions.lock`（`gh actions-lock` が作る）に任せる。**
+  `uses:` は完全な版のタグ（`@v7.0.1`）で書き、SHA は書かない。タグは付け替えられるが、
+  実行時に Actions が lockfile に記録した commit を強制し、`verify-lockfile.yml` の
+  `gh actions-lock --verify` が PR と main への push で付け替えを見つける
+  - `uses:` を足したり変えたりしたら `gh actions-lock` を再実行し、lockfile も同じ
+    コミットに入れる。**lockfile は手で編集しない**
+  - dependabot は Actions の更新 PR で lockfile の該当行も作り直す
+  - 検査が入れる拡張の版（`verify-lockfile.yml` の `--pin`）は、dependabot と
+    lockfile のどちらも追わない。lockfile の形式が上がって `--verify` が落ちたら、
+    手元の `gh actions-lock` と同じ版に手で上げる
+  - lockfile が固定しないものは 2 つある
+    - 別の repo の reusable workflow の呼び出し（`jobs.<id>.uses: owner/repo/...`）。
+      今は無い。足すときは固定の方法を別に決める
+    - action が自分でビルドするコンテナのベースイメージ。`hadolint/hadolint-action` が
+      これにあたり、`--verify` が警告を出す
+  - `scripts/tagpr/.github/` は tagpr-scripts の写しで、GitHub は読まない。lockfile の
+    対象でもない
 - Distrolessイメージ
 - セキュリティスキャン（Trivy, govulncheck）
 - インテグレーション/E2Eテスト

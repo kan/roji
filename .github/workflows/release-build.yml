@@ -27,7 +27,7 @@ jobs:
       artifact-metadata: write  # Storage record for the attested artifacts
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0  # GoReleaser resolves the current and previous tags
           persist-credentials: false
@@ -35,7 +35,7 @@ jobs:
       # No cache: a cache written by another workflow must not reach the
       # binaries that get attested.
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@v7.0.0
         with:
           go-version-file: 'go.mod'
           cache: false
@@ -43,7 +43,7 @@ jobs:
       # The token is this job's read-only one. The release notes come from
       # CHANGELOG.md in the publish job, not from GoReleaser.
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        uses: goreleaser/goreleaser-action@v7.3.0
         with:
           # An exact version, not a range. The archives are gzip-compressed by
           # GoReleaser, and the bytes that come out differ between versions:
@@ -61,7 +61,7 @@ jobs:
 
       # checksums.txt lists every archive, so each one becomes a subject.
       - name: Attest build provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@v4.2.2
         with:
           subject-checksums: dist/checksums.txt
 
@@ -75,7 +75,7 @@ jobs:
 
       # Paths are kept relative to dist/
       - name: Upload release files
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: release-dist
           path: |
