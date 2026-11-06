@@ -31,7 +31,8 @@ and `package-lock.json` (lockfile version 2 or later), are read from the working
 
 `release-prepare.mjs` reads `versionFile` from `.tagpr` (with `git config`) and checks that
 each file listed is at the proposed version: the top-level `"version"` of a `*.json`, the
-`[package]` `version` of a `Cargo.toml`. tagpr rewrites only the first occurrence of the
+`[package]` `version` of a `Cargo.toml`, the whole of a `VERSION` (the version alone, on
+one line, with or without a final LF). tagpr rewrites only the first occurrence of the
 current version in each file, so a dependency at the same version above the file's own
 version line would take the change and leave the real one behind, with nothing failing;
 the tag is then made from the first file's version. Other kinds of files cannot be checked
@@ -91,7 +92,8 @@ it fails. It fails when:
   rebuilds the release branch from `main` every time, so this means a release pull request
   was merged and its tag was never made — usually because the tagpr run of the merge
   commit was cancelled by a later push, or because the tag was deleted to be made again.
-  Re-run that run (or push the tag again). Merging a new release pull request would tag a
+  Re-run that run (or push the tag again, annotated: `git tag -a -m "Release vX.Y.Z" vX.Y.Z <commit>`).
+  Merging a new release pull request would tag a
   later commit with changes the CHANGELOG does not list.
 
   It checks every section, not only the proposed version's. tagpr counts from the latest
@@ -104,8 +106,8 @@ it fails. It fails when:
   `1.2.4` never gets a tag). That is why the message lists every untagged section, oldest
   first: tag them in that order. With no tags at all (tagpr passes `v0.0.0`) the check is
   skipped, so a repository that released without tags can adopt tagpr.
-- A file in `versionFile` is not at the version tagpr proposes, or is not a `*.json` or a
-  `Cargo.toml`.
+- A file in `versionFile` is not at the version tagpr proposes, or is not a `*.json`, a
+  `Cargo.toml` or a `VERSION`.
 - `package.json` is not at the version tagpr proposes (not checked with `--changelog-only`).
 - With `--cargo <dir>`, the `[package]` version in `<dir>/Cargo.toml` is not the proposed
   one, or `<dir>/Cargo.lock` does not have exactly one entry for the package without a
@@ -129,6 +131,83 @@ git subtree add -S --prefix=scripts/tagpr https://github.com/kan/tagpr-scripts.g
 Actions to create and approve pull requests", or `can_approve_pull_request_reviews` in the
 API). Without it, the first tagpr run fails with 403 "GitHub Actions is not permitted to
 create or approve pull requests". The default token permissions can stay read-only.
+
+### The tagpr workflow
+
+`.github/workflows/tagpr.yml` here is a reusable workflow that runs tagpr and, once a tag
+is made, starts the repository's publish workflow on that tag with `workflow_dispatch`.
+Call it from the repository's own `.github/workflows/tagpr.yml`:
+
+```yaml
+name: tagpr
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tagpr:
+    uses: kan/tagpr-scripts/.github/workflows/tagpr.yml@<commit SHA>
+    permissions:
+      contents: write       # push the release branch and the tag
+      pull-requests: write  # open and update the release pull request
+      issues: read          # read labels
+      actions: write        # start the publish workflow
+    with:
+      release-workflow: publish.yml
+```
+
+- **Call it by a full commit SHA, the same commit as `scripts/tagpr/`.** A reusable
+  workflow from another repository is not pinned by the caller's `actions.lock`. The
+  actions inside it (tagpr included) are pinned by this repository's `actions.lock`.
+- The calling job's `permissions` are the most the workflow gets. List all four, even
+  with an empty `release-workflow`: GitHub checks every job's permissions when the run
+  starts, including jobs that will be skipped.
+- Do not give the calling workflow a `concurrency` of its own. The tagpr job already
+  queues the runs one at a time.
+- **Keep Dependabot off the calling line.** Add this to the `github-actions` entry of
+  `.github/dependabot.yml`:
+
+  ```yaml
+      ignore:
+        # Moved together with scripts/tagpr/ by git subtree pull, never on its own
+        - dependency-name: 'kan/tagpr-scripts*'
+  ```
+
+  A pull request that moved the SHA alone would leave `scripts/tagpr/` behind the
+  workflow that runs, and nothing would fail. This repository has no tags, so Dependabot
+  has nothing to move it to today, but that would change the day a tag is made.
+- Inputs:
+  - `release-workflow`: the workflow file to start on the new tag. Leave it empty to
+    start it yourself, after a job of your own (hokora tags `sdk/vX.Y.Z` first).
+  - `artifact`: the name of an artifact made by an earlier job of the same run. It is
+    downloaded before tagpr runs, and its directory is passed to `postVersionCommand` as
+    `TAGPR_ARTIFACT_DIR`. Make what needs dependency code (a credits list, say) in a job
+    without write access, and give the calling job `needs: <that job>` and
+    `if: ${{ !cancelled() }}`: the run that tags a merged release pull request does not use
+    the artifact, so a failed credits job must not keep it from tagging. When the download
+    fails, `TAGPR_ARTIFACT_DIR` is empty, and the wrapper should fail before it writes.
+  - `timeout-minutes`: for the tagpr job (default 10).
+- `postVersionCommand` runs on Node 24, the version the tests here run on.
+- Output: `tag`, the tag this run made, or empty.
+- **When a tagpr run fails, the release pull request is turned into a draft.** tagpr
+  rebuilds the release pull request even when `postVersionCommand` fails: the version files
+  are bumped, but `CHANGELOG.md` and the locks are not. Merged, it would make a tag with no
+  CHANGELOG section, which the publish then refuses. The draft cannot be merged; the next
+  run that succeeds marks it ready again. Right after a release this happens on every push
+  until a pull request adds an entry under `## [Unreleased]`.
+- **The tag is made annotated.** tagpr makes a lightweight tag unless `tag.gpgSign` is set,
+  and `git describe` without `--tags` skips lightweight tags. The workflow replaces it with
+  an annotated tag on the same commit before starting `release-workflow`. To get the commit
+  from the tag, use `$TAG^{commit}` (or follow the tag object in the API), not `$TAG` alone.
+  If that step fails, the tag stays lightweight and `release-workflow` is not started, and
+  re-running the run does not help (tagpr does not make the tag again). Make it again by
+  hand: `git tag -a -f -m "Release vX.Y.Z" vX.Y.Z 'vX.Y.Z^{commit}' && git push -f origin vX.Y.Z`.
+  A tag pushed by hand starts `push: tags`; when `release-workflow` has that trigger, the
+  push starts it, so do not also run `gh workflow run` (it would run twice on the tag).
+- **If only starting `release-workflow` fails** (the tag is made), do not re-run the tagpr
+  run. Start it by hand: `gh workflow run <release-workflow> --ref vX.Y.Z`.
 
 `.tagpr` for an npm package:
 
@@ -172,6 +251,14 @@ For a Tauri app, list every file that holds the version, and let `--cargo` bring
 All of the files listed are checked, `tauri.conf.json` included, so a wrapper does not need
 to check them again.
 
+For a repository that keeps its version in a `VERSION` file holding only the version, list
+that file:
+
+```ini
+	versionFile = VERSION
+	postVersionCommand = node scripts/tagpr/release-prepare.mjs --changelog-only
+```
+
 ## Changing it
 
 **Change this repository, never the copy in `scripts/tagpr/`.** Then, in each repository:
@@ -179,6 +266,11 @@ to check them again.
 ```bash
 git subtree pull -S --prefix=scripts/tagpr https://github.com/kan/tagpr-scripts.git main --squash
 ```
+
+In the same pull request, move the `uses: kan/tagpr-scripts/.github/workflows/tagpr.yml@<SHA>`
+line to the commit of this repository just pulled: the `git-subtree-split` line in the
+message of the squash commit, or `git ls-remote https://github.com/kan/tagpr-scripts.git main`.
+The squash and merge commits in your repository do not exist here.
 
 **Merge that pull request with a merge commit, even in a repository that squashes
 everything else.** `git subtree` finds the last import from the commits it made; a squash
