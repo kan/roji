@@ -38,21 +38,41 @@ function tagprVersionFiles() {
 }
 
 /**
+ * `VERSION` の版を読む。中身は版の文字列の 1 行だけ（末尾の LF は 1 つまで）。booch / booch-win の
+ * 形（issue #8）。ほかの行があると、どれが本来の版かを決められないので落とす。
+ * @param {string} text
+ * @param {string} path
+ * @returns {string}
+ */
+function readVersionOnly(text, path) {
+  if (text.includes('\r')) {
+    throw new ReleaseError(`${path} has CR line endings; save it with LF (on Windows, add \`VERSION text eol=lf\` to .gitattributes)`);
+  }
+  // BOM は見えないので、「1 行だけ」の誤りと分けて伝える（Windows のエディタが付けることがある）
+  if (text.startsWith('﻿')) throw new ReleaseError(`${path} starts with a BOM; save it as UTF-8 without a BOM`);
+  const m = /^(\S+)\n?$/.exec(text);
+  if (!m) throw new ReleaseError(`${path} must hold only the version, on one line`);
+  return m[1];
+}
+
+/**
  * 1 つのファイルの本来の版を読む。`.json` は最上位の `"version"`、`Cargo.toml` は `[package]` の
- * `version`。ほかの種類は、どこが本来の版かを決められないので落とす。
+ * `version`、`VERSION` は中身の全体。ほかの種類は、どこが本来の版かを決められないので落とす。
  * @param {string} path
  * @returns {string | undefined}
  */
 function ownVersion(path) {
   const json = extname(path) === '.json';
-  if (!json && basename(path) !== 'Cargo.toml') {
+  const name = basename(path);
+  if (!json && name !== 'Cargo.toml' && name !== 'VERSION') {
     throw new ReleaseError(
-      `${path} is in versionFile of ${tagprPath}, but only *.json ("version") and Cargo.toml ([package] version) can be checked`,
+      `${path} is in versionFile of ${tagprPath}, but only *.json ("version"), Cargo.toml ([package] version) and VERSION (the version alone) can be checked`,
     );
   }
   // readRootFile の「ルートで実行せよ」は、ここでは versionFile の誤りのことが多い
   if (!existsSync(path)) throw new ReleaseError(`${path} is in versionFile of ${tagprPath}, but does not exist`);
   const text = readRootFile(path);
+  if (name === 'VERSION') return readVersionOnly(text, path);
   if (!json) return readPackage(text, path).version;
   let data;
   try {

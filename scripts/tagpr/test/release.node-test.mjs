@@ -299,6 +299,31 @@ for (const { name, opts, message, args, next, current, repository } of [
     message: /version\.go is in versionFile of \.tagpr, but only \*\.json/,
   },
   {
+    name: 'a VERSION that tagpr did not bring to the version',
+    opts: { files: { '.tagpr': '[tagpr]\n\tversionFile = VERSION\n', VERSION: '1.2.3\n' } },
+    message: /VERSION says 1\.2\.3, but tagpr proposes 1\.2\.4/,
+  },
+  {
+    name: 'a VERSION with more than the version',
+    opts: { files: { '.tagpr': '[tagpr]\n\tversionFile = VERSION\n', VERSION: '1.2.4\n# comment\n' } },
+    message: /VERSION must hold only the version, on one line/,
+  },
+  ...['', '1.2.4\n\n', ' 1.2.4\n', '1.2.4 \n'].map((version) => ({
+    name: `a VERSION of ${JSON.stringify(version)}`,
+    opts: { files: { '.tagpr': '[tagpr]\n\tversionFile = VERSION\n', VERSION: version } },
+    message: /VERSION must hold only the version, on one line/,
+  })),
+  {
+    name: 'a CRLF VERSION',
+    opts: { files: { '.tagpr': '[tagpr]\n\tversionFile = VERSION\n', VERSION: '1.2.4\r\n' } },
+    message: /VERSION has CR line endings; save it with LF/,
+  },
+  {
+    name: 'a VERSION with a BOM',
+    opts: { files: { '.tagpr': '[tagpr]\n\tversionFile = VERSION\n', VERSION: '﻿1.2.4\n' } },
+    message: /VERSION starts with a BOM/,
+  },
+  {
     name: 'a missing Cargo.lock',
     opts: { cargo: { lock: null } },
     message: /app\/Cargo\.lock not found: --cargo <dir> needs Cargo\.toml and Cargo\.lock/,
@@ -341,6 +366,11 @@ test('prepare: checks every versionFile in .tagpr', () => {
   });
   prepareAndRead(dir, ['--changelog-only', '--cargo', 'app']);
   assert.equal(read(dir, 'app/Cargo.lock'), CARGO_LOCK_BUMPED);
+  // 版を VERSION だけで持つ repo（booch）。末尾の LF は無くてもよい
+  for (const version of ['1.2.4\n', '1.2.4']) {
+    const booch = makeRepo({ pkg: false, lock: false, files: { '.tagpr': '[tagpr]\n\tversionFile = VERSION\n', VERSION: version } });
+    prepareAndRead(booch, ['--changelog-only']);
+  }
   // 版をタグだけで持つ repo（versionFile = -）は何も確かめない
   const go = makeRepo({ pkg: false, lock: false, files: { '.tagpr': '[tagpr]\n\tversionFile = -\n' } });
   prepareAndRead(go, ['--changelog-only']);
