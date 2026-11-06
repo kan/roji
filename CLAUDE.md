@@ -360,7 +360,8 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   - この `version:` は dependabot が更新しない。ワークフローで dependabot が更新するのは、
     `uses:` の action の版と `actions.lock` だけ。上げるときは手で、リリースとリリースの間に行う
 - **action の固定は `.github/workflows/actions.lock`（`gh actions-lock` が作る）に任せる。**
-  `uses:` は完全な版のタグ（`@v7.0.1`）で書き、SHA は書かない。タグは付け替えられるが、
+  `uses:` は完全な版のタグ（`@v7.0.1`）で書き、SHA は書かない（例外は別の repo の
+  reusable workflow を呼ぶ行で、SHA で書く。下の「lockfile が固定しないもの」）。タグは付け替えられるが、
   実行時に Actions が lockfile に記録した commit を強制し、`verify-lockfile.yml` の
   `gh actions-lock --verify` が PR と main への push で付け替えを見つける
   - `uses:` を足したり変えたりしたら `gh actions-lock` を再実行し、lockfile も同じ
@@ -371,7 +372,11 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
     手元の `gh actions-lock` と同じ版に手で上げる
   - lockfile が固定しないものは 2 つある
     - 別の repo の reusable workflow の呼び出し（`jobs.<id>.uses: owner/repo/...`）。
-      今は無い。足すときは固定の方法を別に決める
+      commit の SHA で書く。今あるのは `tagpr.yml` が kan/tagpr-scripts の共通の
+      workflow を呼ぶ行だけで、SHA は subtree と揃える（「リリース PR（tagpr）」）。
+      その中の action（tagpr など）は tagpr-scripts の `actions.lock` が固定する。
+      **dependabot にはこの行を上げさせない**（`dependabot.yml` の `ignore`）。SHA だけが
+      上がると、subtree の写しと実際に動く workflow が食い違う。ignore を外さないこと
     - action が自分でビルドするコンテナのベースイメージ。`hadolint/hadolint-action` が
       これにあたり、`--verify` が警告を出す
   - `scripts/tagpr/.github/` は tagpr-scripts の写しで、GitHub は読まない。lockfile の
@@ -657,7 +662,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 **リリースは tagpr のリリース PR をマージして始める**（v1.5.1 の次の版から）。
 `CHANGELOG.md` の節の書き換え、`CREDITS` の再生成、タグはリリース PR と
 ワークフローが行う。**`Prepare for vX.Y.Z release` のコミットを手で作らない。
-タグも手で打たない**（打ち直すときを除く。下の「やり直し」）。
+タグも手で打たない**（打ち直すときと、プレリリースのときを除く。下の「やり直し」と「確認」）。
 
 1. **リリース PR を確かめる**
 
@@ -666,7 +671,8 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
    gh run list --workflow tagpr.yml --branch main -L 3
    ```
 
-   - **最新の tagpr の run が success であること。** 失敗していたら
+   - **最新の tagpr の run が success であること。** 失敗した run はリリース PR を
+     draft にする（次に成功した run が ready に戻す）。失敗していたら
      `scripts/release-prepare.sh` の出力を読む。多いのは `## [Unreleased]` が
      空のとき。CHANGELOG を書く PR を main にマージすると作り直される
    - **版（PR のタイトル）が正しいこと。** 既定は patch。minor にするときは
@@ -722,11 +728,16 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
    gh run list --workflow release.yml -L 1
    ```
 
-   マージの push で走る tagpr の run がマージコミットにタグを打ち、`release`
-   ジョブが `release.yml` をそのタグで起動する。**タグが打たれるまで main へ
+   マージの push で走る tagpr の run がマージコミットにタグを打ち（annotated に
+   打ち直す）、同じ run が `release.yml` をそのタグで起動する。**タグが打たれるまで main へ
    ほかの PR をマージしない。** tagpr の run は前の run が終わるまで待ち、待っている run は
    新しい push の run に置き換えられる（cancelled になる）。置き換えられたら、
    マージコミットの run を `gh run rerun <run-id>` で再実行するとタグが打たれる。
+   置き換えた側の run は「already has `## [X.Y.Z]`」で赤になり、版だけ上がった
+   リリース PR が draft で残ることがある。**その PR はマージせず、タグが打たれた後に
+   閉じる。** 共通の workflow は、成功した run でラベル `tagpr` の付いた draft を
+   すべて ready に戻す。閉じる前に push が入ると、古いまま ready になる（新しい
+   リリース PR とは別の PR。kan/tagpr-scripts#11）。ready でもマージしない。
 
    リリースの直後は `## [Unreleased]` が空なので、次に CHANGELOG を書くまで
    main への push ごとに tagpr の run が失敗する。これは想定どおりで、その間の
@@ -763,44 +774,68 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
    - プレリリース（`v1.2.3-rc.1` のように `-` を含むタグ）は、GitHub の
      pre-release と版付きの Docker イメージだけを出す。イメージの `latest` と
      cask は更新しない。tagpr はプレリリースのタグを打たないので、手でタグを
-     打って push する（`push: tags` で起動する）。リリースノートは CHANGELOG の
+     annotated で打って push する（`git tag -a -m "Release vX.Y.Z-rc.N" vX.Y.Z-rc.N` で打ち、
+     `push: tags` で起動する）。リリースノートは CHANGELOG の
      `## [Unreleased]` の節になる（空なら止まる）
 
 **やり直し**
 
 - `publish` ジョブだけが落ちたら、そのジョブを再実行する（上の「確認」）
 - 打ってあるタグで丸ごとやり直すなら `gh workflow run release.yml --ref vX.Y.Z`
+- タグは打たれたのに `release.yml` が起動していないときは、tagpr の run 全体を
+  再実行しない（tagpr はタグを打ち直さず、起動もしない）。手順はタグが annotated か
+  どうかによって違う（tagpr-scripts の README の「The tagpr workflow」）。確かめ方は
+  `git fetch --force origin tag vX.Y.Z && git cat-file -t vX.Y.Z`（`tag` なら
+  annotated、`commit` なら lightweight）
+  - annotated（`Start the release` のジョブだけが落ちた）:
+    `gh workflow run release.yml --ref vX.Y.Z` で起動する
+  - lightweight（annotated に打ち直すステップが落ちたか、その前に止まった）: 手で
+    打ち直す。コマンドは
+    `git tag -a -f -m "Release vX.Y.Z" vX.Y.Z 'vX.Y.Z^{commit}' && git push -f origin vX.Y.Z`。
+    この push が `push: tags` で `release.yml` を起動するので、`gh workflow run` は
+    重ねない（同じタグで 2 回走る）
 - 公開前に CHANGELOG やコードを直してタグを打ち直すなら、次の順で行う。公開後は
   打ち直せない
   1. タグを消す（`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`）
   2. 直しを PR にして squash でマージする。CHANGELOG は、main ではもう
      `## [X.Y.Z] - 日付` になっている節を直す
-  3. そのマージコミットにタグを打ち、タグだけを push する
-     （`git pull --ff-only && git tag vX.Y.Z <マージコミット> && git push origin vX.Y.Z`。
-     `push: tags` で `release.yml` が起動する）。main へは push しない
+  3. そのマージコミットに **annotated で**タグを打ち、タグだけを push する
+     （`git pull --ff-only && git tag -a -m "Release vX.Y.Z" vX.Y.Z <マージコミット> && git push origin vX.Y.Z`）。
+     `push: tags` で `release.yml` が起動するので、`gh workflow run` は重ねない。
+     main へは push しない
   4. `gh workflow run tagpr.yml --ref main` でリリース PR を作り直す
   - 手順 2 のマージで走る tagpr の run は赤になる。タグが無い間は、CHANGELOG に
     最新のタグより新しい版の節があり、`release-prepare.mjs` がそれを検出して
     落ちるため（「リリース PR（tagpr）」）。その間のリリース PR はマージしない。
     手順 4 の後も `## [Unreleased]` が空なので赤のままで、リリースの直後と同じ
+  - 手順 2 の run が残した版だけ上がったリリース PR（draft）は、マージせず、手順 3 の
+    後に閉じる。閉じる前に push が入ると、成功した run はこの PR を ready に戻す。
+    それでもマージしない
 
 ### リリース PR（tagpr）
 
 - **main に push があるたびに `tagpr.yml` がリリース PR を作り直す。** ブランチは
   `tagpr-from-v<前回の版>`。マージすると、次の run がマージコミットにタグを打つ。
   設定は `.tagpr`
+- **`tagpr.yml` は `credits` のジョブと、kan/tagpr-scripts の共通の workflow を呼ぶ
+  ジョブだけ。** tagpr のジョブ、落ちた run での draft、タグを
+  annotated に打ち直すこと、`release.yml` の起動はそちらにある。動きと落ちたときの
+  扱いは、tagpr-scripts の README の「The tagpr workflow」
 - **版はタグだけで持つ**（`versionFile = -`）。バイナリの版は ldflags で
   埋めるので、版を書いたファイルが無い。次の版はリリース PR のラベル
   （`tagpr:minor` / `tagpr:major`、無ければ patch）で決まる
 - **CHANGELOG を扱うスクリプトは `scripts/tagpr/`**（kan/tagpr-scripts を
-  `git subtree` で取り込んだもの。lily / wema / wema-kake と共有している）。
+  `git subtree` で取り込んだもの。tagpr を使うほかの repo とも共有している）。
   **`scripts/tagpr/` の中は編集しないこと。** 直すときは kan/tagpr-scripts を直し、
   `git subtree pull -S --prefix=scripts/tagpr https://github.com/kan/tagpr-scripts.git main --squash`
   で取り込む。`-S` を付ける（subtree のコミットには `commit.gpgsign` が効かない）。
   その PR はマージコミットで入れる（「ブランチと PR」）。取り込みは CHANGELOG に
-  書かない
+  書かない。**同じ PR で、`tagpr.yml` の呼ぶ行（`uses: kan/tagpr-scripts/...@<SHA>`）の
+  SHA を上げる。** 上げ先は取り込んだ tagpr-scripts の commit で、squash のコミットの
+  メッセージにある `git-subtree-split` の SHA。roji の squash やマージのコミットの
+  SHA ではない
 - **リリース PR の中身は `scripts/release-prepare.sh` が作る**（`.tagpr` の
-  `postVersionCommand`）。`ROJI_CREDITS` を検査してから
+  `postVersionCommand`）。`TAGPR_ARTIFACT_DIR` の `CREDITS` を検査してから
   `scripts/tagpr/release-prepare.mjs --changelog-only` を呼び、最後に `CREDITS` を
   差し替える。この順にしているのは、落ちるときに何も書き換えないため。
   `release-prepare.mjs` は `## [Unreleased]` を `## [X.Y.Z] - 日付` にし、その上に
@@ -808,10 +843,14 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   `## [Unreleased]` が無いか空のときと、最新のタグより新しい版の節がすでにある
   とき（リリース PR をマージしたのにタグが打たれていない。「リリース PR を
   マージする」の手順でマージコミットの run を再実行する）。失敗しても tagpr は
-  リリース PR を作るので、run が赤ならマージしない
-- **`CREDITS` は書き込みの権限の無いジョブ（`credits`）で生成して渡す。**
-  gocredits はサードパーティのコードで、tagpr のジョブはリポジトリへ push できる
-  トークンを持つ。tagpr のジョブでは依存のコードを走らせないこと
+  リリース PR を作る。その PR は共通の workflow が draft にするが、run が赤なら
+  マージしない
+- **`CREDITS` は書き込みの権限の無いジョブ（`credits`）で生成し、artifact
+  （`credits`）で渡す。** gocredits はサードパーティのコードで、tagpr のジョブは
+  リポジトリへ push できるトークンを持つ。tagpr のジョブでは依存のコードを走らせないこと。
+  共通の workflow が artifact を落とし、そのディレクトリを `TAGPR_ARTIFACT_DIR` で渡す。
+  呼ぶジョブの `if: ${{ !cancelled() }}` は外さない。`credits` が落ちてもマージの run が
+  タグを打てるようにするため（その run は `CREDITS` を使わない）
 - **CHANGELOG と GitHub のリリースは tagpr に作らせない**（`changelog = false` /
   `release = false`）。tagpr の CHANGELOG は PR のタイトルを並べるだけで、
   リリースノートには足りない（roji は利用者に届く変更を CHANGELOG に手で書く）。
@@ -826,10 +865,12 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   書く。参照形式の定義は節の外（ファイル末尾のリンク定義のまとまり）に置かれる
   ので、リリースノートに入らず、GitHub のリリースでリンクにならない
 - **スクリプトは repo のルートで実行する**（`CHANGELOG.md` を作業ディレクトリから
-  読む）。Node は組み込みのモジュールしか使わないので、ランナーに入っている
-  `node` で動き、setup-node は使っていない
-- **`release.yml` は `workflow_dispatch` でタグを ref にして起動する**（`tagpr.yml`
-  の `release` ジョブ）。GITHUB_TOKEN で push したタグではワークフローが起動しないが、
+  読む）。Node は組み込みのモジュールしか使わない。tagpr のジョブでは、共通の
+  workflow が setup-node で入れる Node 24 で動く。`release.yml`（`release-notes.mjs`）は
+  setup-node を使わず、ランナーに入っている `node` で動く。ランナーの Node の
+  入れ替わりで、2 つの版は食い違うことがある
+- **`release.yml` は `workflow_dispatch` でタグを ref にして起動する**（共通の
+  workflow の `release` ジョブ）。GITHUB_TOKEN で push したタグではワークフローが起動しないが、
   `workflow_dispatch` は例外として起動できる。pike / musql のように `workflow_call`
   で同じ run から呼ぶ形にはしないこと。`github.ref` が `refs/heads/main` になり、
   attestation の source ref もそうなるので、install.sh の
@@ -837,11 +878,13 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   `test` ジョブの条件で止める
 - **トークンは GITHUB_TOKEN のまま**（GitHub App は作っていない）。tagpr が PR を
   作るには、リポジトリ設定の「Allow GitHub Actions to create and approve pull
-  requests」が有効でなければならない。`workflow_dispatch` の権限（`actions: write`）は
-  `release` ジョブだけに付け、tagpr のジョブには付けない
-- **`tagpr` ジョブの `concurrency` は `cancel-in-progress: false`。** 同じブランチを
-  作り直し合わないように並べず、タグを打った直後に止めて成果物の無いタグを
-  残さないように止めない
+  requests」が有効でなければならない
+- **`tagpr.yml` の呼ぶジョブには、権限を 4 つとも書く**（`actions: write` を含む）。
+  共通の workflow が使える上限で、`actions: write` は中の `release` ジョブだけが使う
+- **`tagpr.yml` に `concurrency` を付けない。** run を並べるのは共通の workflow の
+  tagpr のジョブ（`cancel-in-progress: false`、group は `tagpr-scripts-release-pr`）。
+  呼ぶ側に同じ名前の group を付けると deadlock として止まる。別の名前でも、待っている
+  run を置き換える場所が 2 つに増える
 
 ## ロードマップ（v0.7.0 → v1.5.0）
 

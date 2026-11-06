@@ -3,12 +3,21 @@ name: tagpr
 # Keeps the release pull request up to date and starts the release once it is
 # merged. Settings are in .tagpr; the release steps are in CLAUDE.md.
 #
+# The tagpr job is kan/tagpr-scripts' shared workflow (scripts/tagpr/
+# .github/workflows/tagpr.yml is a copy of it). What it does and how to recover
+# when it fails: "The tagpr workflow" in the tagpr-scripts README.
+#
 # - Each push to main rebuilds the release PR (branch tagpr-from-v<previous>)
 #   on top of main. scripts/release-prepare.sh stamps the CHANGELOG section
-#   (with scripts/tagpr/release-prepare.mjs, run by the node on the runner)
-#   and refreshes CREDITS.
-# - When the release PR is merged, the next run tags the merge commit and the
-#   release job starts release.yml on that tag.
+#   (with scripts/tagpr/release-prepare.mjs) and refreshes CREDITS. A failed
+#   run turns the release PR into a draft; the next run that succeeds marks it
+#   ready again.
+# - When the release PR is merged, the next run puts an annotated tag on the
+#   merge commit and starts release.yml on that tag with workflow_dispatch (a
+#   tag pushed with GITHUB_TOKEN does not trigger push). Dispatching on the tag,
+#   rather than calling release.yml from this run, keeps github.ref at
+#   refs/tags/vX.Y.Z, which the build provenance records and install.sh checks
+#   with --source-ref.
 # - workflow_dispatch rebuilds the release PR, e.g. after adding tagpr:minor.
 on:
   push:
@@ -18,10 +27,12 @@ on:
 permissions:
   contents: read
 
+# No concurrency here. The shared workflow's tagpr job queues the runs; a group
+# of the same name on the caller too is stopped by GitHub as a deadlock.
 jobs:
   # gocredits is third-party code, so it runs here, with a read-only token,
-  # and hands its output to the tagpr job. Nothing in the tagpr job, which
-  # can push to the repository, runs code from dependencies.
+  # and hands its output to the tagpr job as an artifact. Nothing in the tagpr
+  # job, which can push to the repository, runs code from dependencies.
   credits:
     name: Generate CREDITS
     runs-on: ubuntu-latest
@@ -53,61 +64,23 @@ jobs:
           if-no-files-found: error
 
   tagpr:
-    name: Prepare the release pull request
     needs: credits
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Runs never overlap (they would rebuild the same branch over each other),
-    # and a running one is not cancelled (stopped right after tagging, it
-    # would leave a tag without a release). GitHub still keeps only the newest
-    # pending run of the group: if a push lands while the run for the release
-    # PR's merge is waiting, that run is cancelled and nothing is tagged.
-    # Rerun it then; it checks out the merge commit and tags it (CLAUDE.md).
-    concurrency:
-      group: tagpr
-      cancel-in-progress: false
+    # The run that tags a merged release PR does not use CREDITS, so a failed
+    # credits job must not keep it from tagging. Without the artifact,
+    # scripts/release-prepare.sh fails before it writes anything.
+    if: ${{ !cancelled() }}
+    # The SHA is the tagpr-scripts commit pulled into scripts/tagpr/. Move it in
+    # the pull request that runs git subtree pull (CLAUDE.md, "リリース PR
+    # (tagpr)"). actions.lock does not pin reusable workflows from other
+    # repositories, and Dependabot is kept off this line (dependabot.yml).
+    uses: kan/tagpr-scripts/.github/workflows/tagpr.yml@776734198ce4cade40332a9d1772ef8a2fd01c2f
+    # The most the shared workflow may use. List all four.
     permissions:
       contents: write       # Push the release branch and the tag
       pull-requests: write  # Open and update the release PR
       issues: read          # Read labels
-    # The credits artifact comes from this run, which needs no token permission
-    outputs:
-      tag: ${{ steps.tagpr.outputs.tag }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Download CREDITS
-        uses: actions/download-artifact@v8.0.2
-        with:
-          name: credits
-          path: ${{ runner.temp }}/credits
-
-      - name: Run tagpr
-        id: tagpr
-        uses: Songmu/tagpr@v1.21.4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Read by scripts/release-prepare.sh
-          ROJI_CREDITS: ${{ runner.temp }}/credits/CREDITS
-
-  # A tag pushed with GITHUB_TOKEN starts no workflow, but workflow_dispatch is
-  # exempt from that rule. Dispatching on the tag (rather than calling
-  # release.yml from this run) keeps github.ref at refs/tags/vX.Y.Z, which the
-  # build provenance records and install.sh checks with --source-ref.
-  release:
-    name: Start the release
-    needs: tagpr
-    if: needs.tagpr.outputs.tag != ''
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write  # workflow_dispatch
-    steps:
-      - name: Dispatch release.yml on the tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.tagpr.outputs.tag }}
-        run: gh workflow run release.yml --ref "$TAG"
+      actions: write        # workflow_dispatch release.yml
+    with:
+      release-workflow: release.yml
+      # Read by scripts/release-prepare.sh as TAGPR_ARTIFACT_DIR/CREDITS
+      artifact: credits
