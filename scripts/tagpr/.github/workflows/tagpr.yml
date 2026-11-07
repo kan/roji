@@ -88,7 +88,7 @@ jobs:
       # 第三者の action なので、タグが付け替えられても、記録した commit 以外は動かさない
       - name: Run tagpr
         id: tagpr
-        uses: Songmu/tagpr@v1.21.4
+        uses: Songmu/tagpr@v1.22.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAGPR_ARTIFACT_DIR: ${{ steps.artifact.outcome == 'success' && format('{0}/tagpr-artifact', runner.temp) || '' }}
@@ -100,30 +100,57 @@ jobs:
       # tagpr が付けるラベル `tagpr` で探す。`gh pr list --label` は検索のインデックスを使い、
       # 同じ run で作られたばかりの PR を返さないので、REST の一覧を絞る。
       #
-      # ready に戻すのは、ラベル `tagpr` の付いた draft のすべて。リリースを止めておきたいときは、
-      # draft にせず、マージしないでおく
+      # **成功した run で ready に戻すのは、tagpr がその run で作り直した PR だけ**（出力
+      # `pull_request`。tagpr は postVersionCommand が落ちても PR を作ってから出力を書くので、
+      # 落ちた run でも出る）。tagpr が探すのは `tagpr-from-v<最新のタグ>` のブランチの PR だけで、
+      # タグが進んだ後に残った前のリリース PR（マージの run が cancelled になった後の draft など）には
+      # 二度と触らない。CHANGELOG の揃っていないその PR を ready に戻すと、新しい PR と並んで
+      # 取り違えうるので、成功した run がコメントを付けて閉じる（ブランチは消さない）。閉じるのは
+      # ラベル `tagpr` があり、ブランチが `tagpr-from-v` で始まる PR だけ（手でラベルを付けた
+      # ふつうの PR は閉じない）。今の PR を先に ready に戻し、閉じるのが落ちても警告で済ませる。
+      # 出力が空の成功（tagpr v1.22.0 では、PR を作り直す経路の成功は必ず出力を書くので起きない）は、
+      # 警告を出して何もしない。
+      #
+      # リリースを止めておきたいときは、draft にせず、マージしないでおく（成功した run は
+      # ready の今の PR には触らない）
       - name: Draft or ready the release pull request
         if: ${{ !cancelled() && (steps.tagpr.outcome == 'failure' || (steps.tagpr.outcome == 'success' && steps.tagpr.outputs.tag == '')) }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           OUTCOME: ${{ steps.tagpr.outcome }}
+          PR_JSON: ${{ steps.tagpr.outputs.pull_request }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          # 落ちた run では ready の PR を、成功した run では draft の PR を探す
-          if [ "$OUTCOME" = failure ]; then is_draft=false; else is_draft=true; fi
-          # 一覧の取得が落ちたらステップも落とす（`for n in $(...)` に直に書くと、落ちても空の一覧で通る）
+          current=$(jq -r '.number // empty' <<<"${PR_JSON:-null}")
+          if [ "$OUTCOME" = success ] && [ -z "$current" ]; then
+            echo "::warning::tagpr がリリース PR を出力しなかったので、draft と ready を切り替えない"
+            exit 0
+          fi
+          # 一覧の取得が落ちたらステップも落とす（`while ... done < <(...)` に直に書くと、落ちても空の一覧で通る）
           prs=$(gh api --paginate "repos/$GH_REPO/pulls?state=open&per_page=100" \
-            --jq ".[] | select(any(.labels[]; .name == \"tagpr\") and .draft == $is_draft) | .number")
-          for n in $prs; do
-            if [ "$OUTCOME" = failure ]; then
-              gh pr ready --undo "$n"
-              gh pr comment "$n" --body "tagpr の run が落ちたので draft にしました。この PR は CHANGELOG や lock が揃っていない可能性があります。原因を直して main に push すると、作り直されて ready に戻ります。 $RUN_URL"
-            else
-              gh pr ready "$n"
-            fi
-          done
+            --jq '.[] | select(any(.labels[]; .name == "tagpr") and (.head.ref | startswith("tagpr-from-v"))) | "\(.number) \(.draft)"')
+
+          if [ "$OUTCOME" = failure ]; then
+            # 落ちた run では、今の PR が分からなくても、ready のものをすべて止める側に倒す。
+            # gh が標準入力を読んでも一覧を食わないよう、fd 3 から読む
+            while read -r -u 3 n is_draft; do
+              [ -n "$n" ] && [ "$is_draft" = false ] || continue
+              gh pr ready --undo "$n" </dev/null
+              gh pr comment "$n" </dev/null --body "tagpr の run が落ちたので draft にしました。この PR は CHANGELOG や lock が揃っていない可能性があります。原因を直して main に push すると、作り直されて ready に戻ります（新しいリリース PR ができたときは、この PR を閉じます）。 $RUN_URL"
+            done 3<<<"$prs"
+            exit 0
+          fi
+
+          if grep -qx "$current true" <<<"$prs"; then
+            gh pr ready "$current" </dev/null
+          fi
+          while read -r -u 3 n _; do
+            [ -n "$n" ] && [ "$n" != "$current" ] || continue
+            gh pr close "$n" </dev/null --comment "リリース PR は #$current に移ったので、前のリリース PR のこれを閉じます。tagpr はこの PR をもう作り直さないので、CHANGELOG や lock が揃っていない可能性があります。マージしないでください。 $RUN_URL" \
+              || echo "::warning::#$n を閉じられなかった。手で閉じる"
+          done 3<<<"$prs"
 
       # **タグは annotated にする。** tagpr が annotated で打つのは tag.gpgSign が true のときだけで、
       # ふだんは lightweight になる。lightweight のタグは `git describe`（`--tags` 無し）に
@@ -131,11 +158,10 @@ jobs:
       # 起動の前に、同じ commit へ API で打ち直す（書き込みのトークンを git に渡さない）。
       # GITHUB_TOKEN で書き換えるので、ほかの workflow は動かない。
       #
-      # このステップが落ちると、タグは lightweight のまま残り、`release` も起動しない。run を
-      # 再実行しても、tagpr はタグを打ち直さず、このステップも動かない。手で打ち直す:
-      # `git tag -a -f -m "Release vX.Y.Z" vX.Y.Z 'vX.Y.Z^{commit}' && git push -f origin vX.Y.Z`
-      # 手で push したタグは `push: tags` を起動する。`release-workflow` がそれを持つなら、その push で
-      # 起動するので `gh workflow run` を重ねない（同じタグで 2 回走る）。持たないなら手で起動する
+      # このステップが落ちると、タグは lightweight のまま残り、`release` も起動しない。**その run を
+      # 再実行する。** tagpr（v1.22.0 から）は、マージの commit を指すタグが既にあれば受け入れて
+      # `tag` を出し直すので、このステップと `release` がもう一度動く。再実行できないときの手順は
+      # README の「When the run of a merge made the tag but failed after it」
       - name: Make the tag annotated
         if: steps.tagpr.outputs.tag != ''
         env:
@@ -165,8 +191,8 @@ jobs:
   # run の ref が main になり、OIDC のトークンも provenance も attestation もそれを名乗る
   # （npm の Trusted Publisher は publish のワークフローのファイルで判定する）。
   #
-  # 起動だけが失敗したとき（タグは打たれている）は、tagpr の run を再実行せず、
-  # `gh workflow run <release-workflow> --ref vX.Y.Z` で手で起動する
+  # 起動だけが失敗したときも、その run を再実行する（上のステップと同じ README の節）。
+  # **`release-workflow` が既に動いた run は再実行しない**（同じタグでもう一度起動する）
   release:
     name: Start the release
     needs: tagpr

@@ -161,6 +161,18 @@ jobs:
 - **Call it by a full commit SHA, the same commit as `scripts/tagpr/`.** A reusable
   workflow from another repository is not pinned by the caller's `actions.lock`. The
   actions inside it (tagpr included) are pinned by this repository's `actions.lock`.
+- **Check that in the CI of pull requests**, from the root of the repository:
+
+  ```yaml
+  - name: Check scripts/tagpr/ against the tagpr workflow pin
+    run: node scripts/tagpr/verify-subtree.mjs
+  ```
+
+  It compares the tree of `HEAD:scripts/tagpr` with the tree of the commit that the
+  `uses: kan/tagpr-scripts/...@<SHA>` lines call, and fails when a subtree pull did not move
+  the line, when the line moved without a pull, or when `scripts/tagpr/` was edited by hand.
+  It fetches that one commit into a temporary repository, so a shallow checkout is enough
+  and no token is needed.
 - The calling job's `permissions` are the most the workflow gets. List all four, even
   with an empty `release-workflow`: GitHub checks every job's permissions when the run
   starts, including jobs that will be skipped.
@@ -190,24 +202,52 @@ jobs:
     fails, `TAGPR_ARTIFACT_DIR` is empty, and the wrapper should fail before it writes.
   - `timeout-minutes`: for the tagpr job (default 10).
 - `postVersionCommand` runs on Node 24, the version the tests here run on.
-- Output: `tag`, the tag this run made, or empty.
+- Output: `tag`, the tag this run made (or found already made, on a re-run), or empty.
 - **When a tagpr run fails, the release pull request is turned into a draft.** tagpr
   rebuilds the release pull request even when `postVersionCommand` fails: the version files
   are bumped, but `CHANGELOG.md` and the locks are not. Merged, it would make a tag with no
   CHANGELOG section, which the publish then refuses. The draft cannot be merged; the next
   run that succeeds marks it ready again. Right after a release this happens on every push
   until a pull request adds an entry under `## [Unreleased]`.
+- **A successful run marks ready only the release pull request it rebuilt, and closes the
+  others.** tagpr looks only at the branch `tagpr-from-v<latest tag>`, so once a tag is made,
+  an older release pull request (say, the draft left behind when the run of a merge was
+  cancelled) is never rebuilt again. The run closes it with a comment and keeps its branch.
+  Do not reopen and merge it. Only a run that rebuilt the release pull request does this:
+  a run that makes a tag, or one that fails, leaves the old one open until the next
+  successful run on a push to `main`. Only pull requests with the label `tagpr` and a branch
+  starting `tagpr-from-v` are closed.
 - **The tag is made annotated.** tagpr makes a lightweight tag unless `tag.gpgSign` is set,
   and `git describe` without `--tags` skips lightweight tags. The workflow replaces it with
   an annotated tag on the same commit before starting `release-workflow`. To get the commit
   from the tag, use `$TAG^{commit}` (or follow the tag object in the API), not `$TAG` alone.
-  If that step fails, the tag stays lightweight and `release-workflow` is not started, and
-  re-running the run does not help (tagpr does not make the tag again). Make it again by
-  hand: `git tag -a -f -m "Release vX.Y.Z" vX.Y.Z 'vX.Y.Z^{commit}' && git push -f origin vX.Y.Z`.
-  A tag pushed by hand starts `push: tags`; when `release-workflow` has that trigger, the
-  push starts it, so do not also run `gh workflow run` (it would run twice on the tag).
-- **If only starting `release-workflow` fails** (the tag is made), do not re-run the tagpr
-  run. Start it by hand: `gh workflow run <release-workflow> --ref vX.Y.Z`.
+  If that step fails, the tag stays lightweight and `release-workflow` is not started.
+- **When the run of a merge made the tag but failed after it, re-run that run.** This covers
+  a failed step that makes the tag annotated, and a failed start of `release-workflow`.
+  tagpr accepts a tag that already points at the merged commit, and outputs it again, so the
+  rest of the run goes through once more. It fails if the tag points at another commit.
+  **Do not re-run a run whose `release-workflow` already went out**: it would start it again
+  on the same tag.
+
+  When the run can no longer be re-run (GitHub allows it for 30 days), do it by hand. The
+  tag is made on the runner, so a local clone often lacks it, or holds an old tag of the same
+  name on another commit; fetch it first, and look at what it is:
+
+  ```bash
+  git fetch --force origin tag vX.Y.Z
+  git cat-file -t vX.Y.Z   # "tag": annotated, "commit": lightweight
+  ```
+
+  If it is annotated, only the start failed: `gh workflow run <release-workflow> --ref vX.Y.Z`.
+  If it is lightweight, make it annotated and push it:
+
+  ```bash
+  git tag -a -f -m "Release vX.Y.Z" vX.Y.Z 'vX.Y.Z^{commit}' && git push -f origin vX.Y.Z
+  ```
+
+  A tag pushed by hand starts `push: tags`. When `release-workflow` has that trigger, the
+  push starts it, so do not also run `gh workflow run` (it would run twice on the tag);
+  otherwise, start it with `gh workflow run` as above.
 
 `.tagpr` for an npm package:
 
