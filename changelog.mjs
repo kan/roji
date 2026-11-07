@@ -118,6 +118,34 @@ export function compareVersions(a, b) {
 }
 
 /**
+ * タグの ref の一覧から、最新の版を返す。版のタグ（`vX.Y.Z`）が無ければ、tagpr と同じく `0.0.0`。
+ * プレリリースやほかの接頭辞のタグは数えない（`release-pending.mjs` の冒頭）
+ * @param {string} refs 1 行に 1 つの `refs/tags/...`
+ * @returns {string}
+ */
+export function latestVersion(refs) {
+  let latest = '0.0.0';
+  for (const ref of refs.split('\n')) {
+    const m = /^refs\/tags\/v(\d+\.\d+\.\d+)$/.exec(ref.trim());
+    if (m && compareVersions(m[1], latest) > 0) latest = m[1];
+  }
+  return latest;
+}
+
+/**
+ * 最新のタグより新しい版の節を、古い順に返す。`current` が `0.0.0`（タグが 1 つも無い）なら、すべての
+ * 版の節。`stampRelease` と `release-pending.mjs` が同じ規則で見るためにここに置く
+ * @param {string} text CHANGELOG.md の中身
+ * @param {string} current 最新のタグの版（`X.Y.Z`）
+ * @returns {string[]}
+ */
+export function untaggedVersions(text, current) {
+  return versionHeadings(text)
+    .filter((v) => compareVersions(v, current) > 0)
+    .sort(compareVersions);
+}
+
+/**
  * `## [name]` の節の本文を、前後の空行を落として返す。節が無ければ `null`、
  * 空なら `''`。**重複だけは投げる**（どちらが正か決められないため）。
  * @param {string} text CHANGELOG.md の中身
@@ -252,8 +280,8 @@ export function unwrapLines(body) {
  */
 export function stampRelease(text, { version, current, repo, date }) {
   // **最新のタグより新しい版の節があれば落とす。** tagpr はリリース PR のブランチを毎回
-  // main から作り直すので、その節があるのは、main にリリース PR が入ったのにタグが
-  // 打たれていないとき（タグを打ち直すために消している間も同じ）。
+  // リリースのブランチ（main など）から作り直すので、その節があるのは、そこにリリース PR が
+  // 入ったのにタグが打たれていないとき（タグを打ち直すために消している間も同じ）。
   //
   // 提案する版の節だけを見ると、間に `enhancement` の PR が入ったときに通ってしまう。
   // tagpr は最新のタグから数えるので、0.17.1 のタグが無いまま minor の 0.18.0 を提案し、
@@ -261,12 +289,7 @@ export function stampRelease(text, { version, current, repo, date }) {
   //
   // タグが 1 つも無いと tagpr は `v0.0.0` を渡す。そのときは比べる相手が無いので見ない
   // （タグを打たずにリリースしてきた repo が tagpr へ移ると、古い節がすべて引っかかる）。
-  const untagged =
-    current === '0.0.0'
-      ? []
-      : versionHeadings(text)
-          .filter((v) => compareVersions(v, current) > 0)
-          .sort(compareVersions);
+  const untagged = current === '0.0.0' ? [] : untaggedVersions(text, current);
   if (untagged.length > 0) {
     // 古い順にすべて出す。新しい方だけ直すと、古い方はそのタグより古くなって見えなくなる
     const sections = untagged.map((v) => `"## [${v}]"`).join(', ');
