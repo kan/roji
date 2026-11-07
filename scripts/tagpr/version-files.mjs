@@ -49,7 +49,7 @@ function readVersionOnly(text, path) {
     throw new ReleaseError(`${path} has CR line endings; save it with LF (on Windows, add \`VERSION text eol=lf\` to .gitattributes)`);
   }
   // BOM は見えないので、「1 行だけ」の誤りと分けて伝える（Windows のエディタが付けることがある）
-  if (text.startsWith('﻿')) throw new ReleaseError(`${path} starts with a BOM; save it as UTF-8 without a BOM`);
+  if (text.charCodeAt(0) === 0xfeff) throw new ReleaseError(`${path} starts with a BOM; save it as UTF-8 without a BOM`);
   const m = /^(\S+)\n?$/.exec(text);
   if (!m) throw new ReleaseError(`${path} must hold only the version, on one line`);
   return m[1];

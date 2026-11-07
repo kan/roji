@@ -32,6 +32,10 @@ jobs:
             exit 1
           fi
 
+      # The runner's Node is enough (20.11 or later)
+      - name: Check scripts/tagpr/ against the tagpr workflow pin
+        run: node scripts/tagpr/verify-subtree.mjs
+
       # GOOS is set per platform because the service and certgen packages are
       # split by build tag: on ubuntu alone, the macOS and Windows files are
       # never compiled and so never checked.

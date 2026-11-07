@@ -21,8 +21,10 @@ hokora が使っている）。Tauri の pike / musql は `--cargo src-tauri` �
 | `npm-lock.mjs` | `release-prepare.mjs` が import する | `package.json` の版の確認と、`package-lock.json` の版を揃えた中身を作る。書くのは呼んだ側 |
 | `cargo-lock.mjs` | `release-prepare.mjs` が import する（`--cargo <dir>`） | `<dir>/Cargo.toml` の `[package]` の版の確認と、`<dir>/Cargo.lock` の自分の `[[package]]` の版を揃えた中身を作る。`cargo` は呼ばない。書くのは呼んだ側 |
 | `version-files.mjs` | `release-prepare.mjs` が import する | `.tagpr` の `versionFile` を `git config` で読み、並んだ全部のファイルの本来の版（`*.json` は最上位の `"version"`、`Cargo.toml` は `[package]`、`VERSION` は中身の全体）が提案の版かを確かめる。tagpr は各ファイルで今の版の最初の 1 か所しか書き換えず、別の行に当たっても何も落ちないため |
-| `test/release.node-test.mjs` | `node --test` | 上の 6 つのテスト |
-| `.github/workflows/tagpr.yml` | 取り込み先の tagpr.yml が `uses:` で呼ぶ（reusable workflow。この repo では動かない） | tagpr を走らせ、タグを打ったら annotated に打ち直し、取り込み先の publish / release をそのタグで `workflow_dispatch` する。tagpr が落ちた run ではリリース PR を draft にする。入力は README の「The tagpr workflow」 |
+| `verify-subtree.mjs` | 取り込み先の PR の CI | 取り込み先の `HEAD:scripts/tagpr` の tree と、`.github/workflows/` で呼ぶ `kan/tagpr-scripts/.github/workflows/tagpr.yml@<SHA>` の commit の tree が同じかを確かめる |
+| `test/release.node-test.mjs` | `node --test` | `verify-subtree.mjs` を除く上の 6 つのテスト |
+| `test/verify-subtree.node-test.mjs` | `node --test` | `verify-subtree.mjs` のテスト。一時ディレクトリに upstream と取り込み先の repo を作る |
+| `.github/workflows/tagpr.yml` | 取り込み先の tagpr.yml が `uses:` で呼ぶ（reusable workflow。この repo では動かない） | tagpr を走らせ、タグを打ったら annotated に打ち直し、取り込み先の publish / release をそのタグで `workflow_dispatch` する。tagpr が落ちた run ではリリース PR を draft にし、成功した run ではその run のリリース PR だけを ready に戻して、前のリリース PR を閉じる。入力は README の「The tagpr workflow」 |
 
 package.json は無い。依存も無い。
 
@@ -164,13 +166,21 @@ issue #1）。`--changelog-only` が npm でない repo の入り口。
 
 issue を読まずに着手しない。進める順はユーザーと決める。
 
-- #5: tagpr を v1.22.0 に上げる。上げると、取り込み先の復旧の手順が変わる（#5 のコメント）
-- #6: 取り込み先の tagpr.yml を、共通の workflow を呼ぶ形にする。共通の workflow はできていて、
-  残りは 8 つの取り込み先の移行（repo ごとの直すことは #6 の本文）
-- #9: pike と musql の build ジョブから、書き込みの権限を外す
-- #10: 取り込み先の呼ぶ行の SHA と subtree の commit が揃っているかを、CI で確かめる
-- #11: 共通の workflow が、古いリリース PR まで ready に戻す。直したら、lily と notify-slack の手順書の誤りも次の subtree pull の PR で直す
+- #5 / #10 / #11: この repo の側は済んだ（tagpr v1.22.0、`verify-subtree.mjs`、前のリリース PR を閉じる）。
+  **残りは取り込み先の 8 repo で、1 repo につき 1 つの subtree pull の PR にまとめる。** 最初は notify-slack で、
+  v1.22.0 のリリースを本番で 1 回通してから広げる。pike と musql は Windows 側のセッションに頼む
+  - PR の CI に `node scripts/tagpr/verify-subtree.mjs` を足す（#10）
+  - **取り込み先の手順書に、共通の workflow の復旧の手順を書き写さない。** `scripts/tagpr/README.md` の
+    「The tagpr workflow」へのリンクに置き換える（subtree pull で一緒に更新される）。今ある写しの
+    食い違いは次のとおりで、どれもリンクへの置き換えで消える
+    - v1.21.4 前提の「tagpr の run を再実行しない」（#5）: hokora の AGENTS.md、pike と musql の
+      `.claude/skills/release/SKILL.md`
+    - lily と notify-slack の「作り直して戻す」の誤り（#11）
+    - wema-kake と notify-slack で、手で打ち直す前の `git fetch --force origin tag vX.Y.Z` が抜けている（#11）
+    - 全 repo の「古い PR は手で閉じる」の記述（#11）
 - #4: 打たれなかったタグを、次の run で打ち直す
 - #3: リリース PR のラベルを付け外ししたら、自動で作り直す
 - #8: booch と booch-win のリリースを tagpr に移す（版の正本が `VERSION`、タグは annotated）。
   `versionFile` で `VERSION` を確かめる処理は入った。残りは booch / booch-win の側の移行
+- #12: `versionFile` で Perl モジュール（`*.pm`）の `$VERSION` を確かめる。coveralls-perl
+  （CPAN、ブランチは `master`）を取り込み先に加えるため（kan/coveralls-perl#50）

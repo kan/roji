@@ -672,7 +672,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
    ```
 
    - **最新の tagpr の run が success であること。** 失敗した run はリリース PR を
-     draft にする（次に成功した run が ready に戻す）。失敗していたら
+     draft にする（その後の扱いは `scripts/tagpr/README.md` の「The tagpr workflow」）。失敗していたら
      `scripts/release-prepare.sh` の出力を読む。多いのは `## [Unreleased]` が
      空のとき。CHANGELOG を書く PR を main にマージすると作り直される
    - **版（PR のタイトル）が正しいこと。** 既定は patch。minor にするときは
@@ -734,10 +734,8 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
    新しい push の run に置き換えられる（cancelled になる）。置き換えられたら、
    マージコミットの run を `gh run rerun <run-id>` で再実行するとタグが打たれる。
    置き換えた側の run は「already has `## [X.Y.Z]`」で赤になり、版だけ上がった
-   リリース PR が draft で残ることがある。**その PR はマージせず、タグが打たれた後に
-   閉じる。** 共通の workflow は、成功した run でラベル `tagpr` の付いた draft を
-   すべて ready に戻す。閉じる前に push が入ると、古いまま ready になる（新しい
-   リリース PR とは別の PR。kan/tagpr-scripts#11）。ready でもマージしない。
+   リリース PR が draft で残ることがある。**その PR はマージしない。** 閉じられるまでの
+   動きは `scripts/tagpr/README.md` の「The tagpr workflow」。
 
    リリースの直後は `## [Unreleased]` が空なので、次に CHANGELOG を書くまで
    main への push ごとに tagpr の run が失敗する。これは想定どおりで、その間の
@@ -782,18 +780,13 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 
 - `publish` ジョブだけが落ちたら、そのジョブを再実行する（上の「確認」）
 - 打ってあるタグで丸ごとやり直すなら `gh workflow run release.yml --ref vX.Y.Z`
-- タグは打たれたのに `release.yml` が起動していないときは、tagpr の run 全体を
-  再実行しない（tagpr はタグを打ち直さず、起動もしない）。手順はタグが annotated か
-  どうかによって違う（tagpr-scripts の README の「The tagpr workflow」）。確かめ方は
-  `git fetch --force origin tag vX.Y.Z && git cat-file -t vX.Y.Z`（`tag` なら
-  annotated、`commit` なら lightweight）
-  - annotated（`Start the release` のジョブだけが落ちた）:
-    `gh workflow run release.yml --ref vX.Y.Z` で起動する
-  - lightweight（annotated に打ち直すステップが落ちたか、その前に止まった）: 手で
-    打ち直す。コマンドは
-    `git tag -a -f -m "Release vX.Y.Z" vX.Y.Z 'vX.Y.Z^{commit}' && git push -f origin vX.Y.Z`。
-    この push が `push: tags` で `release.yml` を起動するので、`gh workflow run` は
-    重ねない（同じタグで 2 回走る）
+- タグは打たれたのに `release.yml` が起動していないときは、そのマージコミットの
+  tagpr の run を再実行する（`gh run rerun <run-id>`）。**`release.yml` がすでに
+  起動した run は再実行しない**（同じタグで 2 回走る）。再実行できない run
+  （30 日を過ぎたもの）を手で直す手順は `scripts/tagpr/README.md` の
+  「The tagpr workflow」にある
+  - roji の `release.yml` は `push: tags` を持つ。README の手順でタグを手で push したら、
+    その push が `release.yml` を起動するので、`gh workflow run` は重ねない
 - 公開前に CHANGELOG やコードを直してタグを打ち直すなら、次の順で行う。公開後は
   打ち直せない
   1. タグを消す（`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`）
@@ -808,9 +801,9 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
     最新のタグより新しい版の節があり、`release-prepare.mjs` がそれを検出して
     落ちるため（「リリース PR（tagpr）」）。その間のリリース PR はマージしない。
     手順 4 の後も `## [Unreleased]` が空なので赤のままで、リリースの直後と同じ
-  - 手順 2 の run が残した版だけ上がったリリース PR（draft）は、マージせず、手順 3 の
-    後に閉じる。閉じる前に push が入ると、成功した run はこの PR を ready に戻す。
-    それでもマージしない
+  - 手順 2 の run が残した版だけ上がったリリース PR（draft）は、ready に戻っても
+    マージしない。閉じられるまでの動きは `scripts/tagpr/README.md` の
+    「The tagpr workflow」
 
 ### リリース PR（tagpr）
 
@@ -820,7 +813,9 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 - **`tagpr.yml` は `credits` のジョブと、kan/tagpr-scripts の共通の workflow を呼ぶ
   ジョブだけ。** tagpr のジョブ、落ちた run での draft、タグを
   annotated に打ち直すこと、`release.yml` の起動はそちらにある。動きと落ちたときの
-  扱いは、tagpr-scripts の README の「The tagpr workflow」
+  扱いは `scripts/tagpr/README.md` の「The tagpr workflow」にある。**この文書へ
+  写さないこと。** tagpr の版が変わるたびに写しがずれる。ここに書くのは roji に
+  固有のことだけ
 - **版はタグだけで持つ**（`versionFile = -`）。バイナリの版は ldflags で
   埋めるので、版を書いたファイルが無い。次の版はリリース PR のラベル
   （`tagpr:minor` / `tagpr:major`、無ければ patch）で決まる
@@ -833,7 +828,9 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   書かない。**同じ PR で、`tagpr.yml` の呼ぶ行（`uses: kan/tagpr-scripts/...@<SHA>`）の
   SHA を上げる。** 上げ先は取り込んだ tagpr-scripts の commit で、squash のコミットの
   メッセージにある `git-subtree-split` の SHA。roji の squash やマージのコミットの
-  SHA ではない
+  SHA ではない。PR の CI（`ci.yml` の `lint` ジョブ）が
+  `node scripts/tagpr/verify-subtree.mjs` で、`scripts/tagpr/` と呼ぶ行の SHA が
+  揃っているかを確かめる
 - **リリース PR の中身は `scripts/release-prepare.sh` が作る**（`.tagpr` の
   `postVersionCommand`）。`TAGPR_ARTIFACT_DIR` の `CREDITS` を検査してから
   `scripts/tagpr/release-prepare.mjs --changelog-only` を呼び、最後に `CREDITS` を
@@ -881,10 +878,9 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   requests」が有効でなければならない
 - **`tagpr.yml` の呼ぶジョブには、権限を 4 つとも書く**（`actions: write` を含む）。
   共通の workflow が使える上限で、`actions: write` は中の `release` ジョブだけが使う
-- **`tagpr.yml` に `concurrency` を付けない。** run を並べるのは共通の workflow の
-  tagpr のジョブ（`cancel-in-progress: false`、group は `tagpr-scripts-release-pr`）。
-  呼ぶ側に同じ名前の group を付けると deadlock として止まる。別の名前でも、待っている
-  run を置き換える場所が 2 つに増える
+- **`tagpr.yml` に `concurrency` を付けない。** run は共通の workflow の tagpr の
+  ジョブが並べる。呼ぶ側にも付けると、同じ名前の group なら deadlock として止まり、
+  別の名前でも待っている run を置き換える場所が 2 つに増える
 
 ## ロードマップ（v0.7.0 → v1.5.0）
 
