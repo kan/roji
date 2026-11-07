@@ -10,8 +10,7 @@ name: tagpr
 # - Each push to main rebuilds the release PR (branch tagpr-from-v<previous>)
 #   on top of main. scripts/release-prepare.sh stamps the CHANGELOG section
 #   (with scripts/tagpr/release-prepare.mjs) and refreshes CREDITS. A failed
-#   run turns the release PR into a draft; the next run that succeeds marks it
-#   ready again.
+#   run turns the release PR into a draft (what happens next is in the README).
 # - When the release PR is merged, the next run puts an annotated tag on the
 #   merge commit and starts release.yml on that tag with workflow_dispatch (a
 #   tag pushed with GITHUB_TOKEN does not trigger push). Dispatching on the tag,
@@ -73,7 +72,7 @@ jobs:
     # the pull request that runs git subtree pull (CLAUDE.md, "リリース PR
     # (tagpr)"). actions.lock does not pin reusable workflows from other
     # repositories, and Dependabot is kept off this line (dependabot.yml).
-    uses: kan/tagpr-scripts/.github/workflows/tagpr.yml@776734198ce4cade40332a9d1772ef8a2fd01c2f
+    uses: kan/tagpr-scripts/.github/workflows/tagpr.yml@966347b01e86b2aea4d71da0604588b17642b880
     # The most the shared workflow may use. List all four.
     permissions:
       contents: write       # Push the release branch and the tag
