@@ -38,6 +38,20 @@ updates:
       # Dependabot には上げさせない（tagpr-scripts の README「The tagpr workflow」）
       - dependency-name: "kan/tagpr-scripts*"
 
+  # Documentation website (Hugo + Thulite)
+  - package-ecosystem: "npm"
+    directory: "/website"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+      timezone: "Asia/Tokyo"
+    commit-message:
+      prefix: "docs"
+    labels:
+      - "dependencies"
+      - "javascript"
+    open-pull-requests-limit: 5
   # Docker
   - package-ecosystem: "docker"
     directory: "/"
