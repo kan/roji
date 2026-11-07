@@ -9,13 +9,11 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in roji, please report it through GitHub's private vulnerability reporting feature:
+If you discover a security vulnerability in roji, please report it privately through GitHub's private vulnerability reporting:
 
-1. Go to the [Security tab](https://github.com/kan/roji/security)
-2. Click "Report a vulnerability"
-3. Provide details about the vulnerability
+https://github.com/kan/roji/security/advisories/new
 
-Alternatively, you can email the maintainer directly.
+Please do not open a public issue for security vulnerabilities.
 
 ### What to include
 
