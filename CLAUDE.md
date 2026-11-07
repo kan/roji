@@ -1358,6 +1358,9 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji
   `LanguageCode`（`@thulite/seo` 2.4.4 で直っているが、2.4.4 の `robots.txt` が
   生成されない `sitemap-index.xml` を指すため、`package.json` で 2.4.3 に固定している）。Dart Sass の
   非推奨警告（`@import` など）もテーマと Bootstrap の SCSS から出る
+  - **`@thulite/seo` は dependabot に上げさせない**（`dependabot.yml` の `ignore`）。
+    固定した版にも更新の PR が来るため。直った版が出て固定を外すときは、
+    `ignore` も同じコミットで外す
 
 ## 開発メモ
 

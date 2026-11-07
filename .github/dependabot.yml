@@ -52,6 +52,12 @@ updates:
       - "dependencies"
       - "javascript"
     open-pull-requests-limit: 5
+    ignore:
+      # 2.4.4 の robots.txt が、生成されない sitemap-index.xml を指すため、
+      # package.json で 2.4.3 に固定している（CLAUDE.md「公式サイト」）。
+      # 直った版が出たら、package.json と一緒にこの ignore を外す
+      - dependency-name: "@thulite/seo"
+
   # Docker
   - package-ecosystem: "docker"
     directory: "/"
