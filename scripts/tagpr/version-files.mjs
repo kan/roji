@@ -56,23 +56,66 @@ function readVersionOnly(text, path) {
 }
 
 /**
+ * Perl のモジュール（`*.pm`）の版を読む。`our $VERSION = "X.Y.Z";` の形の行がちょうど 1 つあること
+ * を求める（coveralls-perl の形、issue #12）。`__END__` / `__DATA__` より後と POD は読まない。
+ * `$VERSION` への代入がほかにもあるか、引用符の文字列でない代入（`eval $VERSION` など）か、
+ * `package NAME VERSION;` の形なら、どれが本来の版かを決められないので落とす。
+ * @param {string} text
+ * @param {string} path
+ * @returns {string}
+ */
+function readPerlVersion(text, path) {
+  const found = [];
+  let pod = false;
+  for (const [i, line] of text.split(/\r?\n/).entries()) {
+    const at = `${path} line ${i + 1}`;
+    if (pod) {
+      if (/^=cut\b/.test(line)) pod = false;
+      continue;
+    }
+    if (/^=[a-zA-Z]/.test(line)) {
+      pod = true;
+      continue;
+    }
+    if (/^__(?:END|DATA)__\b/.test(line)) break;
+    if (/^\s*package\s+[\w:]+\s+v?\d/.test(line)) {
+      throw new ReleaseError(`${at} gives the version as "package NAME VERSION"; only our $VERSION = "X.Y.Z"; can be checked`);
+    }
+    // `$VERSION` で始まる文（`$Foo::VERSION`、`our ($X, $VERSION)` も）だけを見る。コメントや文字列の
+    // 中、式の途中の `$VERSION` は拾わない。始まる文は、決まった形でなければ（`||=`、`=~`、`eval`）落とす
+    if (!/^\s*(?:(?:our|my|local)\s*)?(?:\([^)]*)?\$(?:[\w:]*::)?VERSION\b/.test(line)) continue;
+    const m = /^\s*(?:our\s+)?\$VERSION\s*=\s*(["'])(\d[^"'$@\\\s]*)\1\s*;\s*(?:#.*)?$/.exec(line);
+    if (!m) throw new ReleaseError(`${at} sets $VERSION in a form that cannot be checked; write it as our $VERSION = "X.Y.Z";`);
+    found.push({ line: i + 1, version: m[2] });
+  }
+  if (found.length === 0) throw new ReleaseError(`${path} has no our $VERSION = "X.Y.Z"; line to check`);
+  if (found.length > 1) {
+    throw new ReleaseError(`${path} sets $VERSION more than once (lines ${found.map((f) => f.line).join(', ')}); keep only one`);
+  }
+  return found[0].version;
+}
+
+/**
  * 1 つのファイルの本来の版を読む。`.json` は最上位の `"version"`、`Cargo.toml` は `[package]` の
- * `version`、`VERSION` は中身の全体。ほかの種類は、どこが本来の版かを決められないので落とす。
+ * `version`、`VERSION` は中身の全体、`*.pm` は `$VERSION` の行。ほかの種類は、どこが本来の版かを
+ * 決められないので落とす。
  * @param {string} path
  * @returns {string | undefined}
  */
 function ownVersion(path) {
   const json = extname(path) === '.json';
+  const perl = extname(path) === '.pm';
   const name = basename(path);
-  if (!json && name !== 'Cargo.toml' && name !== 'VERSION') {
+  if (!json && !perl && name !== 'Cargo.toml' && name !== 'VERSION') {
     throw new ReleaseError(
-      `${path} is in versionFile of ${tagprPath}, but only *.json ("version"), Cargo.toml ([package] version) and VERSION (the version alone) can be checked`,
+      `${path} is in versionFile of ${tagprPath}, but only *.json ("version"), Cargo.toml ([package] version), VERSION (the version alone) and *.pm (our $VERSION) can be checked`,
     );
   }
   // readRootFile の「ルートで実行せよ」は、ここでは versionFile の誤りのことが多い
   if (!existsSync(path)) throw new ReleaseError(`${path} is in versionFile of ${tagprPath}, but does not exist`);
   const text = readRootFile(path);
   if (name === 'VERSION') return readVersionOnly(text, path);
+  if (perl) return readPerlVersion(text, path);
   if (!json) return readPackage(text, path).version;
   let data;
   try {

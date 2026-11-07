@@ -15,6 +15,8 @@ import { compareVersions, findSection, githubRepo, releaseDate, unwrapLines, ver
 
 const prepare = join(import.meta.dirname, '..', 'release-prepare.mjs');
 const notes = join(import.meta.dirname, '..', 'release-notes.mjs');
+const pendingScript = join(import.meta.dirname, '..', 'release-pending.mjs');
+const missedScript = join(import.meta.dirname, '..', 'missed-tags.mjs');
 
 const HEADER = '# Changelog\n\nIntro.\n\n';
 const MINIMAL = `${HEADER}## [Unreleased]\n\n- A.\n`;
@@ -323,6 +325,49 @@ for (const { name, opts, message, args, next, current, repository } of [
     opts: { files: { '.tagpr': '[tagpr]\n\tversionFile = VERSION\n', VERSION: `${String.fromCharCode(0xfeff)}1.2.4\n` } },
     message: /VERSION starts with a BOM/,
   },
+  ...[
+    {
+      // tagpr が `use` の版を先に見つけて書き換え、$VERSION の行が古いまま
+      name: 'a *.pm whose $VERSION tagpr missed',
+      pm: 'package Foo;\nuse Bar 1.2.4;\nour $VERSION = "1.2.3";\n1;\n',
+      message: /lib\/Foo\.pm says 1\.2\.3, but tagpr proposes 1\.2\.4/,
+    },
+    { name: 'a *.pm without $VERSION', pm: 'package Foo;\n1;\n', message: /lib\/Foo\.pm has no our \$VERSION = "X\.Y\.Z"; line/ },
+    {
+      name: 'a *.pm that sets $VERSION twice',
+      pm: 'package Foo;\nour $VERSION = "1.2.4";\npackage Foo::Bar;\nour $VERSION = "1.2.4";\n1;\n',
+      message: /lib\/Foo\.pm sets \$VERSION more than once \(lines 2, 4\)/,
+    },
+    // 本文の 1 行目がファイルの 2 行目。落ちるのは本文の最後の行
+    ...[
+      'our $VERSION = "1.2.4";\n$VERSION = eval $VERSION;\n',
+      'our $VERSION = "1.2.4_01";\n$VERSION =~ tr/_//d;\n',
+      'our $VERSION = "1.2.4";\n$VERSION ||= "9";\n',
+      'our $VERSION = "1.2.4";\n$Foo::VERSION = "1.2.4";\n',
+      'our $VERSION = "1.2.4";\nour ($VERSION, $X) = ("9", 1);\n',
+      'our ($VERSION) = "1.2.4";\n',
+      'our $VERSION = "$BASE.4";\n',
+      'our $VERSION = qv("1.2.4");\n',
+      'our $VERSION = "v1.2.4";\n',
+    ].map((body) => {
+      const lines = body.split('\n').slice(0, -1);
+      return {
+        name: `a *.pm with ${JSON.stringify(lines.at(-1))}`,
+        pm: `package Foo;\n${body}1;\n`,
+        message: new RegExp(`lib/Foo\\.pm line ${lines.length + 1} sets \\$VERSION in a form that cannot be checked`),
+      };
+    }),
+    {
+      name: 'a *.pm with "package NAME VERSION"',
+      pm: 'package Foo 1.2.4;\n1;\n',
+      message: /lib\/Foo\.pm line 1 gives the version as "package NAME VERSION"/,
+    },
+  ].map(({ name, pm, message }) => ({
+    name,
+    opts: { files: { '.tagpr': '[tagpr]\n\tversionFile = lib/Foo.pm\n', 'lib/Foo.pm': pm } },
+    message,
+    args: ['--changelog-only'],
+  })),
   {
     name: 'a missing Cargo.lock',
     opts: { cargo: { lock: null } },
@@ -371,6 +416,37 @@ test('prepare: checks every versionFile in .tagpr', () => {
     const booch = makeRepo({ pkg: false, lock: false, files: { '.tagpr': '[tagpr]\n\tversionFile = VERSION\n', VERSION: version } });
     prepareAndRead(booch, ['--changelog-only']);
   }
+  // Perl のモジュールと Minilla の META.json（coveralls-perl）。POD と __END__ の後は読まない
+  const pm = [
+    'package Devel::Cover::Report::Coveralls;',
+    'use strict;',
+    "our $VERSION = '1.2.4'; # the version",
+    'if ($VERSION == 1) {}',
+    '# our $VERSION = "0.1";',
+    'die "set $VERSION = 1" unless 1;',
+    'my %h = (version => $VERSION);',
+    '',
+    '=head1 SYNOPSIS',
+    '',
+    '    our $VERSION = "9.9.9";',
+    '',
+    '=cut',
+    '',
+    '1;',
+    '__END__',
+    '$VERSION = "0.0.1";',
+    '',
+  ].join('\r\n');
+  const perl = makeRepo({
+    pkg: false,
+    lock: false,
+    files: {
+      '.tagpr': '[tagpr]\n\tversionFile = lib/Devel/Cover/Report/Coveralls.pm,META.json\n',
+      'lib/Devel/Cover/Report/Coveralls.pm': pm,
+      'META.json': '{\n   "name" : "Devel-Cover-Report-Coveralls",\n   "version" : "1.2.4"\n}\n',
+    },
+  });
+  prepareAndRead(perl, ['--changelog-only']);
   // 版をタグだけで持つ repo（versionFile = -）は何も確かめない
   const go = makeRepo({ pkg: false, lock: false, files: { '.tagpr': '[tagpr]\n\tversionFile = -\n' } });
   prepareAndRead(go, ['--changelog-only']);
@@ -404,6 +480,112 @@ test('prepare: says where to run it when a file is missing', () => {
   const sub = join(makeRepo(), 'sub');
   mkdirSync(sub);
   assert.match(run(notes, sub, ['1.2.4']).stderr, /CHANGELOG\.md not found/);
+});
+
+// --- release-pending.mjs ---
+
+/** CHANGELOG.md だけを置いた repo で、標準入力を渡してスクリプトを走らせる。`changelog` が null なら置かない */
+function runWithInput(script, args, input, changelog) {
+  const dir = makeRepo({ changelog: changelog ?? '', pkg: false, lock: false });
+  if (changelog === null) rmSync(join(dir, 'CHANGELOG.md'));
+  return spawnSync(process.execPath, [script, ...args], { cwd: dir, env: gitEnv(), encoding: 'utf8', input });
+}
+
+/** タグの ref を標準入力に渡して走らせる */
+const pending = (changelog, refs) => runWithInput(pendingScript, [], refs.join('\n'), changelog);
+
+const TAGS = ['refs/tags/v1.2.2', 'refs/tags/v1.2.10', 'refs/tags/v1.2.3-rc.1', 'refs/tags/sdk/v9.0.0', 'refs/tags/latest'];
+const RELEASED = `${HEADER}## [Unreleased]\n\n## [1.2.10] - 2026-01-01\n\n- Old.\n\n[1.2.10]: https://github.com/o/r/releases/tag/v1.2.10\n`;
+
+for (const { name, changelog, refs, out, reason } of [
+  { name: 'Unreleased is empty and every section is tagged', changelog: RELEASED, refs: TAGS, out: 'false', reason: /no section is newer than the latest tag v1\.2\.10/ },
+  { name: 'there are no tags and no sections', changelog: `${HEADER}## [Unreleased]\n`, refs: [], out: 'false', reason: /latest tag v0\.0\.0: nothing to release/ },
+  {
+    // タグの無い repo（v の無いタグだけの repo も同じ）の、最初のリリース PR のマージの run
+    name: 'there are no v tags and a section is there',
+    changelog: RELEASED,
+    refs: ['refs/tags/1.2.10', 'refs/tags/0.31'],
+    out: 'true',
+    reason: /"## \[1\.2\.10\]", newer than the latest tag v0\.0\.0/,
+  },
+  {
+    name: 'several sections are newer than the latest tag',
+    changelog: RELEASED.replace('## [1.2.10]', '## [1.3.0]\n\n- New.\n\n## [1.2.11]'),
+    refs: TAGS,
+    out: 'true',
+    reason: /"## \[1\.2\.11\]", newer than/,
+  },
+  { name: 'Unreleased has entries', changelog: MINIMAL, refs: TAGS, out: 'true', reason: /has entries/ },
+  {
+    // リリース PR のマージの run。タグはまだ無い
+    name: 'a section is newer than the latest tag',
+    changelog: RELEASED.replace('## [1.2.10]', '## [1.2.11]'),
+    refs: TAGS,
+    out: 'true',
+    reason: /"## \[1\.2\.11\]", newer than the latest tag v1\.2\.10/,
+  },
+  { name: 'Unreleased is missing', changelog: `${HEADER}## [1.2.10]\n\n- Old.\n`, refs: TAGS, out: 'true', reason: /no "## \[Unreleased\]"/ },
+  { name: 'Unreleased is duplicated', changelog: `${HEADER}## [Unreleased]\n\n## [Unreleased]\n`, refs: TAGS, out: 'true', reason: /2 "## \[Unreleased\]" sections/ },
+]) {
+  test(`pending: prints ${out} when ${name}`, () => {
+    const r = pending(changelog, refs);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, `${out}\n`);
+    assert.match(r.stderr, reason);
+  });
+}
+
+test('pending: fails when CHANGELOG.md is missing', () => {
+  const r = pending(null, []);
+  assert.equal(r.status, 1);
+  assert.equal(r.stdout, '');
+});
+
+// --- missed-tags.mjs ---
+
+/** `missed-tags.mjs <mode>` を、CHANGELOG.md を置いた repo で走らせる */
+const missed = (mode, input, changelog = RELEASED) => runWithInput(missedScript, [mode], input, changelog);
+
+test('missed: untagged prints the sections newer than the latest tag, oldest first', () => {
+  const r = missed('untagged', TAGS.join('\n'), RELEASED.replace('## [1.2.10]', '## [1.3.0]\n\n- New.\n\n## [1.2.11]'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, '1.2.11\n1.3.0\n');
+});
+
+test('missed: untagged prints nothing when every section is tagged', () => {
+  const r = missed('untagged', TAGS.join('\n'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, '');
+});
+
+test('missed: untagged prints nothing when there are no version tags', () => {
+  // タグの無い repo の最初のマージは、打ち損ねと見分けられないので tagpr に任せる
+  const r = missed('untagged', 'refs/tags/1.2.10\nrefs/tags/v1.2.3-rc.1');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, '');
+});
+
+/** 終了コード 0 で、標準出力が `out` であることを確かめる */
+function assertPrints(r, out) {
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, out);
+}
+
+test('missed: latest prints the latest version tag without v', () => {
+  assertPrints(missed('latest', TAGS.join('\n')), '1.2.10\n');
+  assertPrints(missed('latest', 'refs/tags/latest'), '0.0.0\n');
+});
+
+test('missed: newest prints the newest version heading of the CHANGELOG on stdin', () => {
+  const text = `${HEADER}## [Unreleased]\n\n## [1.2.9]\n\n- A.\n\n## [1.2.11] - 2026-01-02\n\n- B.\n\n## [1.2.10]\n`;
+  assertPrints(missed('newest', text), '1.2.11\n');
+  assertPrints(missed('newest', `${HEADER}## [Unreleased]\n`), '');
+});
+
+test('missed: fails on an unknown mode', () => {
+  const r = missed('tag', '');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /usage: missed-tags\.mjs/);
 });
 
 // --- release-notes.mjs ---

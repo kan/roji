@@ -17,7 +17,9 @@ name: tagpr
 #   rather than calling release.yml from this run, keeps github.ref at
 #   refs/tags/vX.Y.Z, which the build provenance records and install.sh checks
 #   with --source-ref.
-# - workflow_dispatch rebuilds the release PR, e.g. after adding tagpr:minor.
+# - workflow_dispatch rebuilds the release PR. tagpr-label.yml starts it when a
+#   label (tagpr:minor, ...) is added to or removed from the release PR, so keep
+#   this file's name and the workflow_dispatch trigger.
 on:
   push:
     branches: [main]
@@ -72,7 +74,7 @@ jobs:
     # the pull request that runs git subtree pull (CLAUDE.md, "リリース PR
     # (tagpr)"). actions.lock does not pin reusable workflows from other
     # repositories, and Dependabot is kept off this line (dependabot.yml).
-    uses: kan/tagpr-scripts/.github/workflows/tagpr.yml@966347b01e86b2aea4d71da0604588b17642b880
+    uses: kan/tagpr-scripts/.github/workflows/tagpr.yml@231fe768bce55eb24fed1e10a4b27907ebf7a306
     # The most the shared workflow may use. List all four.
     permissions:
       contents: write       # Push the release branch and the tag

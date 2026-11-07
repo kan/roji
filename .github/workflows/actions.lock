@@ -40,6 +40,7 @@ workflows:
         - 'docker/setup-buildx-action@v4.4.1'
         - 'github/codeql-action@v4.39.3'
         - 'hadolint/hadolint-action@v3.5.0'
+    '.github/workflows/tagpr-label.yml': []
     '.github/workflows/tagpr.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-go@v7.0.0'

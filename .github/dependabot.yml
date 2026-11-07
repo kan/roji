@@ -33,7 +33,7 @@ updates:
       - "github-actions"
     open-pull-requests-limit: 5
     ignore:
-      # tagpr.yml が呼ぶ kan/tagpr-scripts の共通の workflow の SHA は、
+      # tagpr.yml と tagpr-label.yml が呼ぶ kan/tagpr-scripts の共通の workflow の SHA は、
       # scripts/tagpr/ の subtree と揃える。subtree pull と同じ PR でだけ上げ、
       # Dependabot には上げさせない（tagpr-scripts の README「The tagpr workflow」）
       - dependency-name: "kan/tagpr-scripts*"

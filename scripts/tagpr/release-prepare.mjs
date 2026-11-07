@@ -1,6 +1,6 @@
 /**
  * **リリース PR の中身を作る。** tagpr が `postVersionCommand`（`.tagpr`）として、
- * main からリリース PR を作り直すたびに走らせる。**repo のルートで実行する。**
+ * リリースのブランチ（main など）からリリース PR を作り直すたびに走らせる。**repo のルートで実行する。**
  *
  *     TAGPR_CURRENT_VERSION=vX.Y.Z TAGPR_NEXT_VERSION=vX.Y.Z node scripts/tagpr/release-prepare.mjs
  *     TAGPR_CURRENT_VERSION=vX.Y.Z TAGPR_NEXT_VERSION=vX.Y.Z node scripts/tagpr/release-prepare.mjs --changelog-only
