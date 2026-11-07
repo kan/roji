@@ -372,8 +372,9 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
     手元の `gh actions-lock` と同じ版に手で上げる
   - lockfile が固定しないものは 2 つある
     - 別の repo の reusable workflow の呼び出し（`jobs.<id>.uses: owner/repo/...`）。
-      commit の SHA で書く。今あるのは `tagpr.yml` が kan/tagpr-scripts の共通の
-      workflow を呼ぶ行だけで、SHA は subtree と揃える（「リリース PR（tagpr）」）。
+      commit の SHA で書く。今あるのは `tagpr.yml` と `tagpr-label.yml` が
+      kan/tagpr-scripts の共通の workflow を呼ぶ 2 行だけで、SHA は subtree と揃える
+      （「リリース PR（tagpr）」）。
       その中の action（tagpr など）は tagpr-scripts の `actions.lock` が固定する。
       **dependabot にはこの行を上げさせない**（`dependabot.yml` の `ignore`）。SHA だけが
       上がると、subtree の写しと実際に動く workflow が食い違う。ignore を外さないこと
@@ -631,7 +632,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   squash すると、次の `git subtree pull` が前回の取り込みを見つけられず壊れる
 - 次の版を minor にするには、その PR に `enhancement` ラベルを付ける
   （`.tagpr` の `minorLabels`）。付け忘れたら、リリース PR に `tagpr:minor` を
-  付けて作り直す（「リリース手順」）
+  付ける（「リリース手順」）
 
 どちらのスキルも Claude が自分で実行する（ユーザーに実行を頼まない）。
 
@@ -676,21 +677,23 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
      `scripts/release-prepare.sh` の出力を読む。多いのは `## [Unreleased]` が
      空のとき。CHANGELOG を書く PR を main にマージすると作り直される
    - **版（PR のタイトル）が正しいこと。** 既定は patch。minor にするときは
-     リリース PR にラベルを付けて作り直す。前回のリリース以降にマージした PR が
+     リリース PR にラベルを付ける。前回のリリース以降にマージした PR が
      `enhancement` ラベルを持っていれば、tagpr は minor を提案する（`.tagpr` の
      `minorLabels`）
 
      ```bash
      gh pr edit <番号> --add-label tagpr:minor
-     gh workflow run tagpr.yml --ref main
      ```
+
+     ラベルを付け外しすると、`tagpr-label.yml` がリリース PR を draft にして作り直させる。
+     `gh workflow run tagpr.yml` は重ねない
 
    - Files changed が `CHANGELOG.md`（見出しとリンク定義）と `CREDITS` だけで
      あること
    - **PR のタイトルの版と CHANGELOG の見出しの版が一致していること。** タグの版は
      マージの時点のラベルで決まり、見出しは最後に作り直した時点の版のまま。
-     ラベルを付け外ししたら、作り直してからマージする。食い違ったままマージすると、
-     タグは打たれるが `release.yml` が節を見つけられずに止まる
+     ラベルを付け外ししたら、作り直しの run が成功して ready に戻ってからマージする。
+     食い違ったままマージすると、タグは打たれるが `release.yml` が節を見つけられずに止まる
    - リリース PR の CI は承認待ち（`action_required`）で止まることがある
      （GITHUB_TOKEN が作った PR のため）。そのときは今の head の run を承認する
      （`gh api -X POST repos/kan/roji/actions/runs/<id>/approve`）
@@ -731,15 +734,17 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
    マージの push で走る tagpr の run がマージコミットにタグを打ち（annotated に
    打ち直す）、同じ run が `release.yml` をそのタグで起動する。**タグが打たれるまで main へ
    ほかの PR をマージしない。** tagpr の run は前の run が終わるまで待ち、待っている run は
-   新しい push の run に置き換えられる（cancelled になる）。置き換えられたら、
-   マージコミットの run を `gh run rerun <run-id>` で再実行するとタグが打たれる。
-   置き換えた側の run は「already has `## [X.Y.Z]`」で赤になり、版だけ上がった
-   リリース PR が draft で残ることがある。**その PR はマージしない。** 閉じられるまでの
+   新しい push の run に置き換えられる（cancelled になる）。置き換えられたら、次の run が
+   マージコミットの run を再実行してタグを打たせる。それでもタグが打たれず、run が
+   「already has `## [X.Y.Z]`」で赤になったときだけ、マージコミットの run を
+   `gh run rerun <run-id>` で手で再実行する。そのとき版だけ上がったリリース PR が
+   draft で残ることがある。**その PR はマージしない。** 閉じられるまでの
    動きは `scripts/tagpr/README.md` の「The tagpr workflow」。
 
-   リリースの直後は `## [Unreleased]` が空なので、次に CHANGELOG を書くまで
-   main への push ごとに tagpr の run が失敗する。これは想定どおりで、その間の
-   リリース PR はマージしない。
+   リリースの直後は `## [Unreleased]` が空なので、次に CHANGELOG を書くまで、main への
+   push の run は tagpr を走らせずに成功で終える（「tagpr is not run」の notice が出る）。
+   `gh workflow run` で起動した run は tagpr を走らせるので赤になる。その間のリリース PR は
+   マージしない。
 
 4. **確認**
    - GitHub Actions → GitHub Release → Docker Image
@@ -816,6 +821,10 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   扱いは `scripts/tagpr/README.md` の「The tagpr workflow」にある。**この文書へ
   写さないこと。** tagpr の版が変わるたびに写しがずれる。ここに書くのは roji に
   固有のことだけ
+- **`tagpr-label.yml` は、リリース PR のラベルの付け外しで共通の `tagpr-label.yml` を呼ぶ
+  だけ。** 呼ばれた側が `tagpr.yml` を `workflow_dispatch` で起動し直すので、`tagpr.yml` の
+  名前と `workflow_dispatch:` を変えないこと。権限は `actions: write` と
+  `pull-requests: write` の 2 つ
 - **版はタグだけで持つ**（`versionFile = -`）。バイナリの版は ldflags で
   埋めるので、版を書いたファイルが無い。次の版はリリース PR のラベル
   （`tagpr:minor` / `tagpr:major`、無ければ patch）で決まる
@@ -825,9 +834,9 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   `git subtree pull -S --prefix=scripts/tagpr https://github.com/kan/tagpr-scripts.git main --squash`
   で取り込む。`-S` を付ける（subtree のコミットには `commit.gpgsign` が効かない）。
   その PR はマージコミットで入れる（「ブランチと PR」）。取り込みは CHANGELOG に
-  書かない。**同じ PR で、`tagpr.yml` の呼ぶ行（`uses: kan/tagpr-scripts/...@<SHA>`）の
-  SHA を上げる。** 上げ先は取り込んだ tagpr-scripts の commit で、squash のコミットの
-  メッセージにある `git-subtree-split` の SHA。roji の squash やマージのコミットの
+  書かない。**同じ PR で、`tagpr.yml` と `tagpr-label.yml` の呼ぶ行
+  （`uses: kan/tagpr-scripts/...@<SHA>`）の SHA を両方とも上げる。** 上げ先は取り込んだ
+  tagpr-scripts の commit で、squash のコミットのメッセージにある `git-subtree-split` の SHA。roji の squash やマージのコミットの
   SHA ではない。PR の CI（`ci.yml` の `lint` ジョブ）が
   `node scripts/tagpr/verify-subtree.mjs` で、`scripts/tagpr/` と呼ぶ行の SHA が
   揃っているかを確かめる
@@ -838,8 +847,9 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   `release-prepare.mjs` は `## [Unreleased]` を `## [X.Y.Z] - 日付` にし、その上に
   空の `## [Unreleased]` を置き直し、末尾にリンク定義を足す。失敗するのは
   `## [Unreleased]` が無いか空のときと、最新のタグより新しい版の節がすでにある
-  とき（リリース PR をマージしたのにタグが打たれていない。「リリース PR を
-  マージする」の手順でマージコミットの run を再実行する）。失敗しても tagpr は
+  とき（リリース PR をマージしたのにタグが打たれていない。取り消されたマージの run は
+  次の run が再実行するので、これで落ちるのはそれができなかったときだけ。「リリース PR を
+  マージする」の手順でマージコミットの run を手で再実行する）。失敗しても tagpr は
   リリース PR を作る。その PR は共通の workflow が draft にするが、run が赤なら
   マージしない
 - **`CREDITS` は書き込みの権限の無いジョブ（`credits`）で生成し、artifact
