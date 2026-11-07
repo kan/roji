@@ -320,7 +320,7 @@ for (const { name, opts, message, args, next, current, repository } of [
   },
   {
     name: 'a VERSION with a BOM',
-    opts: { files: { '.tagpr': '[tagpr]\n\tversionFile = VERSION\n', VERSION: '﻿1.2.4\n' } },
+    opts: { files: { '.tagpr': '[tagpr]\n\tversionFile = VERSION\n', VERSION: `${String.fromCharCode(0xfeff)}1.2.4\n` } },
     message: /VERSION starts with a BOM/,
   },
   {
