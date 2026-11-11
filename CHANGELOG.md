@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- Built with Go 1.27.4. Its security fixes do not affect roji: most are in
+  cgo and the go command at build time (roji is built with `CGO_ENABLED=0`),
+  and the `net/http` one (CVE-2026-97054) needs a handler that reads a
+  `MaxBytesReader` body while writing response headers, which roji's handlers
+  do not do. v1.5.2 was built with Go 1.27.3.
+
 ## [1.5.2] - 2026-11-03
 
 ### Internal
