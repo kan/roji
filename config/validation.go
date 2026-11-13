@@ -157,6 +157,7 @@ var validTunnelKeys = map[string]string{
 	"name":       "string",
 	"port":       "int",
 	"auto_start": "bool",
+	"routes":     "array",
 }
 
 // validateTunnel validates the tunnel configuration
@@ -165,6 +166,18 @@ func validateTunnel(tunnel map[string]any, result *ValidationResult) {
 
 	// Both names are required: see Tunnel.Enabled.
 	requireKeys(tunnel, []string{"domain", "name"}, "tunnel", result)
+
+	if routes, ok := tunnel["routes"].([]any); ok {
+		for i, route := range routes {
+			if name, ok := route.(string); !ok || strings.TrimSpace(name) == "" {
+				result.Issues = append(result.Issues, ValidationIssue{
+					Path:    fmt.Sprintf("tunnel.routes[%d]", i),
+					Type:    "invalid_type",
+					Message: fmt.Sprintf("expected a hostname, got %v", route),
+				})
+			}
+		}
+	}
 
 	// A two-level domain needs Cloudflare's paid certificate manager, since
 	// Universal SSL covers one level of wildcard. Nothing here can tell a

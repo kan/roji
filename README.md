@@ -157,14 +157,25 @@ tunnel:                                # Public access via Cloudflare Tunnel
   name: roji                           # Named tunnel to run
 ```
 
-Routes stay private until a container opts in with `roji.tunnel=true`, or a
-site in the config file with `tunnel: true`. The
-dashboard and its API are never published. See the
+Routes stay private until a container opts in with `roji.tunnel=true`, a
+site in the config file with `tunnel: true`, or `tunnel.routes` lists the
+hostname. The dashboard and its API are never published. See the
 [Public Access guide](https://roji-proxy.dev/docs/guides/tunnel/).
 
-Manage with `roji config show | path | init | edit`.
+Settings that differ between machines go in `local.yaml` next to
+`config.yaml`, which is read on top of it. A `config.yaml` shared through
+dotfiles can then stay the same everywhere:
 
-Settings priority: **CLI flags** > **Environment variables** > **Config file** > **Defaults**
+```yaml
+# ~/.config/roji/local.yaml (this machine only)
+tunnel:
+  name: auto          # roji-<hostname>; or write the tunnel's name
+  routes: [web]       # publish web.{domain} from this machine
+```
+
+Manage with `roji config show | path | init | edit | reload`.
+
+Settings priority: **CLI flags** > **Environment variables** > **`local.yaml`** > **Config file** > **Defaults**
 
 For full details on environment variables, Docker labels, static sites, and authentication, see the [Configuration guide](https://roji-proxy.dev/docs/guides/configuration/).
 

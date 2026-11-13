@@ -1,9 +1,12 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -749,5 +752,318 @@ func TestLoadWithoutTunnel(t *testing.T) {
 	}
 	if settings.Tunnel.Enabled() {
 		t.Error("a nil tunnel must not report itself enabled")
+	}
+}
+
+// writeConfigFiles writes the config file and, unless local is empty, the
+// per-machine file next to it, and returns the config file's path.
+func writeConfigFiles(t *testing.T, shared, local string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if shared != "" {
+		if err := os.WriteFile(path, []byte(shared), 0644); err != nil {
+			t.Fatalf("failed to write config: %v", err)
+		}
+	}
+	if local != "" {
+		if err := os.WriteFile(filepath.Join(dir, LocalFileName), []byte(local), 0644); err != nil {
+			t.Fatalf("failed to write local config: %v", err)
+		}
+	}
+	return path
+}
+
+func TestLoadMergesLocalFile(t *testing.T) {
+	path := writeConfigFiles(t, `domain: dev.localhost
+http_port: 8080
+tunnel:
+  domain: example.com
+  name: shared
+  auto_start: true
+static_sites:
+  - host: docs
+    root: /srv/docs
+  - host: blog
+    root: /srv/blog
+`, `tunnel:
+  name: this-machine
+  routes: [web]
+static_sites:
+  - host: notes
+    root: /srv/notes
+http_port: null
+`)
+
+	settings, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Mappings merge key by key: the local file names the tunnel and the
+	// shared one still supplies the rest of it.
+	tun := settings.Tunnel
+	if tun == nil || tun.Domain != "example.com" || tun.Name != "this-machine" || !tun.AutoStart {
+		t.Errorf("tunnel = %+v, want the shared domain and auto_start with the local name", tun)
+	}
+	if !slices.Equal(tun.Routes, []string{"web"}) {
+		t.Errorf("tunnel.routes = %v, want [web]", tun.Routes)
+	}
+
+	// A list is replaced whole.
+	if len(settings.StaticSites) != 1 || settings.StaticSites[0].Host != "notes" {
+		t.Errorf("static_sites = %+v, want only the local file's", settings.StaticSites)
+	}
+
+	// null removes a key, which leaves the default.
+	if settings.HTTPPort != 80 {
+		t.Errorf("http_port = %d, want the default 80 after the local file cleared it", settings.HTTPPort)
+	}
+
+	// Values keep the text they were written as. Merging used to go through
+	// map[string]any, which read `pass: 0123` as the number 123.
+	path = writeConfigFiles(t, `static_sites:
+  - host: docs
+    root: /srv/docs
+    auth:
+      basic:
+        user: admin
+        pass: 0123
+`, `tunnel:
+  domain: example.com
+  name: 1.10
+`)
+	settings, err = Load(path, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := settings.StaticSites[0].GetBasicAuth().Pass; got != "0123" {
+		t.Errorf("pass = %q, want 0123 as written", got)
+	}
+	if got := settings.Tunnel.Name; got != "1.10" {
+		t.Errorf("tunnel.name = %q, want 1.10 as written", got)
+	}
+
+	// A mapping only the local file has loses its nulls as well.
+	path = writeConfigFiles(t, "domain: dev.localhost\n", "tunnel:\n  domain: example.com\n  name: roji\n  port: null\n")
+	settings, err = Load(path, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if settings.Tunnel.ListenPort() != DefaultTunnelPort {
+		t.Errorf("tunnel port = %d, want the default", settings.Tunnel.ListenPort())
+	}
+
+	// A machine that should not run the shared tunnel turns it off.
+	path = writeConfigFiles(t, "tunnel:\n  domain: example.com\n  name: shared\n", "tunnel: null\n")
+	settings, err = Load(path, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if settings.Tunnel.Enabled() {
+		t.Errorf("tunnel = %+v, want none after the local file cleared it", settings.Tunnel)
+	}
+}
+
+func TestReadConfigFiles(t *testing.T) {
+	t.Run("only the local file", func(t *testing.T) {
+		path := writeConfigFiles(t, "", "domain: local.localhost\n")
+		_, files, err := ReadConfigFiles(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Equal(files, []string{LocalFilePath(path)}) {
+			t.Errorf("files = %v, want the local file alone", files)
+		}
+
+		settings, err := Load(path, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if settings.Domain != "local.localhost" {
+			t.Errorf("domain = %q, want the local file's", settings.Domain)
+		}
+	})
+
+	t.Run("neither file", func(t *testing.T) {
+		path := writeConfigFiles(t, "", "")
+		if _, _, err := ReadConfigFiles(path); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("err = %v, want fs.ErrNotExist", err)
+		}
+	})
+
+	t.Run("empty files", func(t *testing.T) {
+		path := writeConfigFiles(t, "# nothing yet\n", "~\n")
+		if _, files, err := ReadConfigFiles(path); err != nil || len(files) != 2 {
+			t.Errorf("files = %v, err = %v, want both read without error", files, err)
+		}
+	})
+
+	t.Run("a top level that is not a mapping", func(t *testing.T) {
+		path := writeConfigFiles(t, "domain: dev.localhost\n", "- a\n- b\n")
+		if _, _, err := ReadConfigFiles(path); err == nil || !strings.Contains(err.Error(), LocalFilePath(path)) {
+			t.Errorf("err = %v, want one naming %s", err, LocalFilePath(path))
+		}
+	})
+
+	t.Run("bad YAML names the file", func(t *testing.T) {
+		path := writeConfigFiles(t, "domain: dev.localhost\n", "tunnel: [\n")
+		_, _, err := ReadConfigFiles(path)
+		if err == nil || !strings.Contains(err.Error(), LocalFilePath(path)) {
+			t.Errorf("err = %v, want one naming %s", err, LocalFilePath(path))
+		}
+		if _, err := Load(path, nil); err == nil {
+			t.Error("Load accepted a local file that is not YAML")
+		}
+	})
+}
+
+func TestLocalFilePath(t *testing.T) {
+	// Next to the path as given: a config.yaml linked in from elsewhere still
+	// pairs with the local file in the directory holding the link.
+	dir := filepath.Join("home", "u", ".config", "roji")
+	tests := []struct{ config, local string }{
+		{"config.yaml", "local.yaml"},
+		// Any other name pairs with a file named after it, so a config file
+		// passed with --config does not pick up a local.yaml that belongs to
+		// something else in the same directory.
+		{"roji.yaml", "roji.local.yaml"},
+		{"roji.yml", "roji.local.yml"},
+		{"local.yaml", "local.local.yaml"},
+		{"rojirc", "rojirc.local"},
+	}
+	for _, tt := range tests {
+		if got := LocalFilePath(filepath.Join(dir, tt.config)); got != filepath.Join(dir, tt.local) {
+			t.Errorf("LocalFilePath(%s) = %q, want %s", tt.config, got, tt.local)
+		}
+	}
+}
+
+func TestLoadIgnoresUnrelatedLocalFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "roji.yaml")
+	if err := os.WriteFile(path, []byte("domain: dev.localhost\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Not roji's: not even YAML.
+	if err := os.WriteFile(filepath.Join(dir, LocalFileName), []byte("[[\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "roji.local.yaml"), []byte("domain: here.localhost\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if settings.Domain != "here.localhost" {
+		t.Errorf("domain = %q, want roji.local.yaml's", settings.Domain)
+	}
+}
+
+func TestAutoTunnelName(t *testing.T) {
+	tests := []struct {
+		hostname string
+		want     string
+	}{
+		{"devbox", "roji-devbox"},
+		{"DevBox", "roji-devbox"},
+		{"devbox.example.com", "roji-devbox"},
+		{"Kan's MacBook", "roji-kan-s-macbook"},
+		{"my_host", "roji-my-host"},
+		{"-x-", "roji-x"},
+		// Nothing usable gives no name rather than one shared by every
+		// such machine.
+		{"", ""},
+		{"___", ""},
+		{"開発機", ""},
+	}
+	for _, tt := range tests {
+		if got := AutoTunnelName(tt.hostname); got != tt.want {
+			t.Errorf("AutoTunnelName(%q) = %q, want %q", tt.hostname, got, tt.want)
+		}
+	}
+}
+
+func TestTunnelResolveAutoName(t *testing.T) {
+	hostname := func(name string, err error) func() (string, error) {
+		return func() (string, error) { return name, err }
+	}
+
+	tun := &Tunnel{Domain: "example.com", Name: TunnelNameAuto}
+	tun.resolveAutoName(hostname("devbox.local", nil))
+	if tun.Name != "roji-devbox" || !tun.AutoName {
+		t.Errorf("tunnel = %+v, want roji-devbox marked as derived", tun)
+	}
+
+	// A name written out is left alone.
+	tun = &Tunnel{Domain: "example.com", Name: "roji"}
+	tun.resolveAutoName(hostname("devbox", nil))
+	if tun.Name != "roji" || tun.AutoName {
+		t.Errorf("tunnel = %+v, want the written name untouched", tun)
+	}
+
+	// Without a usable hostname the tunnel stays off, and says why.
+	for _, host := range []func() (string, error){
+		hostname("", errors.New("no hostname")),
+		hostname("開発機", nil),
+	} {
+		tun = &Tunnel{Domain: "example.com", Name: TunnelNameAuto}
+		tun.resolveAutoName(host)
+		if tun.Enabled() || !tun.AutoNameFailed() {
+			t.Errorf("tunnel = %+v, want it disabled with AutoNameFailed", tun)
+		}
+	}
+	if (&Tunnel{Name: "roji"}).AutoNameFailed() {
+		t.Error("a written name reported AutoNameFailed")
+	}
+
+	var none *Tunnel
+	none.resolveAutoName(hostname("devbox", nil)) // must not panic
+}
+
+func TestLoadAutoTunnelName(t *testing.T) {
+	path := writeConfigFiles(t, "tunnel:\n  domain: example.com\n  name: auto\n", "")
+	settings, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	host, err := os.Hostname()
+	if err != nil {
+		t.Skipf("no hostname: %v", err)
+	}
+	if want := AutoTunnelName(host); settings.Tunnel.Name != want || !settings.Tunnel.AutoName {
+		t.Errorf("tunnel = %+v, want name %q", settings.Tunnel, want)
+	}
+}
+
+func TestTunnelResolveRoutes(t *testing.T) {
+	tun := &Tunnel{Routes: []string{"Web", " api.dev.localhost ", "", "other.example.com", "roji"}}
+	sites := tun.ResolveRoutes("dev.localhost", "roji.dev.localhost")
+
+	var hosts []string
+	for _, site := range sites {
+		hosts = append(hosts, site.Hostname)
+	}
+	want := []string{"web.dev.localhost", "api.dev.localhost", "other.example.com", "roji.dev.localhost"}
+	if !slices.Equal(hosts, want) {
+		t.Fatalf("hostnames = %v, want %v", hosts, want)
+	}
+
+	// The rules a declared site's name is held to apply here too.
+	if sites[0].Err != nil || sites[0].Unpublishable {
+		t.Errorf("web = %+v, want a publishable name", sites[0])
+	}
+	if !sites[2].Unpublishable {
+		t.Errorf("other.example.com = %+v, want it unpublishable", sites[2])
+	}
+	if !errors.Is(sites[3].Err, ErrSiteReservedHost) {
+		t.Errorf("roji = %+v, want the dashboard's name refused", sites[3])
+	}
+
+	var none *Tunnel
+	if got := none.ResolveRoutes("dev.localhost", "roji.dev.localhost"); got != nil {
+		t.Errorf("a nil tunnel returned %v", got)
 	}
 }

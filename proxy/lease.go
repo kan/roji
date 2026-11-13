@@ -59,7 +59,7 @@ func (r *Router) liveLease(hostname string) *lease {
 // config file declares or a live lease, else nil. The caller holds r.mu.
 //
 // At most one of the two exists. Lease refuses a hostname the config file
-// declares, and ReplaceDeclared drops the lease on one it starts declaring.
+// declares, and ReplaceConfigured drops the lease on one it starts declaring.
 func (r *Router) declaredOn(hostname string) *Route {
 	if route, ok := r.declaredRoutes[hostname]; ok {
 		return route

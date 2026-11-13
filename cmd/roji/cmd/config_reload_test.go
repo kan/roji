@@ -133,7 +133,7 @@ func TestConfigReload_ReportsEverySite(t *testing.T) {
 		// The file is roji's, which may not be the one that was edited.
 		"roji read: /etc/roji.yaml",
 		// What a reload does not apply, which the command's name hides.
-		"Only static_sites and proxy_sites are reloaded",
+		"Only static_sites, proxy_sites and tunnel.routes are reloaded",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output does not contain %q:\n%s", want, out)
@@ -224,7 +224,7 @@ func TestConfigReload_OlderServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runConfigReload() error = %v", err)
 	}
-	if !strings.Contains(out, "Config reloaded.") || !strings.Contains(out, "Only static_sites and proxy_sites") {
+	if !strings.Contains(out, "Config reloaded.") || !strings.Contains(out, "Only static_sites, proxy_sites and tunnel.routes") {
 		t.Errorf("output = %q, want the plain confirmation and the scope note", out)
 	}
 }

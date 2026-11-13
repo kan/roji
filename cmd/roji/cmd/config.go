@@ -51,7 +51,12 @@ var configPathCmd = &cobra.Command{
 	Long:  `Show the paths where roji looks for configuration files and stores data.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		paths := config.DefaultPaths()
-		fmt.Println(i18n.Tf("cmd.config.path.config_file", config.ConfigFilePath()))
+		path := configFile
+		if path == "" {
+			path = config.ConfigFilePath()
+		}
+		fmt.Println(i18n.Tf("cmd.config.path.config_file", path))
+		fmt.Println(i18n.Tf("cmd.config.path.local_file", config.LocalFilePath(path)))
 		fmt.Println(i18n.Tf("cmd.config.path.config_dir", paths.ConfigDir))
 		fmt.Println(i18n.Tf("cmd.config.path.data_dir", paths.DataDir))
 		fmt.Println(i18n.Tf("cmd.config.path.certs_dir", paths.CertsDir))
@@ -132,8 +137,9 @@ var configReloadCmd = &cobra.Command{
 	Short: "Apply config file changes to the running roji",
 	Long: `Ask the running roji to read the config file again.
 
-Only static_sites and proxy_sites take effect this way. Changes to anything
-else, such as domain, bind or tunnel, need roji to be restarted.`,
+Only static_sites, proxy_sites and tunnel.routes take effect this way.
+Changes to anything else, such as domain, bind or the rest of tunnel, need
+roji to be restarted.`,
 	Args: cobra.NoArgs,
 	RunE: runConfigReload,
 }

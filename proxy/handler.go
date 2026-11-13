@@ -431,7 +431,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// looked. A container stopping or a config reload in between can leave a
 	// different route here, one that never opted in, so ask again of the route
 	// that is about to answer.
-	if isTunneled(r) && !route.Published() {
+	if isTunneled(r) && !h.router.Published(route) {
 		bareNotFound(w)
 		return
 	}

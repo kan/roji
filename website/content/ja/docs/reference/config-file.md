@@ -14,6 +14,11 @@ toc: true
 - デフォルト: `~/.config/roji/config.yaml`
 - XDG Base Directory仕様に準拠
 - `--config` フラグで上書き、`roji config path` で確認可能
+- 同じディレクトリに `local.yaml` があれば、その上に重ねて読む。`config.yaml` を
+  複数の機械で共有するときに、機械ごとに違う値を書く場所。マップはキーごとに重なり、
+  リストは `config.yaml` のものを丸ごと置き換え、`null` はキーを消す。
+  バリデーションは 2 つを重ねた結果に対して行う。設定ファイルが別の名前なら、
+  その名前から決まるファイルを読む（`roji.yaml` なら `roji.local.yaml`）
 
 ## 全リファレンス
 
@@ -81,9 +86,12 @@ proxy_sites:
 # 外部公開（省略可。domain と name が揃ったときだけ有効）
 tunnel:
   domain: example.com   # Cloudflare 上のゾーン。1階層に収める
-  name: roji            # cloudflared tunnel create で作った named tunnel
+  name: roji            # cloudflared tunnel create で作った named tunnel。
+                        # auto なら roji-<ホスト名>
   port: 8080            # トンネル専用リスナー（127.0.0.1 固定）
   auto_start: false     # roji が cloudflared を起動するか
+  routes: []            # ラベルや tunnel: true が無くても公開するホスト名
+                        # （web は web.{domain}）。roji config reload で反映される
 ```
 
 `static_sites`、`proxy_sites`、`tunnel` は設定ファイル専用で、対応する環境変数は無い。
@@ -97,6 +105,7 @@ roji config init     # デフォルト設定ファイルを作成
 roji config show     # 現在の有効な設定を表示
 roji config path     # 設定ファイルの場所を表示
 roji config edit     # $EDITORで開く
+roji config reload   # static_sites、proxy_sites、tunnel.routes を稼働中の roji に反映
 ```
 
 ## バリデーション

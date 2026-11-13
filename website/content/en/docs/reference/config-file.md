@@ -13,6 +13,12 @@ toc: true
 - Default: `~/.config/roji/config.yaml`
 - Follows the XDG Base Directory specification
 - Override with `--config` flag or check with `roji config path`
+- `local.yaml` in the same directory, if present, is read on top of it. Use it
+  for what differs between machines when `config.yaml` is shared. Mappings
+  merge key by key, a list replaces the one in `config.yaml`, and `null`
+  removes a key. Validation checks the two files merged. A config file with
+  another name pairs with one named after it (`roji.yaml` with
+  `roji.local.yaml`)
 
 ## Full Reference
 
@@ -80,9 +86,12 @@ proxy_sites:
 # Public access (optional; on only when both domain and name are set)
 tunnel:
   domain: example.com   # a zone on your Cloudflare account; keep it one level
-  name: roji            # the named tunnel from `cloudflared tunnel create`
+  name: roji            # the named tunnel from `cloudflared tunnel create`;
+                        # `auto` for roji-<hostname>
   port: 8080            # the tunnel's own listener (always on 127.0.0.1)
   auto_start: false     # whether roji starts cloudflared for you
+  routes: []            # hostnames to publish without a label or `tunnel: true`
+                        # (`web` means web.{domain}); applied by `roji config reload`
 ```
 
 `static_sites`, `proxy_sites` and `tunnel` are config-file only; none has an
@@ -98,6 +107,7 @@ roji config init     # Create default config file
 roji config show     # Display current effective settings
 roji config path     # Show config file location
 roji config edit     # Open in $EDITOR
+roji config reload   # Apply static_sites, proxy_sites and tunnel.routes to the running roji
 ```
 
 ## Validation

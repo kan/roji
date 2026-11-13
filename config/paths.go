@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 const (
@@ -78,6 +79,29 @@ func CertsDir() string {
 // ConfigFilePath returns the path to the configuration file
 func ConfigFilePath() string {
 	return filepath.Join(ConfigDir(), "config.yaml")
+}
+
+// LocalFileName is the name of the per-machine file read on top of the default
+// config file, config.yaml. See LocalFilePath.
+const LocalFileName = "local.yaml"
+
+// LocalFilePath returns the per-machine file that goes with configPath, in the
+// same directory: local.yaml for a file named config.yaml, and
+// <stem>.local<ext> for any other name (roji.yaml pairs with roji.local.yaml).
+//
+// The name follows the config file's so that `--config /etc/roji.yaml` does not
+// pick up an /etc/local.yaml that belongs to something else.
+//
+// The directory is taken from the path as given, without following symlinks.
+// A config.yaml linked in from a dotfiles repository is shared between
+// machines; the local file next to the link is the one place that is not.
+func LocalFilePath(configPath string) string {
+	dir, name := filepath.Split(configPath)
+	if name == "config.yaml" {
+		return filepath.Join(dir, LocalFileName)
+	}
+	ext := filepath.Ext(name)
+	return filepath.Join(dir, strings.TrimSuffix(name, ext)+".local"+ext)
 }
 
 // LogFilePath returns the path to the log file

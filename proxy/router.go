@@ -69,10 +69,10 @@ func (route *Route) Kind() string {
 	}
 }
 
-// Published reports whether the route opted in to the tunnel: a Docker route
-// with the roji.tunnel label, a declared one with its `tunnel` key. There is no
-// other way in, so this is the one question the tunnel guard asks of a route.
-func (route *Route) Published() bool {
+// optedIn reports whether the route itself asks for the tunnel: a Docker route
+// with the roji.tunnel label, a declared one with its `tunnel` key. It is half
+// of Router.Published, which is the question to ask.
+func (route *Route) optedIn() bool {
 	switch {
 	case route.StaticBackend != nil:
 		return route.StaticBackend.Tunnel
@@ -134,6 +134,10 @@ type Router struct {
 	// tunnel is configured, in which case ListRoutes reports no URLs.
 	tunnelDomains TunnelDomains
 
+	// Hostnames tunnel.routes in the config file publishes, whatever the
+	// routes on them say. See Published.
+	tunnelRoutes map[string]bool // key: hostname (lowercase)
+
 	// Pub/Sub for SSE subscribers
 	subMu       sync.RWMutex
 	subscribers map[*Subscriber]struct{}
@@ -159,10 +163,49 @@ func (r *Router) SetTunnelDomains(domains TunnelDomains) {
 	r.tunnelDomains = domains
 }
 
+// Published reports whether the route may be reached through the tunnel. It is
+// the one question the tunnel guard asks of a route, and the only way in: the
+// route opts in itself (a label, or `tunnel` on a declared site), or
+// tunnel.routes names its hostname and the route is of a kind it covers
+// (coveredByTunnelRoutes).
+func (r *Router) Published(route *Route) bool {
+	// Most published routes opted in themselves, which needs no lock.
+	if route.optedIn() {
+		return true
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.published(route)
+}
+
+// published is Published for a caller that holds r.mu.
+func (r *Router) published(route *Route) bool {
+	return route.optedIn() || (coveredByTunnelRoutes(route) && r.tunnelRoutes[route.Hostname])
+}
+
+// coveredByTunnelRoutes reports whether tunnel.routes can publish the route:
+// a Docker route or a site the config file declares, named here rather than
+// as "anything but a lease" so a new kind of route stays private until it is
+// added.
+//
+// A route `roji run` leased is not covered. The lease API takes no
+// credentials, and a hostname the file lists but nothing serves yet would
+// otherwise be one any local process could claim and have published.
+func coveredByTunnelRoutes(route *Route) bool {
+	switch {
+	case route.Backend != nil, route.StaticBackend != nil:
+		return true
+	case route.LocalBackend != nil:
+		return !route.LocalBackend.Temporary
+	default:
+		return false
+	}
+}
+
 // tunnelURL returns the address a published route answers to from the internet,
 // or an empty string for a route that is not published. The caller holds r.mu.
 func (r *Router) tunnelURL(route *Route) string {
-	if !route.Published() {
+	if !r.published(route) {
 		return ""
 	}
 	public, ok := r.tunnelDomains.ToPublic(route.Hostname)
@@ -410,18 +453,26 @@ func (r *Router) setDeclared(route *Route) {
 		"target", declaredTarget(route))
 }
 
-// ReplaceDeclared swaps the whole set of declared routes — those with a
-// StaticBackend or a LocalBackend — for routes. It is the only way in: startup
-// registers what the config file says and a reload registers what it says now.
-// A declared route is keyed by hostname alone, so a PathPrefix on one is
-// ignored.
+// ReplaceConfigured swaps in what the config file says: the whole set of
+// declared routes — those with a StaticBackend or a LocalBackend — for routes,
+// and the hostnames tunnel.routes publishes for tunnelRoutes. It is the only
+// way in: startup registers what the config file says and a reload registers
+// what it says now. A declared route is keyed by hostname alone, so a
+// PathPrefix on one is ignored.
 //
 // One step rather than a clear followed by adds: in the gap between the two, a
 // request for a declared hostname falls through to whatever Docker route the
-// declaration was hiding.
-func (r *Router) ReplaceDeclared(routes []*Route) {
+// declaration was hiding. The tunnel hostnames go in the same step for the
+// same reason, or a request in between would be judged by half of the old
+// file and half of the new one.
+func (r *Router) ReplaceConfigured(routes []*Route, tunnelRoutes []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	r.tunnelRoutes = make(map[string]bool, len(tunnelRoutes))
+	for _, hostname := range tunnelRoutes {
+		r.tunnelRoutes[strings.ToLower(hostname)] = true
+	}
 
 	r.declaredRoutes = make(map[string]*Route, len(routes))
 	for _, route := range routes {
@@ -437,7 +488,7 @@ func (r *Router) ReplaceDeclared(routes []*Route) {
 		}
 	}
 
-	// Notify SSE subscribers
+	// Notify SSE subscribers. The dashboard shows which routes are published.
 	go r.notifySubscribers()
 }
 

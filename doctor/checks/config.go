@@ -2,8 +2,9 @@ package checks
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"strings"
 
 	"github.com/kan/roji/config"
@@ -25,10 +26,12 @@ func (c *Config) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 		configPath = config.ConfigFilePath()
 	}
 
-	// Check if config file exists
-	data, err := os.ReadFile(configPath)
+	// Read the config file and the per-machine file next to it. They are
+	// validated merged, as roji reads them: tunnel.domain in one and
+	// tunnel.name in the other is a complete tunnel.
+	data, files, err := config.ReadConfigFiles(configPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return doctor.CheckResult{
 				Name:    c.Name(),
 				Status:  doctor.Pass,
@@ -48,12 +51,13 @@ func (c *Config) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 
 	// Run validation
 	result := config.ValidateConfigYAML(data)
+	read := strings.Join(files, ", ")
 
 	if !result.HasIssues() {
 		return doctor.CheckResult{
 			Name:    c.Name(),
 			Status:  doctor.Pass,
-			Message: i18n.Tf("doctor.check.config.valid", configPath),
+			Message: i18n.Tf("doctor.check.config.valid", read),
 			Fixable: false,
 		}
 	}
@@ -92,8 +96,9 @@ func (c *Config) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 		summaryParts = append(summaryParts, i18n.Tf("doctor.check.config.other_issues", otherCount))
 	}
 
-	// Build details with all issues
-	var details []string
+	// Build details with all issues. The paths are into the merged document,
+	// so say which files went into it.
+	details := []string{i18n.Tf("doctor.check.config.read_files", read)}
 	for _, issue := range result.Issues {
 		details = append(details, fmt.Sprintf("  - [%s] %s: %s", issue.Type, issue.Path, issue.Message))
 	}

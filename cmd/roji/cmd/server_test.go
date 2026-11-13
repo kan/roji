@@ -63,17 +63,17 @@ func TestDeclaredRoutes(t *testing.T) {
 	}
 
 	docs := got["docs.dev.localhost"]
-	if docs == nil || docs.Kind() != proxy.KindStatic || docs.StaticBackend.Root != root || !docs.Published() {
+	if docs == nil || docs.Kind() != proxy.KindStatic || docs.StaticBackend.Root != root || !docs.StaticBackend.Tunnel {
 		t.Errorf("docs = %+v", docs)
 	}
 
 	api := got["api.dev.localhost"]
-	if api == nil || api.Kind() != proxy.KindLocal || api.LocalBackend.Target.Host != "127.0.0.1:8787" || !api.Published() {
+	if api == nil || api.Kind() != proxy.KindLocal || api.LocalBackend.Target.Host != "127.0.0.1:8787" || !api.LocalBackend.Tunnel {
 		t.Errorf("api = %+v", api)
 	}
 
 	// A hostname with a dot is taken as written, and the tunnel is opt-in.
-	if app := got["app.example.com"]; app == nil || app.Published() {
+	if app := got["app.example.com"]; app == nil || app.LocalBackend.Tunnel {
 		t.Errorf("app.example.com = %+v, want a route that is not published", app)
 	}
 

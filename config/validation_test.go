@@ -358,6 +358,33 @@ func TestValidateConfigYAML_TunnelValidation(t *testing.T) {
 `,
 			wantIssues: []string{"Advanced Certificate Manager"},
 		},
+		{
+			name: "routes and an automatic name",
+			yaml: `tunnel:
+  domain: example.com
+  name: auto
+  routes: [web, api.dev.localhost]
+`,
+			wantClean: true,
+		},
+		{
+			name: "routes not a list",
+			yaml: `tunnel:
+  domain: example.com
+  name: roji
+  routes: web
+`,
+			wantIssues: []string{"[invalid_type] tunnel.routes:"},
+		},
+		{
+			name: "a route not a hostname",
+			yaml: `tunnel:
+  domain: example.com
+  name: roji
+  routes: [web, 3, ""]
+`,
+			wantIssues: []string{"tunnel.routes[1]", "tunnel.routes[2]"},
+		},
 	}
 
 	for _, tt := range tests {
