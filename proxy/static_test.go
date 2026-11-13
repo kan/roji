@@ -317,7 +317,7 @@ func TestRouter_StaticRoutes(t *testing.T) {
 	}
 
 	// A reload whose config no longer names the site removes it
-	router.ReplaceDeclared(nil)
+	router.ReplaceConfigured(nil, nil)
 	route = router.LookupDeclared("docs.dev.localhost")
 	if route != nil {
 		t.Error("Expected static route to be removed")
@@ -512,7 +512,7 @@ func TestRouter_ConfigReloadKeepsStaticSite(t *testing.T) {
 		}}
 	}
 
-	router.ReplaceDeclared(sites())
+	router.ReplaceConfigured(sites(), nil)
 	router.AddBackend(&docker.Backend{
 		ContainerID: "api", ContainerName: "api", ServiceName: "api",
 		Host: "172.17.0.2", Port: 8080,
@@ -522,7 +522,7 @@ func TestRouter_ConfigReloadKeepsStaticSite(t *testing.T) {
 		t.Fatal("the static site is missing before the reload")
 	}
 
-	router.ReplaceDeclared(sites())
+	router.ReplaceConfigured(sites(), nil)
 
 	if router.LookupDeclared("docs.dev.localhost") == nil {
 		t.Error("the reload dropped the static site")

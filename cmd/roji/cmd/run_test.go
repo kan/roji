@@ -96,10 +96,10 @@ func TestLeaseHolder_Refusals(t *testing.T) {
 	if _, err := router.Lease("taken.dev.localhost", target, "someone-else"); err != nil {
 		t.Fatal(err)
 	}
-	router.ReplaceDeclared([]*proxy.Route{{
+	router.ReplaceConfigured([]*proxy.Route{{
 		Hostname:     "declared.dev.localhost",
 		LocalBackend: &proxy.LocalBackend{Target: target},
-	}})
+	}}, nil)
 
 	for _, host := range []string{"taken", "declared", "roji", "not a hostname"} {
 		if _, err := newLeaseHolder(settings, host, testPort).acquire(context.Background()); err == nil {

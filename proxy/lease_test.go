@@ -46,7 +46,12 @@ func TestRouter_LeaseRoutesUntilItLapses(t *testing.T) {
 	if route == nil || route.Kind() != KindLocal || !route.LocalBackend.Temporary {
 		t.Fatalf("Resolve returned %+v, want the leased route", route)
 	}
-	if route.Published() {
+	// Not even when tunnel.routes names its hostname: see Router.Published.
+	router.ReplaceConfigured(nil, []string{"app.dev.localhost"})
+	if router.Resolve("app.dev.localhost", "/") != route {
+		t.Fatal("replacing the declared routes dropped the lease")
+	}
+	if router.Published(route) {
 		t.Error("a leased route must not be published through the tunnel")
 	}
 
@@ -128,7 +133,7 @@ func TestRouter_LeaseYieldsToConfig(t *testing.T) {
 		return []*Route{localRoute(t, "api.dev.localhost", "http://127.0.0.1:8787")}
 	}
 
-	router.ReplaceDeclared(declared())
+	router.ReplaceConfigured(declared(), nil)
 	if _, err := router.Lease("api.dev.localhost", leaseTarget(5173), "owner-a"); !errors.Is(err, ErrLeaseDeclared) {
 		t.Errorf("Lease() on a declared hostname: error = %v, want ErrLeaseDeclared", err)
 	}
@@ -138,12 +143,12 @@ func TestRouter_LeaseYieldsToConfig(t *testing.T) {
 	}
 
 	// A reload replaces what the config file declares and nothing else.
-	router.ReplaceDeclared(declared())
+	router.ReplaceConfigured(declared(), nil)
 	if router.Resolve("app.dev.localhost", "/") == nil {
 		t.Fatal("a config reload dropped the lease")
 	}
 
-	router.ReplaceDeclared(append(declared(), localRoute(t, "app.dev.localhost", "http://127.0.0.1:9000")))
+	router.ReplaceConfigured(append(declared(), localRoute(t, "app.dev.localhost", "http://127.0.0.1:9000")), nil)
 	route := router.Resolve("app.dev.localhost", "/")
 	if route == nil || route.LocalBackend.Temporary {
 		t.Errorf("Resolve returned %+v, want the site the config file now declares", route)
@@ -304,7 +309,7 @@ func TestHandler_LeaseAPI(t *testing.T) {
 
 func TestHandler_LeaseAPIRefuses(t *testing.T) {
 	router := NewRouter()
-	router.ReplaceDeclared([]*Route{localRoute(t, "api.dev.localhost", "http://127.0.0.1:8787")})
+	router.ReplaceConfigured([]*Route{localRoute(t, "api.dev.localhost", "http://127.0.0.1:8787")}, nil)
 	handler := NewHandler(router, nil, "roji.dev.localhost", "dev.localhost", testStatusConfig(), nil)
 
 	tests := []struct {

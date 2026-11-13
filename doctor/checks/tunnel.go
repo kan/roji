@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/kan/roji/config"
 	"github.com/kan/roji/doctor"
 	"github.com/kan/roji/i18n"
 	"github.com/kan/roji/tunnel"
@@ -31,6 +32,16 @@ func (c *Tunnel) Name() string {
 }
 
 func (c *Tunnel) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult {
+	// The tunnel is off, but not because nobody asked for it.
+	if cfg.Settings != nil && cfg.Settings.Tunnel.AutoNameFailed() {
+		return doctor.CheckResult{
+			Name:    c.Name(),
+			Status:  doctor.Warn,
+			Message: i18n.T("doctor.check.tunnel.auto_name_failed"),
+			Details: i18n.T("doctor.check.tunnel.auto_name_failed_hint"),
+		}
+	}
+
 	if cfg.Settings == nil || !cfg.Settings.Tunnel.Enabled() {
 		return doctor.CheckResult{
 			Name:    c.Name(),
@@ -73,18 +84,45 @@ func (c *Tunnel) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 			Name:    c.Name(),
 			Status:  doctor.Fail,
 			Message: i18n.Tf("doctor.check.tunnel.missing", cfgTunnel.Name),
-			Details: i18n.Tf("doctor.check.tunnel.create_hint", cfgTunnel.Name),
+			Details: withAutoName(cfgTunnel, i18n.Tf("doctor.check.tunnel.create_hint", cfgTunnel.Name)),
 		}
 	}
 
-	return doctor.CheckResult{
+	result := doctor.CheckResult{
 		Name:    c.Name(),
 		Status:  doctor.Pass,
 		Message: i18n.Tf("doctor.check.tunnel.ready", cfgTunnel.Name, cfgTunnel.Domain),
 		// The one step roji cannot do or verify: the DNS record has to point
 		// at the tunnel, and roji holds no Cloudflare credentials to check it.
-		Details: i18n.Tf("doctor.check.tunnel.dns_hint", cfgTunnel.Domain, cfgTunnel.Name, cfgTunnel.Domain),
+		Details: withAutoName(cfgTunnel, i18n.Tf("doctor.check.tunnel.dns_hint", cfgTunnel.Domain, cfgTunnel.Name, cfgTunnel.Domain)),
 	}
+
+	// Names in tunnel.routes the server leaves out, which otherwise show up
+	// only in its log.
+	for _, site := range cfgTunnel.ResolveRoutes(cfg.Settings.Domain, cfg.Settings.Dashboard) {
+		var problem string
+		switch {
+		case site.Err != nil:
+			problem = i18n.Tf("doctor.check.tunnel.route_reserved", site.Hostname)
+		case site.Unpublishable:
+			problem = i18n.Tf("doctor.check.tunnel.route_unpublishable", site.Hostname, cfg.Settings.Domain)
+		default:
+			continue
+		}
+		result.Status = doctor.Warn
+		result.Details += "\n" + problem
+	}
+	return result
+}
+
+// withAutoName adds to details where the tunnel's name came from when the
+// config file did not write it out: `name: auto` reads the same on every
+// machine, and the name it stands for does not.
+func withAutoName(t *config.Tunnel, details string) string {
+	if !t.AutoName {
+		return details
+	}
+	return i18n.Tf("doctor.check.tunnel.auto_name", t.Name) + "\n" + details
 }
 
 func (c *Tunnel) CanFix() bool {

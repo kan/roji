@@ -204,9 +204,10 @@ func run(ctx context.Context, cfg Config) error {
 		router.SetTunnelDomains(tunnelDomains(cfg))
 	}
 
-	// Register the sites declared in the config file
+	// Register the sites declared in the config file, and what tunnel.routes
+	// publishes
 	declared, _ := declaredRoutes(cfg.StaticSites, cfg.ProxySites, cfg.BaseDomain, cfg.DashboardHost)
-	router.ReplaceDeclared(declared)
+	router.ReplaceConfigured(declared, tunnelRouteHosts(cfg.Tunnel, cfg.BaseDomain, cfg.DashboardHost))
 
 	// Set up config reload callback
 	handler.SetConfigReloader(func() (proxy.ConfigReload, error) {
@@ -614,7 +615,8 @@ func handleStopEvent(ctx context.Context, client *docker.Client, router *proxy.R
 }
 
 // reloadDeclaredSites reads the config file again and replaces the declared
-// routes with what it now says. Everything else in the file needs a restart.
+// routes and the hostnames tunnel.routes publishes with what it now says.
+// Everything else in the file needs a restart.
 //
 // It returns what became of each site, for whoever asked for the reload.
 func reloadDeclaredSites(configPath, baseDomain, dashboardHost string, router *proxy.Router) (proxy.ConfigReload, error) {
@@ -624,8 +626,28 @@ func reloadDeclaredSites(configPath, baseDomain, dashboardHost string, router *p
 	}
 
 	routes, report := declaredRoutes(settings.StaticSites, settings.ProxySites, baseDomain, dashboardHost)
-	router.ReplaceDeclared(routes)
+	router.ReplaceConfigured(routes, tunnelRouteHosts(settings.Tunnel, baseDomain, dashboardHost))
 	return proxy.ConfigReload{ConfigPath: configPath, Sites: report}, nil
+}
+
+// tunnelRouteHosts returns the hostnames tunnel.routes publishes. A name that
+// can never be published — the dashboard's, or one outside the base domain,
+// which has no public name — is logged and left out.
+func tunnelRouteHosts(t *config.Tunnel, baseDomain, dashboardHost string) []string {
+	var hosts []string
+	for _, site := range t.ResolveRoutes(baseDomain, dashboardHost) {
+		switch {
+		case site.Err != nil:
+			slog.Warn("tunnel.routes names a hostname roji keeps for itself, skipping", "host", site.Hostname)
+		case site.Unpublishable:
+			slog.Warn("tunnel.routes names a hostname outside the base domain, so it has no public name",
+				"host", site.Hostname,
+				"domain", baseDomain)
+		default:
+			hosts = append(hosts, site.Hostname)
+		}
+	}
+	return hosts
 }
 
 // declaredRoutes builds the routes the config file declares: its static sites

@@ -1,7 +1,10 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -154,7 +157,17 @@ type Tunnel struct {
 
 	// Name is the named tunnel to run, created beforehand with
 	// `cloudflared tunnel create`.
+	//
+	// TunnelNameAuto stands for a name derived from this machine's hostname
+	// (AutoTunnelName), and Load replaces it with that name. A tunnel's
+	// credentials live only on the machine that created it, and Cloudflare
+	// does not choose between two machines running the same one, so each
+	// machine needs a tunnel of its own while the config file is shared.
 	Name string `yaml:"name"`
+
+	// AutoName records that Name was derived from the hostname rather than
+	// written in the file.
+	AutoName bool `yaml:"-"`
 
 	// Port is the tunnel listener's port on 127.0.0.1. cloudflared reaches roji
 	// through it, and every request arriving there is treated as coming from
@@ -168,6 +181,88 @@ type Tunnel struct {
 	// AutoStart runs cloudflared alongside roji. With it off the listener still
 	// opens and whoever wants the tunnel runs `cloudflared tunnel run` himself.
 	AutoStart bool `yaml:"auto_start,omitempty"`
+
+	// Routes publishes the routes on these hostnames without a label or a
+	// `tunnel` key, in addition to those that have one. A name is written as
+	// a declared site's host: without a dot it is a subdomain of the base
+	// domain.
+	//
+	// It belongs in the per-machine file (LocalFilePath): a public name's DNS
+	// record points at one tunnel, so which machine publishes a route is that
+	// machine's choice, and a label in a compose file shared between machines
+	// cannot make it.
+	Routes []string `yaml:"routes,omitempty"`
+}
+
+// TunnelNameAuto is the value of Tunnel.Name that asks for AutoTunnelName.
+const TunnelNameAuto = "auto"
+
+// AutoTunnelName derives a tunnel name from a hostname: "roji-" and the
+// hostname's first label, lowercased, with anything but letters, digits and
+// hyphens replaced by a hyphen.
+//
+// The first label only, since whether the rest of an FQDN appears depends on
+// how the machine's DNS is set up rather than on the machine.
+//
+// It returns an empty string for a hostname with nothing usable in its first
+// label (one written in non-Latin letters, say). Falling back to a fixed name
+// would give every such machine the same tunnel, which is what `name: auto`
+// is for avoiding.
+func AutoTunnelName(hostname string) string {
+	label, _, _ := strings.Cut(strings.ToLower(hostname), ".")
+	label = strings.Trim(strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			return r
+		}
+		return '-'
+	}, label), "-")
+	if label == "" {
+		return ""
+	}
+	return "roji-" + label
+}
+
+// ResolveRoutes resolves each name in Routes through ResolveSiteName, so a
+// hostname listed here is held to the rules a declared site's is: Err is set
+// for one roji keeps for itself, and Unpublishable for one outside the base
+// domain, which has no public name. Empty names are left out.
+func (t *Tunnel) ResolveRoutes(baseDomain, dashboardHost string) []DeclaredSite {
+	if t == nil {
+		return nil
+	}
+	var sites []DeclaredSite
+	for _, name := range t.Routes {
+		if name = strings.TrimSpace(name); name != "" {
+			sites = append(sites, ResolveSiteName(name, true, baseDomain, dashboardHost))
+		}
+	}
+	return sites
+}
+
+// resolveAutoName replaces TunnelNameAuto with the name derived from this
+// machine's hostname. Without a usable hostname there is no name, and the
+// tunnel stays off (Name empty, AutoName set) rather than running one some
+// other machine might also run.
+func (t *Tunnel) resolveAutoName(hostname func() (string, error)) {
+	if t == nil || t.Name != TunnelNameAuto {
+		return
+	}
+	t.AutoName = true
+	host, err := hostname()
+	if err == nil {
+		t.Name = AutoTunnelName(host)
+	}
+	if t.Name == TunnelNameAuto || t.Name == "" {
+		slog.Warn("cannot derive the tunnel name from the hostname, continuing without the tunnel",
+			"hostname", host, "error", err)
+		t.Name = ""
+	}
+}
+
+// AutoNameFailed reports whether `name: auto` was asked for and no name could
+// be derived, which leaves the tunnel off.
+func (t *Tunnel) AutoNameFailed() bool {
+	return t != nil && t.AutoName && t.Name == ""
 }
 
 // Enabled reports whether the tunnel is configured well enough to open the
@@ -230,8 +325,9 @@ func Defaults() *Settings {
 // Load loads configuration with the following priority (highest to lowest):
 // 1. CLI overrides (passed in cliOverrides)
 // 2. Environment variables (ROJI_*)
-// 3. Config file
-// 4. Defaults
+// 3. The per-machine file next to the config file (LocalFilePath)
+// 4. Config file
+// 5. Defaults
 func Load(configPath string, cliOverrides map[string]any) (*Settings, error) {
 	// Start with defaults
 	settings := Defaults()
@@ -240,9 +336,10 @@ func Load(configPath string, cliOverrides map[string]any) (*Settings, error) {
 	if configPath == "" {
 		configPath = ConfigFilePath()
 	}
-	if err := settings.loadFromFile(configPath); err != nil && !os.IsNotExist(err) {
+	if err := settings.loadFromFile(configPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("failed to load config file: %w", err)
 	}
+	settings.Tunnel.resolveAutoName(os.Hostname)
 
 	// Apply environment variables
 	settings.applyEnvVars()
@@ -258,16 +355,120 @@ func Load(configPath string, cliOverrides map[string]any) (*Settings, error) {
 	return settings, nil
 }
 
-// loadFromFile loads settings from a YAML file
+// ReadConfigFiles reads the config file and the per-machine file next to it
+// (LocalFilePath), and returns them merged into one YAML document along with
+// the paths of the files it read.
+//
+// The local file goes on top. Mappings merge key by key at every level, so it
+// can set tunnel.name alone and keep tunnel.domain from the shared file;
+// anything else, a list included, replaces what the config file says. A key
+// set to null in the local file removes it.
+//
+// Either file may be missing. The error satisfies errors.Is(err,
+// fs.ErrNotExist) only when both are.
+func ReadConfigFiles(configPath string) ([]byte, []string, error) {
+	merged := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	var files []string
+
+	for _, path := range []string{configPath, LocalFilePath(configPath)} {
+		data, err := os.ReadFile(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		files = append(files, path)
+
+		// Nodes rather than map[string]any: a node keeps the text a scalar
+		// was written as, and a map does not. Through a map, `pass: 0123`
+		// comes back out as 123, and a password field reads "123".
+		var doc yaml.Node
+		if err := yaml.Unmarshal(data, &doc); err != nil {
+			return nil, nil, fmt.Errorf("invalid YAML in %s: %w", path, err)
+		}
+		if len(doc.Content) == 0 {
+			continue // empty, or comments only
+		}
+		layer := doc.Content[0]
+		if layer.Kind != yaml.MappingNode {
+			if layer.ShortTag() == "!!null" {
+				continue
+			}
+			return nil, nil, fmt.Errorf("invalid YAML in %s: want a mapping at the top level", path)
+		}
+		mergeMapping(merged, layer)
+	}
+
+	if len(files) == 0 {
+		return nil, nil, fmt.Errorf("no config file at %s: %w", configPath, fs.ErrNotExist)
+	}
+	data, err := yaml.Marshal(merged)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, files, nil
+}
+
+// mergeMapping lays the mapping top over the mapping base, which is modified:
+// mappings on both sides merge recursively, a null in top removes the key, and
+// anything else in top replaces what base has.
+//
+// Removing rather than keeping the null matters to loadFromFile, which takes a
+// key that is present as set: `http_port: null` would otherwise mean port 0
+// instead of the default, and `tunnel: null` would not turn the tunnel off. A
+// mapping only top has is merged into an empty one for the same reason, so
+// the nulls inside it go too.
+func mergeMapping(base, top *yaml.Node) {
+	for i := 0; i+1 < len(top.Content); i += 2 {
+		key, value := top.Content[i], top.Content[i+1]
+
+		at := -1
+		for j := 0; j+1 < len(base.Content); j += 2 {
+			if base.Content[j].Value == key.Value {
+				at = j + 1
+				break
+			}
+		}
+
+		switch {
+		case value.ShortTag() == "!!null":
+			if at >= 0 {
+				base.Content = append(base.Content[:at-1], base.Content[at+1:]...)
+			}
+		case value.Kind == yaml.MappingNode:
+			target := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+			if at >= 0 && base.Content[at].Kind == yaml.MappingNode {
+				target = base.Content[at]
+			}
+			mergeMapping(target, value)
+			if at >= 0 {
+				base.Content[at] = target
+			} else {
+				base.Content = append(base.Content, key, target)
+			}
+		case at >= 0:
+			base.Content[at] = value
+		default:
+			base.Content = append(base.Content, key, value)
+		}
+	}
+}
+
+// loadFromFile loads settings from the config file and the per-machine file
+// next to it, merged by ReadConfigFiles.
 func (s *Settings) loadFromFile(path string) error {
-	data, err := os.ReadFile(path)
+	data, files, err := ReadConfigFiles(path)
 	if err != nil {
 		return err
 	}
 
-	// Run validation and log any warnings
+	// Run validation and log any warnings. The merged document is what is
+	// checked: a key required in tunnel may well be in the other file. Its
+	// paths do not say which file a key came from, so name the files read.
 	validationResult := ValidateConfigYAML(data)
 	if validationResult.HasIssues() {
+		slog.Warn("config files have validation issues", "files", files)
 		validationResult.LogWarnings()
 	}
 

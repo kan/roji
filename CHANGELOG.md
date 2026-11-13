@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A per-machine config file, `local.yaml` next to `config.yaml`, read on top
+  of it ([#130](https://github.com/kan/roji/issues/130)). Mappings merge key by
+  key, so it can set `tunnel.name` alone and keep `tunnel.domain` from a
+  `config.yaml` shared between machines; lists replace the shared file's, and
+  `null` removes a key (`tunnel: null` turns the tunnel off on that machine).
+  A config file passed with `--config` under another name pairs with a file
+  named after it (`roji.yaml` with `roji.local.yaml`). `roji config path`
+  shows where it is, and `roji doctor` validates the two files merged.
+- `tunnel.routes` publishes the routes on the listed hostnames without a
+  `roji.tunnel` label or a `tunnel: true` key, so which machine publishes a
+  route can be chosen in that machine's `local.yaml` instead of in a shared
+  compose file. Names are written like a site's `host` (`web` means
+  `web.{domain}`). It covers containers and sites from the config file, not
+  routes registered by `roji run`. `roji config reload` applies changes to it
+  without a restart, and the dashboard's 🌐 badge follows. `roji doctor` warns
+  about a listed name that cannot be published (the dashboard's, or one outside
+  the base domain).
+- `tunnel.name: auto` names the tunnel after the machine, `roji-<hostname>`
+  (the hostname's first label, lowercased, with anything but letters, digits
+  and hyphens replaced by a hyphen). Each machine needs a tunnel of its own,
+  since its credentials exist only where it was created. `roji doctor` shows
+  the name and the `cloudflared tunnel create` command for it. When no name can
+  be derived (the hostname is unavailable, or has nothing usable in its first
+  label), the tunnel stays off and `roji doctor` says why.
+
+### Changed
+
+- A key set to `null` in `config.yaml` now leaves the default in place. It
+  used to set the zero value (`http_port: null` meant port 0).
+
 ### Internal
 
 - Built with Go 1.27.4. Its security fixes do not affect roji: most are in

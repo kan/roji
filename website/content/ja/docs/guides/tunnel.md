@@ -83,6 +83,59 @@ static_sites:
 `tunnel: true` の無いサイトとラベル付きのコンテナが同じホスト名を使って
 いる場合、そのホスト名は公開されない。
 
+3 つ目の方法として、`tunnel.routes` にホスト名を並べてもよい。そのホスト名の
+ルートは、ラベルや `tunnel` キーが無くても公開される。次の節でこれを使う。
+
+## 複数の機械で使う
+
+トンネルの認証情報（`~/.cloudflared/<トンネル ID>.json`）は、トンネルを作った
+機械にしか無い。また、同じトンネルを 2 台で動かすと、Cloudflare はどちらへ
+送るかを決めない。そのため、トンネルは機械ごとに 1 本作る。公開名の DNS
+レコードが向くのはそのうち 1 本なので、ある公開名を出すのは一度に 1 台だけになる。
+
+`config.yaml` を複数の機械で共有している（dotfiles で配るなど）なら、機械ごとに
+違う値は隣の `local.yaml` に書く。roji は `local.yaml` を `config.yaml` の上に
+重ねて読む。
+
+```yaml
+# ~/.config/roji/config.yaml（共有）
+tunnel:
+  domain: example.com
+  name: auto
+  auto_start: true
+```
+
+```yaml
+# ~/.config/roji/local.yaml（この機械だけ）
+tunnel:
+  routes: [api]   # この機械から api.dev.localhost を api.example.com として公開する
+```
+
+- `name: auto` は、トンネルの名前を `roji-<ホスト名>` にする。ホスト名の最初の
+  ラベルを小文字にし、英数字とハイフン以外をハイフンに置き換えたもの。
+  `roji doctor` が、その名前と `cloudflared tunnel create` のコマンドを表示する。
+  名前を直接書く書き方もそのまま使える
+- `routes` の名前は、サイトの `host` と同じ書き方をする。`api` は `api.{domain}`
+  を表し、ドットを含む名前は書いたとおりのホスト名になる。対象はコンテナと、
+  設定ファイルが宣言したサイト。それぞれのラベルやキーとどちらか一方があれば
+  公開される。`roji run` が登録したルートは対象外
+- 2 つのファイルのマップはキーごとに重なるので、`local.yaml` で `tunnel` の
+  1 つのキーだけを書き、残りは共有側の値を使える。リストは共有側のものを丸ごと
+  置き換える。`null` はキーを消す。`tunnel: null` と書けば、その機械では
+  トンネルを使わない
+- `routes` の変更は `roji config reload` で反映される。`tunnel` のそれ以外の
+  キーは再起動が要る
+- 機械ごとの設定ファイルは、使っている設定ファイルと同じディレクトリから読む。
+  名前は、設定ファイルが `config.yaml` なら `local.yaml`、それ以外なら設定
+  ファイルの名前から決まる（`--config roji.yaml` なら `roji.local.yaml`）。
+  場所は `roji config path` で確かめられる
+
+公開名を別の機械へ移すのは DNS の変更で、これは手で行う。
+
+```bash
+cloudflared tunnel route dns --overwrite-dns roji-laptop api.example.com
+```
+
 ## DNS レコード
 
 `*.{domain}` をトンネルに向ける設定は手動で行う。roji に Cloudflare の API

@@ -165,7 +165,10 @@ v1.2.0 で追加。Cloudflare Tunnel を通して選んだルートだけを外�
 2. ダッシュボードホストとベースドメイン
 3. 公開を宣言していないルート（**明示オプトイン**）。Docker ルートは
    `roji.tunnel=true` ラベル、宣言ルートは設定ファイルの `tunnel: true`。
-   判定は `Route.Published()` の 1 本。roji はネットワーク上のコンテナを
+   これに加えて、`tunnel.routes` に挙げたホスト名のルートも公開する（v1.6.0 から。
+   下の「機械ごとの設定」）。**判定は `Router.Published(route)` の 1 本。**
+   ガードも `Handler` もこれを呼ぶこと。ルート自身のフラグ（`Route.optedIn`）
+   だけを見ると `tunnel.routes` が抜ける。roji はネットワーク上のコンテナを
    ラベル無しで拾うので、既定で公開すると全部が外に出る
 
 拒否は理由によらず同じ素の 404 を返す。文言を分けるとどのホスト名が
@@ -178,7 +181,7 @@ v1.2.0 で追加。Cloudflare Tunnel を通して選んだルートだけを外�
 
 - ルートが無ければ素の 404。not found ページは全ルート（ホスト名・コンテナ名・
   プロジェクト名・バックエンドの ip:port）を列挙する
-- 見つかったルートが `Published()` でなければ素の 404。ガードが承認したのは
+- 見つかったルートが `Router.Published` でなければ素の 404。ガードが承認したのは
   別のルートだったことになる
 - ローカルプロキシの転送先に繋がらないときも素の 404。案内ページは転送先の
   アドレスを表示する
@@ -222,7 +225,58 @@ Advanced Certificate Manager（有償）が必要になる。設定バリデー�
 
 **手動作業:** `*.{domain}` の DNS を `<uuid>.cfargotunnel.com` に向ける設定は
 roji がやらない（Cloudflare の API トークンを持たせたくないため）。
-`roji doctor` と `cloudflared tunnel route dns` で案内する。
+`roji doctor` と `cloudflared tunnel route dns` で案内する。機械を移るときの
+`cloudflared tunnel route dns --overwrite-dns` も同じく手で打つ。
+
+### 機械ごとの設定（local.yaml）
+
+v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械に配ったまま、
+トンネルを機械ごとに使い分けるためのもの。named tunnel の認証情報は、作った
+機械だけが持つ。同じトンネルを 2 台で動かすと、Cloudflare はどちらへ送るかを
+決めない。そのため `tunnel.name` は機械ごとに違う値を取る。公開名の DNS が向く
+トンネルは 1 本なので、どの機械からそのルートを公開するかも機械ごとの選択になる。
+
+- **`local.yaml` は、読んだ設定ファイルと同じディレクトリから読む**
+  （`config.LocalFilePath`）。名前が `local.yaml` になるのは設定ファイルが
+  `config.yaml` のときだけで、それ以外は設定ファイルの名前から決める
+  （`roji.yaml` なら `roji.local.yaml`）。`--config /etc/roji.yaml` で、
+  別のツールの `/etc/local.yaml` を重ねて読まないため。symlink は
+  解決しない（dotfiles から張った `config.yaml` の隣が、共有されない場所）
+- **重ね方は `config.ReadConfigFiles` の 1 か所。** マップは入れ子の中まで
+  キーごとに上書きし、リストはリストごと置き換え、`null` はキーを消す。
+  サーバー（`Load`）と `roji doctor`（`checks.Config`）が同じものを読む。
+  検証（`ValidateConfigYAML`）は重ねた結果に対して行う。`tunnel.domain` と
+  `tunnel.name` が別々のファイルにあっても有効な設定なので、ファイルごとに
+  検証すると必須キーの欠落と誤って報告する
+  - `null` を消す扱いにしたのは、`loadFromFile` が「キーがあれば設定された」と
+    見るため。値 nil のまま残すと `http_port: null` がポート 0 になり、
+    `tunnel: null` でトンネルを止められない
+  - **重ねるのは `yaml.Node` の単位で行う。`map[string]any` に戻さないこと。**
+    map を経由すると、スカラーが書かれたときの文字列が失われる。
+    `pass: 0123` は数値の 123 として読まれ、パスワードが `"123"` になる。
+    `local.yaml` が無い環境でもこの経路を通るので、既存の設定の値が警告なしに変わる
+- **`tunnel.routes`** は、挙げたホスト名のルートをラベルやキーが無くても公開する。
+  ラベル・宣言サイトの `tunnel: true` とはどちらか一方で公開（OR）。ラベルは廃止しない
+  - 名前はサイトの `host` と同じ書き方（ドット無しなら `<name>.{domain}`）で、
+    `config.ResolveSiteName` を通す（`Tunnel.ResolveRoutes`）。ダッシュボードの
+    ホスト名とベースドメインの外の名前は、ログに警告して登録しない
+  - 宣言サイトも対象にしている。リストは丸ごと置き換わるので、`local.yaml` から
+    1 サイトの `tunnel` だけを切り替えることはできず、その代わりになる
+  - **`roji run` のリースは対象にしない**（`coveredByTunnelRoutes`）。リースの
+    API は無認証なので、`tunnel.routes` に書いてあってまだ何も応答していない
+    ホスト名を、ローカルのどのプロセスでも取って公開させられてしまう。
+    対象の種別は「リース以外」ではなく肯定形で列挙している。ルートの種別を
+    足したときに、何もしなければ公開されない側に倒すため
+  - 宣言ルートと同じく設定の再読み込みで入れ替わる。`Router.ReplaceConfigured`
+    で宣言ルートと 1 回のロックで入れ替える。別々に入れ替えると、その間の
+    リクエストが古い設定と新しい設定の半分ずつで判定される
+- **`tunnel.name: auto`** は、`Load` が `roji-<ホスト名>` に置き換える
+  （`config.AutoTunnelName`）。ホスト名の最初のラベルだけを使い（FQDN が付くか
+  どうかは DNS の設定次第で、機械では決まらない）、小文字にして英数字と
+  ハイフン以外をハイフンにする。ホスト名が取れないとき、または使える文字が
+  残らないとき（漢字だけのホスト名など）は、トンネルを止める。決まった名前へ
+  フォールバックしないこと。別の機械と同じ名前のトンネルを動かさないため。`roji doctor` は、自動で
+  決めた名前であることと `cloudflared tunnel create` のコマンドを出す
 
 ### 環境変数
 
@@ -426,7 +480,8 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 - 宣言ルートの公開オプトイン（`proxy_sites` と `static_sites` の `tunnel: true`）
 - `/_api/routes` の `kind`（`docker` / `static` / `local`）。`isStatic` は
   廃止した（破壊的変更）
-- 設定の再読み込みは `Router.ReplaceDeclared` で宣言ルートを一括で入れ替える。
+- 設定の再読み込みは `Router.ReplaceConfigured` で宣言ルートを一括で入れ替える
+  （`tunnel.routes` も同じ 1 回で入れ替える）。
   消してから足す実装に戻さないこと（その隙間に、宣言ルートが隠していた
   Docker ルートがリクエストに答える）
 - どのサイトを登録するかは `config.ResolveSites` が決め、サーバー
@@ -492,7 +547,7 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
   層を足さないこと
   - 設定ファイルが宣言しているホスト名はリースできない（409）。設定ファイルは
     意図して書いたものなので、後から起動したコマンドには奪わせない
-  - リースは設定の再読み込み（`ReplaceDeclared`）で消えない。ただし
+  - リースは設定の再読み込み（`ReplaceConfigured`）で消えない。ただし
     再読み込みで同じホスト名が宣言されたら、そのリースは落とす。
     「`declaredRoutes` と `leases` は同じホスト名を持たない」が不変条件
   - 別の `roji run` が保持中のホスト名もリースできない（409）
@@ -563,7 +618,8 @@ roji がやらない（Cloudflare の API トークンを持たせたくない�
 結果を表示する。それまで再読み込みはダッシュボードのボタンと API でしか
 行えなかった。
 
-- **反映されるのは `static_sites` と `proxy_sites` だけ。** コマンド名は設定の
+- **反映されるのは `static_sites` と `proxy_sites`、v1.6.0 からは `tunnel.routes`
+  も。** それ以外は再起動が要る。コマンド名は設定の
   全部が反映されるように読めるので、実行のたびにその旨を表示する
   （`cmd.config.reload.scope`）。この表示を省かないこと
 - **API の応答に、宣言したサイトごとの結果を入れる**（`proxy.ReloadedSite`）。
@@ -964,8 +1020,9 @@ v0.8.0 Architecture (Native Mode)
 
 1. デフォルト値
 2. 設定ファイル（`~/.config/roji/config.yaml`）
-3. 環境変数（`ROJI_*`）
-4. コマンドライン引数（`--network` 等）
+3. 機械ごとの設定ファイル（隣の `local.yaml`。v1.6.0 から）
+4. 環境変数（`ROJI_*`）
+5. コマンドライン引数（`--network` 等）
 
 #### 設定ファイル仕様
 
@@ -987,9 +1044,10 @@ auto_cert: true
 # 外部公開（省略可。domain と name が揃ったときだけ有効）
 tunnel:
   domain: example.com   # Cloudflare 上のゾーン。1階層に収める
-  name: roji            # cloudflared tunnel create で作った named tunnel
+  name: roji            # cloudflared tunnel create で作った named tunnel（auto で roji-<ホスト名>）
   port: 8080            # トンネル専用リスナー（127.0.0.1 固定）
   auto_start: false     # roji が cloudflared を起動するか
+  routes: []            # ラベル無しで公開するホスト名（通常は local.yaml に書く）
 
 # ホスト上の dev サーバー（省略可）
 proxy_sites:

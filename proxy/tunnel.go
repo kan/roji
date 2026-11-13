@@ -75,7 +75,8 @@ func (d TunnelDomains) ToPublic(local string) (string, bool) {
 //   - the dashboard and its API are never published. `/_api/projects/{name}/up`
 //     starts containers and `/_api/logs` reads traffic, both unauthenticated
 //   - a route is published only if it says so: `roji.tunnel=true` on a
-//     container, `tunnel: true` on a site declared in the config file
+//     container, `tunnel: true` on a site declared in the config file, or its
+//     hostname in tunnel.routes (Router.Published)
 //
 // cloudflared connects from 127.0.0.1 like any local browser, so no property of
 // the request tells the two apart. The separate listener does, which is why the
@@ -131,7 +132,7 @@ func (h *TunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// published container on a hostname that a declared site has taken over,
 	// and publish the site in its place.
 	route := h.router.Resolve(local, r.URL.Path)
-	if route == nil || !route.Published() {
+	if route == nil || !h.router.Published(route) {
 		slog.Debug("tunnel request for a route that is not published",
 			"host", hostname,
 			"local_host", local,

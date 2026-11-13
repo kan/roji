@@ -366,3 +366,62 @@ func TestRouter_TunnelURL_NoTunnelConfigured(t *testing.T) {
 		}
 	}
 }
+
+func TestRouter_TunnelRoutesPublishWithoutLabel(t *testing.T) {
+	router := NewRouter()
+	router.SetTunnelDomains(TunnelDomains{Base: "dev.localhost", Public: "example.com"})
+
+	router.AddBackend(tunnelTestBackend("web.dev.localhost", false))
+	prefixed := tunnelTestBackend("shared.dev.localhost", false)
+	prefixed.PathPrefix = "/api"
+	router.AddBackend(prefixed)
+	router.AddBackend(tunnelTestBackend("private.dev.localhost", false))
+	router.AddBackend(tunnelTestBackend("labeled.dev.localhost", true))
+	declared := []*Route{localRoute(t, "api.dev.localhost", "http://127.0.0.1:9")}
+
+	router.ReplaceConfigured(declared, []string{"Web.dev.localhost", "shared.dev.localhost", "api.dev.localhost"})
+
+	guard, _ := newTunnelGuard(t, router)
+	status := func(host, path string) int {
+		req := httptest.NewRequest("GET", "http://"+host+path, nil)
+		req.Host = host
+		w := httptest.NewRecorder()
+		guard.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	for _, tc := range []struct {
+		host, path string
+		want       int
+	}{
+		{"web.example.com", "/", http.StatusOK},
+		{"shared.example.com", "/api/x", http.StatusOK}, // every prefix on a listed hostname
+		{"api.example.com", "/", http.StatusOK},         // a declared site, without `tunnel: true`
+		{"labeled.example.com", "/", http.StatusOK},     // the label still publishes on its own
+		{"private.example.com", "/", http.StatusNotFound},
+	} {
+		if got := status(tc.host, tc.path); got != tc.want {
+			t.Errorf("%s%s: status = %d, want %d", tc.host, tc.path, got, tc.want)
+		}
+	}
+
+	urls := make(map[string]string)
+	for _, info := range router.ListRoutes() {
+		urls[info.Hostname+info.PathPrefix] = info.TunnelURL
+	}
+	if got := urls["web.dev.localhost"]; got != "https://web.example.com" {
+		t.Errorf("TunnelURL = %q, want https://web.example.com", got)
+	}
+	if got := urls["private.dev.localhost"]; got != "" {
+		t.Errorf("an unlisted route reported TunnelURL %q", got)
+	}
+
+	// A reload replaces the list rather than adding to it.
+	router.ReplaceConfigured(declared, nil)
+	if got := status("web.example.com", "/"); got != http.StatusNotFound {
+		t.Errorf("after the list was emptied: status = %d, want 404", got)
+	}
+	if got := status("labeled.example.com", "/"); got != http.StatusOK {
+		t.Errorf("emptying the list unpublished a labeled route: status = %d", got)
+	}
+}

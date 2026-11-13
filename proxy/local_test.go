@@ -31,14 +31,16 @@ func localRoute(t *testing.T, hostname, target string) *Route {
 	return &Route{Hostname: hostname, LocalBackend: &LocalBackend{Target: u}}
 }
 
-// declare adds one route to the declared set. It goes through ReplaceDeclared,
-// the way startup and a reload do, with what is already declared kept.
+// declare adds one route to the declared set. It goes through
+// ReplaceConfigured, the way startup and a reload do, with what is already
+// declared and published kept.
 func declare(router *Router, route *Route) {
 	router.mu.RLock()
 	routes := slices.Collect(maps.Values(router.declaredRoutes))
+	tunnelRoutes := slices.Collect(maps.Keys(router.tunnelRoutes))
 	router.mu.RUnlock()
 
-	router.ReplaceDeclared(append(routes, route))
+	router.ReplaceConfigured(append(routes, route), tunnelRoutes)
 }
 
 // closedAddr returns a loopback address nothing listens on.
@@ -484,10 +486,10 @@ func TestRouter_DeclaredRoutesInListRoutes(t *testing.T) {
 // from, so a reload gives the same answer as a restart.
 func TestRouter_HostnameDeclaredTwice(t *testing.T) {
 	router := NewRouter()
-	router.ReplaceDeclared([]*Route{
+	router.ReplaceConfigured([]*Route{
 		{Hostname: "docs.dev.localhost", StaticBackend: &StaticBackend{Root: "/var/www/docs"}},
 		localRoute(t, "docs.dev.localhost", "http://127.0.0.1:3000"),
-	})
+	}, nil)
 
 	route := router.Resolve("docs.dev.localhost", "/")
 	if route == nil || route.Kind() != KindLocal {

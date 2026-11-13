@@ -83,6 +83,61 @@ A declared site holds its hostname ahead of any container, and the tunnel
 follows that: when a site without `tunnel: true` shares a hostname with a
 labelled container, the hostname is not published.
 
+A third way is to list hostnames under `tunnel.routes`. The routes on them are
+published without a label or a `tunnel` key, which is what the next section
+uses.
+
+## Using several machines
+
+A tunnel's credentials (`~/.cloudflared/<tunnel ID>.json`) exist only on the
+machine that created it, and Cloudflare does not choose between two machines
+running the same tunnel. Each machine needs a tunnel of its own, and a public
+name's DNS record points at one of them, so only one machine publishes a given
+name at a time.
+
+When `config.yaml` is shared between machines (from a dotfiles repository, for
+example), put what differs in `local.yaml` next to it. roji reads it on top of
+`config.yaml`:
+
+```yaml
+# ~/.config/roji/config.yaml (shared)
+tunnel:
+  domain: example.com
+  name: auto
+  auto_start: true
+```
+
+```yaml
+# ~/.config/roji/local.yaml (this machine only)
+tunnel:
+  routes: [api]   # publish api.dev.localhost as api.example.com from here
+```
+
+- `name: auto` names the tunnel `roji-<hostname>`: the first label of the
+  machine's hostname, lowercased, with anything but letters, digits and hyphens
+  replaced by a hyphen. `roji doctor` prints the name and the
+  `cloudflared tunnel create` command for it. A name written out still works
+- `routes` takes names written like a site's `host`: `api` stands for
+  `api.{domain}`, and a name with a dot is taken as written. It covers
+  containers and sites from the config file, alongside their own label or key.
+  It does not cover routes registered by `roji run`
+- Mappings in the two files merge key by key, so `local.yaml` can set one key
+  of `tunnel` and keep the rest. A list replaces the shared one whole, and
+  `null` removes a key: `tunnel: null` turns the tunnel off on that machine
+- `roji config reload` applies a change to `routes` without a restart. The rest
+  of `tunnel` needs one
+- The per-machine file is read from the directory of the config file in use.
+  It is `local.yaml` next to `config.yaml`, and named after the config file
+  otherwise (`--config roji.yaml` reads `roji.local.yaml`). `roji config path`
+  shows where
+
+Moving a public name to another machine is a DNS change, which stays yours to
+make:
+
+```bash
+cloudflared tunnel route dns --overwrite-dns roji-laptop api.example.com
+```
+
 ## The DNS record
 
 Pointing `*.{domain}` at the tunnel is yours to do. roji deliberately holds no
