@@ -123,7 +123,7 @@ func ResolveSites(staticSites []StaticSite, proxySites []ProxySite, baseDomain, 
 		return ResolveSiteName(host, tunnel, baseDomain, dashboardHost)
 	}
 
-	sites := make([]DeclaredSite, 0, len(staticSites)+len(proxySites))
+	var sites []DeclaredSite
 
 	for i := range staticSites {
 		site := named(staticSites[i].Host, staticSites[i].Tunnel)
