@@ -46,6 +46,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `net/http` one (CVE-2026-97054) needs a handler that reads a
   `MaxBytesReader` body while writing response headers, which roji's handlers
   do not do. v1.5.2 was built with Go 1.27.3.
+- Dependency updates: `github.com/spf13/pflag` 1.1.0, `golang.org/x/net`
+  0.62.0, `github/codeql-action` 4.39.3, and `docker/login-action` 4.8.0.
+  `golang.org/x/net` is not linked into the roji binary — the development
+  tools in `go.mod` pull it in — and was raised for CVE-2026-78661 and
+  CVE-2026-97045.
+- GitHub Actions are pinned by `.github/workflows/actions.lock` instead of
+  commit SHAs in each workflow. Pull requests and pushes to `main` check that
+  no pinned tag has moved.
+- Security vulnerabilities are reported only through GitHub's private
+  vulnerability reporting; `SECURITY.md` no longer offers email.
 
 ## [1.5.2] - 2026-11-03
 
