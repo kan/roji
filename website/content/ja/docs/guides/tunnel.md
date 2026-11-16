@@ -138,15 +138,37 @@ cloudflared tunnel route dns --overwrite-dns roji-laptop api.example.com
 
 ## DNS レコード
 
-`*.{domain}` をトンネルに向ける設定は手動で行う。roji に Cloudflare の API
+公開名をトンネルに向ける設定は手動で行う。roji に Cloudflare の API
 トークンを持たせない方針のため、この 1 手だけは roji がやらない。
+`roji doctor` が、設定ファイルから分かる範囲で、その機械で打つコマンドを表示する。
+
+1 台で使うなら、`*.{domain}` をトンネルに向ける。
 
 ```bash
 cloudflared tunnel route dns roji "*.example.com"
 ```
 
-Cloudflare のダッシュボードから `<uuid>.cfargotunnel.com` への CNAME を
-作っても同じ。
+複数の機械で使い分ける（前の節）なら、ワイルドカードではなく公開名ごとに
+レコードを作る。ワイルドカードが向くトンネルは 1 本だけなので、各機械で
+ワイルドカードを打つと、最後に打った機械を向く。個別のレコードが無い公開名は、
+すべてその機械に届く。各機械では、その機械が公開する名前ごとに次を打つ。
+
+```bash
+cloudflared tunnel route dns --overwrite-dns roji-laptop api.example.com
+```
+
+`--overwrite-dns` は、別の機械のトンネルを向いているレコードを付け替える。
+`roji doctor` が表示するのは、`tunnel.routes` の名前と、`tunnel: true` を
+付けた宣言サイトの名前。`roji.tunnel` ラベルで公開するコンテナは設定ファイルに
+現れないので、その名前のレコードは自分で足す。
+
+個別のレコードはワイルドカードより優先されるので、2 つを併用してもよい。
+ワイルドカードを 1 台に向け、ほかの機械から公開する名前だけ個別のレコードを
+作る。ワイルドカードを向けた機械では、`routes` を書かず、ラベルや
+`tunnel: true` で公開するルートを選べる。
+
+どちらの場合も、Cloudflare のダッシュボードから `<uuid>.cfargotunnel.com` への
+CNAME を作っても同じ。
 
 ### ドメインは 1 階層に収める
 
