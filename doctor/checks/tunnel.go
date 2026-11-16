@@ -6,11 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/kan/roji/config"
 	"github.com/kan/roji/doctor"
 	"github.com/kan/roji/i18n"
+	"github.com/kan/roji/proxy"
 	"github.com/kan/roji/tunnel"
 )
 
@@ -88,18 +91,21 @@ func (c *Tunnel) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 		}
 	}
 
+	routes := cfgTunnel.ResolveRoutes(cfg.Settings.Domain, cfg.Settings.Dashboard)
+
 	result := doctor.CheckResult{
 		Name:    c.Name(),
 		Status:  doctor.Pass,
 		Message: i18n.Tf("doctor.check.tunnel.ready", cfgTunnel.Name, cfgTunnel.Domain),
-		// The one step roji cannot do or verify: the DNS record has to point
-		// at the tunnel, and roji holds no Cloudflare credentials to check it.
-		Details: withAutoName(cfgTunnel, i18n.Tf("doctor.check.tunnel.dns_hint", cfgTunnel.Domain, cfgTunnel.Name, cfgTunnel.Domain)),
 	}
+
+	// The one step roji cannot do or verify: the DNS record has to point at
+	// the tunnel, and roji holds no Cloudflare credentials to check it.
+	details := dnsHint(cfg.Settings, routes)
 
 	// Names in tunnel.routes the server leaves out, which otherwise show up
 	// only in its log.
-	for _, site := range cfgTunnel.ResolveRoutes(cfg.Settings.Domain, cfg.Settings.Dashboard) {
+	for _, site := range routes {
 		var problem string
 		switch {
 		case site.Err != nil:
@@ -110,19 +116,72 @@ func (c *Tunnel) Run(ctx context.Context, cfg *doctor.Config) doctor.CheckResult
 			continue
 		}
 		result.Status = doctor.Warn
-		result.Details += "\n" + problem
+		details = append(details, problem)
 	}
+	result.Details = withAutoName(cfgTunnel, details...)
 	return result
+}
+
+// dnsHint tells how to point DNS at this machine's tunnel.
+//
+// With tunnel.routes, it is one record per public name. The routes are what
+// this machine publishes, and a name's record points at one tunnel, so a
+// wildcard would pull every name without a record of its own to whichever
+// machine set it last. Without routes, doctor cannot list the public names
+// (a container's label is not in the config file), and the wildcard is the
+// record to make. Under `name: auto` that is likely one machine of several,
+// which the hint then says.
+//
+// routes is tunnel.routes resolved. Alongside them the commands cover the
+// declared sites with `tunnel: true`, which this machine publishes too.
+// Names the server leaves out get no command; Run reports them.
+func dnsHint(s *config.Settings, routes []config.DeclaredSite) []string {
+	t := s.Tunnel
+	if len(routes) == 0 {
+		hint := []string{i18n.Tf("doctor.check.tunnel.dns_hint", t.Domain, t.Name, t.Domain)}
+		if t.AutoName {
+			hint = append(hint, i18n.T("doctor.check.tunnel.dns_hint_auto"))
+		}
+		return append(hint, i18n.T("doctor.check.tunnel.dns_no_credentials"))
+	}
+
+	sites := slices.Clone(routes)
+	for _, site := range config.ResolveSites(s.StaticSites, s.ProxySites, s.Domain, s.Dashboard) {
+		if (site.Static != nil && site.Static.Tunnel) || (site.Proxy != nil && site.Proxy.Tunnel) {
+			sites = append(sites, site)
+		}
+	}
+
+	domains := proxy.TunnelDomains{Base: s.Domain, Public: t.Domain}
+	var names []string
+	for _, site := range sites {
+		if site.Err != nil || site.Unpublishable {
+			continue
+		}
+		if public, ok := domains.ToPublic(site.Hostname); ok && !slices.Contains(names, public) {
+			names = append(names, public)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	hint := []string{i18n.T("doctor.check.tunnel.dns_routes_hint")}
+	for _, name := range names {
+		hint = append(hint, "  cloudflared tunnel route dns --overwrite-dns "+t.Name+" "+name)
+	}
+	return append(hint,
+		i18n.T("doctor.check.tunnel.dns_routes_labels"),
+		i18n.T("doctor.check.tunnel.dns_no_credentials"))
 }
 
 // withAutoName adds to details where the tunnel's name came from when the
 // config file did not write it out: `name: auto` reads the same on every
 // machine, and the name it stands for does not.
-func withAutoName(t *config.Tunnel, details string) string {
-	if !t.AutoName {
-		return details
+func withAutoName(t *config.Tunnel, details ...string) string {
+	if t.AutoName {
+		details = append([]string{i18n.Tf("doctor.check.tunnel.auto_name", t.Name)}, details...)
 	}
-	return i18n.Tf("doctor.check.tunnel.auto_name", t.Name) + "\n" + details
+	return strings.Join(details, "\n")
 }
 
 func (c *Tunnel) CanFix() bool {

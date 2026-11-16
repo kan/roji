@@ -140,15 +140,38 @@ cloudflared tunnel route dns --overwrite-dns roji-laptop api.example.com
 
 ## The DNS record
 
-Pointing `*.{domain}` at the tunnel is yours to do. roji deliberately holds no
-Cloudflare API token, so this is the one step it leaves to you.
+Pointing public names at the tunnel is yours to do. roji deliberately holds no
+Cloudflare API token, so this is the one step it leaves to you. `roji doctor`
+prints the commands to run on each machine, as far as the config file tells.
+
+On a single machine, point `*.{domain}` at the tunnel:
 
 ```bash
 cloudflared tunnel route dns roji "*.example.com"
 ```
 
-A CNAME to `<uuid>.cfargotunnel.com` made in the Cloudflare dashboard does the
-same thing.
+When machines split the public names between them (the previous section),
+make one record per public name instead of the wildcard. A wildcard points at
+one tunnel only, so setting it from each machine leaves it on whichever did so
+last, and every public name without a record of its own reaches that machine.
+On each machine, run this for each name it publishes:
+
+```bash
+cloudflared tunnel route dns --overwrite-dns roji-laptop api.example.com
+```
+
+`--overwrite-dns` moves a record that points at another machine's tunnel.
+`roji doctor` lists the names in `tunnel.routes` and those of declared sites
+with `tunnel: true`. Containers published with the `roji.tunnel` label do not
+appear in the config file, so their records are yours to add.
+
+A record of its own takes precedence over the wildcard, so the two can be
+combined: point the wildcard at one machine, and make records only for the
+names other machines publish. The machine with the wildcard can then choose
+its routes with labels and `tunnel: true`, without `routes`.
+
+Either way, a CNAME to `<uuid>.cfargotunnel.com` made in the Cloudflare
+dashboard does the same thing.
 
 ### Keep the domain to one level
 

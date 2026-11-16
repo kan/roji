@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `roji doctor` no longer tells every machine to point the `*.{domain}`
+  wildcard at its own tunnel when `tunnel.routes` is set
+  ([#138](https://github.com/kan/roji/issues/138)). Run on each machine in
+  turn, that left the wildcard on whichever ran it last, and every public name
+  without a record of its own reached that machine. With `tunnel.routes`, it
+  now prints one `cloudflared tunnel route dns --overwrite-dns` command per
+  public name the machine publishes from its config file (`tunnel.routes` and
+  declared sites with `tunnel: true`), and notes that containers published
+  with the `roji.tunnel` label need records of their own. Without it, the wildcard command stays, and under
+  `tunnel.name: auto` a note says that a wildcard serves one machine only and
+  points at `tunnel.routes`. The tunnel guide's "The DNS record" section now
+  covers both setups, and using a wildcard on one machine alongside per-name
+  records for the others.
+
 ## [1.6.0] - 2026-11-13
 
 ### Added
