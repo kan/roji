@@ -17,11 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now prints one `cloudflared tunnel route dns --overwrite-dns` command per
   public name the machine publishes from its config file (`tunnel.routes` and
   declared sites with `tunnel: true`), and notes that containers published
-  with the `roji.tunnel` label need records of their own. Without it, the wildcard command stays, and under
-  `tunnel.name: auto` a note says that a wildcard serves one machine only and
-  points at `tunnel.routes`. The tunnel guide's "The DNS record" section now
-  covers both setups, and using a wildcard on one machine alongside per-name
-  records for the others.
+  with the `roji.tunnel` label need records of their own. Without it, the
+  wildcard command stays, and under `tunnel.name: auto` a note says that a
+  wildcard serves one machine only and points at `tunnel.routes`. The tunnel
+  guide's "The DNS record" section now covers both setups, and using a
+  wildcard on one machine alongside per-name records for the others.
+
+### Internal
+
+- Dependency updates: `golang.org/x/text` 0.44.0 and `go.opentelemetry.io/otel`
+  1.47.0 (with `otel/metric` and `otel/trace`; the Docker client links them
+  in). `golang.org/x/text` 0.44.0 bounds the work
+  `language.ParseAcceptLanguage` does on an oversized input, which roji uses
+  for the dashboard's `Accept-Language`.
 
 ## [1.6.0] - 2026-11-13
 
