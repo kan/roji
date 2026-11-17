@@ -6,15 +6,20 @@
 # the Homebrew tap from the files in dist/, so the build runs without the
 # permissions and secrets that publishing needs.
 #
+# GoReleaser is pinned in tools/release/go.mod; check this file with
+#   go tool -modfile=tools/release/go.mod goreleaser check
+#
 # The build is reproducible: the same tag gives the same archives. Timestamps
 # come from the commit, not from the clock.
 version: 2
 
 project_name: roji
 
+# Nothing here changes the tree: a release builds what the tag holds. CI
+# checks that go.mod and go.sum are tidy (go mod tidy -diff).
 before:
   hooks:
-    - go mod tidy
+    - go mod download
     - go mod verify
 
 builds:

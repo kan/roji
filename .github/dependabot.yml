@@ -18,6 +18,33 @@ updates:
       - "go"
     open-pull-requests-limit: 5
 
+  # Release tools (tools/release/go.mod: goreleaser, gocredits). A module of
+  # its own so that they do not share a build list with the binary. Every
+  # require there is `// indirect`, and Dependabot updates only direct ones
+  # unless told, so name the tools. A goreleaser update can change the bytes
+  # of the archives, so merge it between releases (release-build.yml).
+  - package-ecosystem: "gomod"
+    directory: "/tools/release"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+      timezone: "Asia/Tokyo"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "go"
+    allow:
+      - dependency-name: "github.com/goreleaser/goreleaser/v2"
+        dependency-type: "all"
+      - dependency-name: "github.com/Songmu/gocredits"
+        dependency-type: "all"
+    groups:
+      release-tools:
+        patterns:
+          - "*"
+
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"

@@ -28,11 +28,23 @@ jobs:
     # any job added later behind `needs: test`.
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.tag.outputs.prerelease }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
         with:
+          fetch-depth: 0  # release-tag.mjs reads origin/main
           persist-credentials: false
+
+      # The tag is vX.Y.Z and on the release branch (.tagpr releaseBranch): a
+      # tag pushed by hand on another branch stops here. prerelease= follows
+      # the rule release-notes.mjs uses to pick the section.
+      - name: Check the tag
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/tagpr/release-tag.mjs "$TAG" >> "$GITHUB_OUTPUT"
 
       # The publish job makes the release notes from this section. Stop here,
       # before building, if the tag has none.
@@ -46,11 +58,15 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
+          # gocredits below comes from tools/release
+          cache-dependency-path: |
+            go.sum
+            tools/release/go.sum
 
       # The release PR refreshes CREDITS (scripts/release-prepare.sh). Stop
       # the release if the tag does not have the refreshed file.
       - name: Check CREDITS is up to date
-        run: go tool gocredits . | diff - CREDITS
+        run: go tool -modfile=tools/release/go.mod gocredits . | diff - CREDITS
 
       - name: Run unit tests
         run: go test -v -race ./...
@@ -77,7 +93,7 @@ jobs:
 
   # Publish what the build job produced. Nothing is compiled here.
   publish:
-    needs: build
+    needs: [test, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # Create and publish the release
@@ -86,10 +102,11 @@ jobs:
     env:
       TAG: ${{ github.ref_name }}
       GH_REPO: ${{ github.repository }}
-      # A tag with a pre-release suffix (v1.2.3-rc.1). It gets a GitHub
-      # pre-release and a versioned image, but neither the image's latest tag
-      # nor the Homebrew cask, which would hand it to everyone.
-      PRERELEASE: ${{ contains(github.ref_name, '-') }}
+      # A tag with a pre-release suffix (v1.2.3-rc.1), as release-tag.mjs in
+      # the test job decides. It gets a GitHub pre-release and a versioned
+      # image, but neither the image's latest tag nor the Homebrew cask, which
+      # would hand it to everyone.
+      PRERELEASE: ${{ needs.test.outputs.prerelease }}
     steps:
       # For Dockerfile.goreleaser and the license files copied into the image
       - name: Checkout

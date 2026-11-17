@@ -2,10 +2,7 @@ module github.com/kan/roji
 
 go 1.27.4
 
-tool (
-	github.com/Songmu/gocredits/cmd/gocredits
-	github.com/air-verse/air
-)
+tool github.com/air-verse/air
 
 require (
 	github.com/containerd/errdefs v1.0.0
@@ -24,7 +21,6 @@ require (
 require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/Songmu/gocredits v1.1.0 // indirect
 	github.com/air-verse/air v1.63.4 // indirect
 	github.com/bep/godartsass/v2 v2.5.0 // indirect
 	github.com/bep/golibsass v1.2.0 // indirect

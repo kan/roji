@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- The release workflow now checks that the tag is on `main` before building,
+  and takes the pre-release decision from the same rule that picks the
+  CHANGELOG section. GoReleaser and gocredits are pinned in a module of their
+  own (`tools/release/go.mod`), so they no longer share a build list with the
+  binary, and GoReleaser runs without a token. The release archives are the
+  same as before: v1.6.1 rebuilt this way gives its published checksums.
+
 ## [1.6.1] - 2026-11-16
 
 ### Fixed
