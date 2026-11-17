@@ -1,0 +1,46 @@
+name: Toolchain
+
+# go.mod の go ディレクティブが最新の安定版 Go に追随しているかを確かめる。
+#
+# security.yml の govulncheck は、宣言した版から到達できる脆弱性が公開されて
+# 初めて落ちる。Dependabot も go ディレクティブを上げない。新しい Go が出た
+# のに上げていないことを検出する検査は、ここにしかない。
+#
+# 上げるときは tools/go.mod と tools/release/go.mod の go 行（ci.yml の
+# goreleaser-check が検査する）と、Dockerfile の golang:X.Y.Z-alpine（検査は無い）も
+# 揃える。Go の版はリリースのアーカイブのバイト列を変えうるので、リリースとリリースの
+# 間に上げる（CLAUDE.md「再現可能ビルド」）。
+#
+# Go のリリースは変更と無関係に起きるので、push / PR では走らせない
+# （無関係な PR を赤くしない）。
+on:
+  schedule:
+    # 毎週月曜 00:30 UTC (09:30 JST)
+    - cron: "30 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  toolchain-latest:
+    name: Go Toolchain Latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # curl と sed だけで足りるので Go は入れない。
+      - name: go ディレクティブと最新の安定版を比べる
+        run: |
+          latest="$(curl -fsSL --retry 3 --retry-all-errors 'https://go.dev/VERSION?m=text' | sed -n '1s/^go//p')"
+          if [ -z "$latest" ]; then
+            echo "::error::最新の Go の版を取得できなかった (https://go.dev/VERSION?m=text)"
+            exit 1
+          fi
+          want="$(sed -n 's/^go //p' go.mod)"
+          echo "go.mod go=$want  latest=$latest"
+          if [ "$want" != "$latest" ]; then
+            echo "::error::go.mod の go ディレクティブが古い: go$want（最新の安定版は go$latest）"
+            exit 1
+          fi

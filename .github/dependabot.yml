@@ -18,6 +18,24 @@ updates:
       - "go"
     open-pull-requests-limit: 5
 
+  # Development tools (tools/go.mod: govulncheck), kept out of the root
+  # go.mod for the same reason as the release tools below.
+  - package-ecosystem: "gomod"
+    directory: "/tools"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+      timezone: "Asia/Tokyo"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "go"
+    allow:
+      - dependency-name: "golang.org/x/vuln"
+        dependency-type: "all"
+
   # Release tools (tools/release/go.mod: goreleaser, gocredits). A module of
   # its own so that they do not share a build list with the binary. Every
   # require there is `// indirect`, and Dependabot updates only direct ones
