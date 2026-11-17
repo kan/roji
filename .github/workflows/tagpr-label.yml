@@ -5,9 +5,10 @@ name: tagpr-label
 # draft and starts tagpr.yml with workflow_dispatch. What it does: "The tagpr
 # workflow" in the tagpr-scripts README.
 #
-# The SHA is the same tagpr-scripts commit as the line in tagpr.yml. Move both
-# in the pull request that runs git subtree pull (CLAUDE.md, "リリース PR
-# (tagpr)"). scripts/tagpr/verify-subtree.mjs checks both lines.
+# The SHA is the same tagpr-scripts commit as the lines in tagpr.yml and
+# release.yml. Move them all in the pull request that runs git subtree pull
+# (CLAUDE.md, "リリース PR (tagpr)"). scripts/tagpr/verify-subtree.mjs checks
+# every line.
 on:
   pull_request_target:
     types: [labeled, unlabeled]
@@ -16,7 +17,7 @@ permissions: {}
 
 jobs:
   rebuild:
-    uses: kan/tagpr-scripts/.github/workflows/tagpr-label.yml@73d904c9627a1c81c28c7966019867cb2d4fb253
+    uses: kan/tagpr-scripts/.github/workflows/tagpr-label.yml@f95892b128286dd1f84eea57f1e08a17e1f26eb3
     permissions:
       actions: write        # start the tagpr workflow
       pull-requests: write  # mark the release pull request draft

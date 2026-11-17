@@ -1,7 +1,8 @@
 # GoReleaser configuration
 # Documentation: https://goreleaser.com/customization/
 #
-# GoReleaser only builds: release-build.yml runs it with --skip=publish.
+# GoReleaser only builds: kan/tagpr-scripts' build-go.yml (called from
+# release.yml) runs it with --skip=publish.
 # release.yml creates the GitHub release, pushes the Docker image and updates
 # the Homebrew tap from the files in dist/, so the build runs without the
 # permissions and secrets that publishing needs.
@@ -98,6 +99,8 @@ homebrew_casks:
       owner: kan
       name: homebrew-roji
 
+# Keep this name: build-go.yml attests the archives listed in
+# dist/checksums.txt, and release-go.yml uploads them.
 checksum:
   name_template: 'checksums.txt'
 

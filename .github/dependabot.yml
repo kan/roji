@@ -40,7 +40,7 @@ updates:
   # its own so that they do not share a build list with the binary. Every
   # require there is `// indirect`, and Dependabot updates only direct ones
   # unless told, so name the tools. A goreleaser update can change the bytes
-  # of the archives, so merge it between releases (release-build.yml).
+  # of the archives, so merge it between releases (CLAUDE.md, "配布・品質").
   - package-ecosystem: "gomod"
     directory: "/tools/release"
     schedule:
@@ -78,7 +78,7 @@ updates:
       - "github-actions"
     open-pull-requests-limit: 5
     ignore:
-      # tagpr.yml と tagpr-label.yml が呼ぶ kan/tagpr-scripts の共通の workflow の SHA は、
+      # tagpr.yml、tagpr-label.yml、release.yml が呼ぶ kan/tagpr-scripts の共通の workflow の SHA は、
       # scripts/tagpr/ の subtree と揃える。subtree pull と同じ PR でだけ上げ、
       # Dependabot には上げさせない（tagpr-scripts の README「The tagpr workflow」）
       - dependency-name: "kan/tagpr-scripts*"

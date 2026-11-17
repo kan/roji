@@ -82,8 +82,8 @@ roji/
 ├── i18n/                    # CLI / ダッシュボードのメッセージ
 ├── apiclient/               # CLI から稼働中の roji API を呼ぶクライアント
 ├── test/                    # インテグレーション/E2Eテスト
-├── scripts/                 # リリース PR の準備（release-prepare.sh）
-│   └── tagpr/               # CHANGELOG の節の書き換えと抽出（kan/tagpr-scripts の subtree。編集しない）
+├── scripts/
+│   └── tagpr/               # リリース PR の準備と CHANGELOG の節の抽出（kan/tagpr-scripts の subtree。編集しない）
 ├── .tagpr                   # tagpr の設定（リリース PR）
 ├── credits.go               # LICENSE / CREDITS / THIRD_PARTY_NOTICES の埋め込み（roji credits）
 ├── CREDITS                  # 依存 Go モジュールのライセンス（gocredits で生成、コミットする）
@@ -369,16 +369,18 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
 ### 配布・品質
 - ワンライナーインストール（Native Mode / アップグレード対応）
   - 取得したアーカイブは `checksums.txt` と照合する。`gh` がありログイン済みなら
-    `gh attestation verify` で出所も検証する（`release-build.yml` の `actions/attest` が
-    証明を付ける）。どちらかが失敗したらインストールしない。取得したバイナリを
+    `gh attestation verify` で出所も検証する（kan/tagpr-scripts の `build-go.yml` の
+    `actions/attest` が証明を付ける）。どちらかが失敗したらインストールしない。取得したバイナリを
     `sudo` で実行し CA まで入れるため
   - 検証は `--signer-workflow`（署名したワークフロー）と `--source-ref`（入れる版の
     タグ）で絞る。`--repo` だけだと、古い版の正規のアーカイブを新しい版として
     配る差し替えを検出できない
   - **署名するワークフローのパスは版で違う**（`install.sh` の `signer_workflow`）。
-    v1.3.0 までは `release.yml`、それより後は `release-build.yml`。install.sh は
-    常に `main` のものが使われ、`--version` で古い版も入れるので、
-    `release-build.yml` を改名・移動するときは先にこの分岐を足すこと
+    v1.3.0 までは `release.yml`、v1.6.2 までは `release-build.yml`、それより後は
+    `kan/tagpr-scripts/.github/workflows/build-go.yml`（共通の workflow。kan/tagpr-scripts#17）。
+    install.sh は常に `main` のものが使われ、`--version` で古い版も入れるので、
+    署名する workflow が変わるときは先にこの分岐を足すこと（tagpr-scripts 側で
+    `build-go.yml` を改名・移動するときも同じ）
   - attestation は v1.2.1 以降にしか無い（`install.sh` の `FIRST_ATTESTED_VERSION`）。
     それより前の版はチェックサムの照合だけで入れる。v1.2.1 はリリースしておらず、
     実際に attestation が付いた最初の版は v1.3.0
@@ -395,10 +397,13 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
   - gocredits は `go.mod` の `tool` と、テストだけで使う依存を含めない
 - GoReleaser v2（マルチプラットフォーム）
 - ビルドと公開の分離（v1.4.0 から）
-  - `release-build.yml`（reusable workflow）がビルドと attest だけを行う。権限は
-    `contents: read` と attestation 用の 3 つで、secrets は渡さない
-  - `release.yml` の `publish` ジョブが、受け取った成果物からリリース、Docker
-    イメージ、Homebrew cask を公開する。ここではコンパイルしない
+  - ビルドと attest は kan/tagpr-scripts の共通の `build-go.yml` が行う（v1.6.2 までは
+    roji の `release-build.yml`）。権限は `contents: read` と attestation 用の 3 つで、
+    secrets は渡さない
+  - `release.yml` の `docker` / `release`（共通の `release-go.yml`）/ `homebrew` ジョブが、
+    受け取った成果物から Docker イメージ、リリース、Homebrew cask を公開する。ここでは
+    コンパイルしない。動きと再実行の仕方は `scripts/tagpr/README.md` の
+    「The Go release workflows」
   - GoReleaser は `--skip=publish` でビルド専用。`--split` / `publish` は Pro 版に
     しか無いため、公開は `gh` と `docker/build-push-action` で書いている
   - **ビルド側のジョブに書き込み権限や secrets を足さないこと。** 分離している
@@ -744,7 +749,7 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
 
    - **最新の tagpr の run が success であること。** 失敗した run はリリース PR を
      draft にする（その後の扱いは `scripts/tagpr/README.md` の「The tagpr workflow」）。失敗していたら
-     `scripts/release-prepare.sh` の出力を読む。多いのは `## [Unreleased]` が
+     `scripts/tagpr/release-prepare.mjs` の出力を読む。多いのは `## [Unreleased]` が
      空のとき。CHANGELOG を書く PR を main にマージすると作り直される
    - **版（PR のタイトル）が正しいこと。** 既定は patch。minor にするときは
      リリース PR にラベルを付ける。前回のリリース以降にマージした PR が
@@ -822,18 +827,20 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
 
      ```bash
      gh attestation verify roji_Linux_x86_64.tar.gz --repo kan/roji \
-       --signer-workflow kan/roji/.github/workflows/release-build.yml \
+       --signer-workflow kan/tagpr-scripts/.github/workflows/build-go.yml \
        --source-ref refs/tags/vX.Y.Z
      ```
 
-   - リリースが draft のまま残っていないこと。`publish` ジョブは draft で作り、
-     Docker イメージの push が済んでから公開する。attest は `build` ジョブで
-     済んでいるので、公開された時点で必ず attestation がある。draft のまま
-     残っていたら `publish` ジョブの失敗を調べる。直して `publish` ジョブを
-     再実行すると、残った draft は作り直される。公開後のステップ（cask の更新など）
-     で失敗した場合も同じく再実行でよく、公開済みのリリースには触らず残りだけを行う
-   - `build` ジョブの成果物は 1 日で消える。`publish` の再実行が翌日以降になったら、
-     ワークフロー全体を再実行する（ビルドは再現可能なので同じアーカイブができる）
+   - リリースが draft のまま残っていないこと。ジョブは `test` → `build` → `docker` →
+     `release` → `homebrew` の順。Docker イメージは Release を作る前に push する
+     （イメージのタグは push し直せるが、公開した Release は変えられないため）。
+     `release` は draft で作ってアーカイブを載せてから公開する。attest は `build` で
+     済んでいるので、公開された時点で必ず attestation がある。draft のまま残っていたら
+     `release` の失敗を調べる。直して落ちたジョブを再実行する（`gh run rerun <run-id> --failed`）と、
+     残った draft は作り直される。公開後の `homebrew` で失敗した場合も同じく再実行でよく、
+     公開済みのリリースには触らない
+   - `build` の成果物は 7 日で消える。再実行が 7 日を過ぎたら、ワークフロー全体を
+     再実行する（ビルドは再現可能なので同じアーカイブができる）
    - Homebrew tap（`kan/homebrew-roji`）の `Casks/roji.rb` が新しい版になって
      いること。cask の更新は公開の後に行う（cask が指すダウンロード URL は
      draft の間は解決できないため）
@@ -841,7 +848,7 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
      immutable releases を有効にしており、公開した時点で release attestation が
      作られる
    - **公開後はアセットとタグを差し替えられない。** 成果物の誤りは次の版で直す
-     （タイトルとリリースノートは公開後も編集できる）。`publish` ジョブが draft の
+     （タイトルとリリースノートは公開後も編集できる）。`release` ジョブが draft の
      うちにアセットを揃えてから公開するのはこのため。公開後にアセットを足す
      ステップをワークフローへ入れないこと
    - プレリリース（`v1.2.3-rc.1` のように `-` を含むタグ）は、GitHub の
@@ -853,7 +860,7 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
 
 **やり直し**
 
-- `publish` ジョブだけが落ちたら、そのジョブを再実行する（上の「確認」）
+- `build` より後のジョブが落ちたら、落ちたジョブを再実行する（上の「確認」）
 - 打ってあるタグで丸ごとやり直すなら `gh workflow run release.yml --ref vX.Y.Z`
 - タグは打たれたのに `release.yml` が起動していないときは、そのマージコミットの
   tagpr の run を再実行する（`gh run rerun <run-id>`）。**`release.yml` がすでに
@@ -885,8 +892,7 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
 - **main に push があるたびに `tagpr.yml` がリリース PR を作り直す。** ブランチは
   `tagpr-from-v<前回の版>`。マージすると、次の run がマージコミットにタグを打つ。
   設定は `.tagpr`
-- **`tagpr.yml` は `credits` のジョブと、kan/tagpr-scripts の共通の workflow を呼ぶ
-  ジョブだけ。** tagpr のジョブ、落ちた run での draft、タグを
+- **`tagpr.yml` は kan/tagpr-scripts の共通の workflow を呼ぶジョブだけ。** tagpr のジョブ、落ちた run での draft、タグを
   annotated に打ち直すこと、`release.yml` の起動はそちらにある。動きと落ちたときの
   扱いは `scripts/tagpr/README.md` の「The tagpr workflow」にある。**この文書へ
   写さないこと。** tagpr の版が変わるたびに写しがずれる。ここに書くのは roji に
@@ -904,41 +910,38 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
   `git subtree pull -S --prefix=scripts/tagpr https://github.com/kan/tagpr-scripts.git main --squash`
   で取り込む。`-S` を付ける（subtree のコミットには `commit.gpgsign` が効かない）。
   その PR はマージコミットで入れる（「ブランチと PR」）。取り込みは CHANGELOG に
-  書かない。**同じ PR で、`tagpr.yml` と `tagpr-label.yml` の呼ぶ行
-  （`uses: kan/tagpr-scripts/...@<SHA>`）の SHA を両方とも上げる。** 上げ先は取り込んだ
+  書かない。**同じ PR で、`tagpr.yml`、`tagpr-label.yml`、`release.yml` の呼ぶ行
+  （`uses: kan/tagpr-scripts/...@<SHA>`）の SHA をすべて上げる。** 上げ先は取り込んだ
   tagpr-scripts の commit で、squash のコミットのメッセージにある `git-subtree-split` の SHA。roji の squash やマージのコミットの
   SHA ではない。PR の CI（`ci.yml` の `lint` ジョブ）が
   `node scripts/tagpr/verify-subtree.mjs` で、`scripts/tagpr/` と呼ぶ行の SHA が
   揃っているかを確かめる
-- **リリース PR の中身は `scripts/release-prepare.sh` が作る**（`.tagpr` の
-  `postVersionCommand`）。`TAGPR_ARTIFACT_DIR` の `CREDITS` を検査してから
-  `scripts/tagpr/release-prepare.mjs --changelog-only` を呼び、最後に `CREDITS` を
-  差し替える。この順にしているのは、落ちるときに何も書き換えないため。
-  `release-prepare.mjs` は `## [Unreleased]` を `## [X.Y.Z] - 日付` にし、その上に
-  空の `## [Unreleased]` を置き直し、末尾にリンク定義を足す。失敗するのは
+- **リリース PR の中身は `scripts/tagpr/release-prepare.mjs --changelog-only --credits` が
+  作る**（`.tagpr` の `postVersionCommand`）。検査をすべて済ませてから書くので、落ちるときは
+  何も書き換えない。`## [Unreleased]` を `## [X.Y.Z] - 日付` にし、その上に
+  空の `## [Unreleased]` を置き直し、末尾にリンク定義を足し、`CREDITS` を差し替える。失敗するのは
   `## [Unreleased]` が無いか空のときと、最新のタグより新しい版の節がすでにある
   とき（リリース PR をマージしたのにタグが打たれていない。取り消されたマージの run は
   次の run が再実行するので、これで落ちるのはそれができなかったときだけ。「リリース PR を
   マージする」の手順でマージコミットの run を手で再実行する）。失敗しても tagpr は
   リリース PR を作る。その PR は共通の workflow が draft にするが、run が赤なら
   マージしない
-- **`CREDITS` は書き込みの権限の無いジョブ（`credits`）で生成し、artifact
-  （`credits`）で渡す。** gocredits はサードパーティのコードで、tagpr のジョブは
+- **`CREDITS` は共通の workflow が書き込みの権限の無いジョブで生成して渡す**
+  （`tagpr.yml` の `go-credits: true`）。gocredits はサードパーティのコードで、tagpr のジョブは
   リポジトリへ push できるトークンを持つ。tagpr のジョブでは依存のコードを走らせないこと。
-  共通の workflow が artifact を落とし、そのディレクトリを `TAGPR_ARTIFACT_DIR` で渡す。
-  呼ぶジョブの `if: ${{ !cancelled() }}` は外さない。`credits` が落ちてもマージの run が
-  タグを打てるようにするため（その run は `CREDITS` を使わない）
+  生成が落ちてもマージの run はタグを打つ（その run は `CREDITS` を使わない）。リリース PR を
+  作り直す run では `--credits` が落ち、リリース PR は draft になる
 - **CHANGELOG と GitHub のリリースは tagpr に作らせない**（`changelog = false` /
   `release = false`）。tagpr の CHANGELOG は PR のタイトルを並べるだけで、
   リリースノートには足りない（roji は利用者に届く変更を CHANGELOG に手で書く）。
-  リリースは immutable releases なので、tagpr が公開するとアセットを足せなくなる。draft は従来どおり `release.yml` の `publish` ジョブが作る
+  リリースは immutable releases なので、tagpr が公開するとアセットを足せなくなる。draft は `release.yml` の `release` ジョブが作る
 - **リリースノートは CHANGELOG の節**（`scripts/tagpr/release-notes.mjs` にタグを
-  渡す。プレリリースのタグは `## [Unreleased]`）。`release.yml` の `test` ジョブが
-  ビルドの前に節を確かめる。GoReleaser の changelog は使わない（`disable: true`）
-- **タグは `release.yml` の `test` ジョブが `scripts/tagpr/release-tag.mjs` で確かめる。**
+  渡す。プレリリースのタグは `## [Unreleased]`）。`release.yml` の
+  `build`（共通の `build-go.yml`）がビルドの前に節を確かめる。GoReleaser の changelog は使わない（`disable: true`）
+- **タグは `release.yml` の `build`（共通の `build-go.yml`）が `scripts/tagpr/release-tag.mjs` で確かめる。**
   vX.Y.Z の形で、`main`（`.tagpr` の `releaseBranch`）の上にあること。ほかのブランチに
   手で打ったタグはここで止まる。プレリリースかどうかもこのスクリプトの `prerelease=`
-  で決め、`publish` ジョブが使う（`release-notes.mjs` が節を選ぶのと同じ規則）。
+  で決め、`docker` / `release` / `homebrew` ジョブが使う（`release-notes.mjs` が節を選ぶのと同じ規則）。
   プレリリースのタグも `main` の上で打つ
 - **CHANGELOG の読み方（節の見出し、コードフェンス、末尾のリンク定義）は
   `scripts/tagpr/changelog.mjs` の 1 か所にある。** roji 側に CHANGELOG を読む
@@ -1530,8 +1533,8 @@ go tool -modfile=tools/release/go.mod goreleaser release --snapshot --clean
 - `version: 2` ヘッダーが必須
 
 **GoReleaser がやらないこと:** リリースの作成、Docker イメージ、Homebrew tap への
-push は `release.yml` の `publish` ジョブが行う（「配布・品質」の「ビルドと公開の
-分離」）。`.goreleaser.yml` に `dockers_v2` や `release.draft` を戻しても
+push は `release.yml` の `release` / `docker` / `homebrew` ジョブが行う（「配布・品質」の
+「ビルドと公開の分離」）。`.goreleaser.yml` に `dockers_v2` や `release.draft` を戻しても
 `--skip=publish` で無視される。
 
 リリース用のビルドをローカルで再現するには次を使う（`--snapshot` は版が変わる）。
@@ -1540,7 +1543,7 @@ push は `release.yml` の `publish` ジョブが行う（「配布・品質」�
 go tool -modfile=tools/release/go.mod goreleaser release --clean --skip=publish
 ```
 
-token は要らない（`release-build.yml` も渡さない。Homebrew の cask も token 無しで
+token は要らない（共通の `build-go.yml` も渡さない。Homebrew の cask も token 無しで
 生成される）。
 
 公開されたアーカイブと `checksums.txt` まで一致させるには、タグを checkout し、
@@ -1551,7 +1554,7 @@ roji はローカルの Go でビルドされるので、Go の版が違うと�
 公開時の checksum と一致した。
 
 `Dockerfile.goreleaser` は `ARG TARGETPLATFORM` を使い `${TARGETPLATFORM}/roji` から
-コピーする。`publish` ジョブがバイナリを `linux/amd64/roji` の形に並べて渡す。
+コピーする。`docker` ジョブがバイナリを `linux/amd64/roji` の形に並べて渡す。
 
 ### 手動テスト
 

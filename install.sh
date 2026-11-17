@@ -38,8 +38,13 @@ DOCKER_INSTALL_DIR="$HOME/.roji"
 # only be checked against checksums.txt.
 FIRST_ATTESTED_VERSION="1.2.1"
 # The last release whose archives were attested by release.yml itself. Later
-# ones are built and attested by the reusable workflow release-build.yml.
+# ones, up to the next constant, are built and attested by the reusable
+# workflow release-build.yml.
 LAST_RELEASE_YML_SIGNED_VERSION="1.3.0"
+# The last release attested by release-build.yml. Later ones are built and
+# attested by kan/tagpr-scripts' shared workflow build-go.yml.
+LAST_RELEASE_BUILD_SIGNED_VERSION="1.6.2"
+SHARED_SIGNER_WORKFLOW="kan/tagpr-scripts/.github/workflows/build-go.yml"
 
 # Default options
 INSTALL_MODE=""  # Will be set interactively or via flags
@@ -615,15 +620,18 @@ verify_checksum() {
 # comes from main, yet --version installs older releases too, so the answer
 # depends on the version.
 signer_workflow() {
-    if version_lt "$LAST_RELEASE_YML_SIGNED_VERSION" "$VERSION"; then
+    if version_lt "$LAST_RELEASE_BUILD_SIGNED_VERSION" "$VERSION"; then
+        echo "$SHARED_SIGNER_WORKFLOW"
+    elif version_lt "$LAST_RELEASE_YML_SIGNED_VERSION" "$VERSION"; then
         echo "${GITHUB_REPO}/.github/workflows/release-build.yml"
     else
         echo "${GITHUB_REPO}/.github/workflows/release.yml"
     fi
 }
 
-# Verify that the archive was built by this repository's release workflow,
-# from the tag of the version being installed. --repo alone would accept an
+# Verify that the archive was built by this repository's release workflow
+# (for later releases, the shared workflow it calls; --repo stays this
+# repository), from the tag of the version being installed. --repo alone would accept an
 # archive attested by any workflow in the repository, from any ref: a genuine
 # archive of an older release served as this one would pass.
 verify_attestation() {
