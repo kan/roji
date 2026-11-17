@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `roji version` of a released binary no longer ends the commit with
+  `-dirty`. GoReleaser's `dist/` directory was not in `.gitignore`, so Go
+  recorded the release build's tree as modified. Released binaries up to
+  v1.6.2 show it although they were built from the tagged commit.
+
 ## [1.6.2] - 2026-11-17
 
 ### Internal
