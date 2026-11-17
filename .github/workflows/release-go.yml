@@ -1,0 +1,120 @@
+name: release-go
+
+# **Go の取り込み先の release のワークフローから呼ぶ reusable workflow（issue #17）。** `build-go.yml` が
+# 置いた artifact `release-dist` と `release-notes` から GitHub Release を作り、公開する。この repo では
+# 動かない（`workflow_call` しか持たない）。呼び方と入力は README の「The Go release workflows」。
+#
+# - 本文は `build-go.yml` の check のジョブが CHANGELOG.md から書き出したもの（検査したもの = 本文）。
+#   `notes-footer` があれば末尾に足す
+# - 添付するのは、`checksums.txt` に載っているファイルと `checksums.txt` 自身。`release-dist` の
+#   ほかのファイル（`extra-files`）は添付しない
+# - **draft で作ってから公開する。** 取り込み先は immutable releases を有効にするので、公開した後は
+#   アセットもタグも変えられない。前の試行が残したものを見て、draft なら作り直し、公開済みなら何もしない
+#
+# checkout しない。repo は `GH_REPO` で渡す。
+#
+# **この workflow に `concurrency` を置かない**（`build-go.yml` と同じ。呼ぶ側が絞る）
+on:
+  workflow_call:
+    inputs:
+      prerelease:
+        description: build-go.yml の出力 prerelease（true か false）
+        type: string
+        required: true
+      notes-footer:
+        description: Release の本文の末尾に足す Markdown。{version} は版（v の無い X.Y.Z）に置き換える。空なら足さない
+        type: string
+        default: ''
+
+permissions: {}
+
+jobs:
+  release:
+    name: Create the release
+    # **タグのときだけ動かす**（build-go.yml と同じ。呼ぶ側の needs を外されても止まるように）
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write  # Release の作成と公開
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_REPO: ${{ github.repository }}
+      PRERELEASE: ${{ inputs.prerelease }}
+    steps:
+      # gh は true / false 以外も受けるが、draft を消した後で落ちないよう、先に確かめる
+      - name: Check the inputs
+        run: |
+          case "$PRERELEASE" in
+            true | false) ;;
+            *)
+              echo "::error::prerelease must be true or false (the prerelease output of build-go.yml), got \"$PRERELEASE\""
+              exit 1
+              ;;
+          esac
+
+      # release_state は、このジョブの前の試行が残したもの:
+      #   none      - 何も無い
+      #   draft     - 公開の前に落ちた。draft を作り直す
+      #   published - Release は済んでいる。何もしない
+      # 「無い」とみなすのは `release not found` のときだけ（publish-cpan.yml と同じ）。API の失敗
+      # （認証、5xx）を「無い」と読むと、前の試行の draft を残したまま、もう 1 つ draft を作る
+      - name: Look for an earlier release
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if state=$(gh release view "$TAG" --json isDraft \
+            --jq 'if .isDraft then "draft" else "published" end' 2>"$RUNNER_TEMP/release-view.err"); then
+            :
+          elif grep -q 'release not found' "$RUNNER_TEMP/release-view.err"; then
+            state=none
+          else
+            cat "$RUNNER_TEMP/release-view.err" >&2
+            echo "::error::Cannot see whether $TAG has a GitHub release"
+            exit 1
+          fi
+          echo "release_state=${state}" >> "$GITHUB_OUTPUT"
+
+      - if: steps.meta.outputs.release_state != 'published'
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes
+
+      - if: steps.meta.outputs.release_state != 'published'
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-dist
+          path: ${{ runner.temp }}/dist
+
+      - name: Create the draft release
+        if: steps.meta.outputs.release_state != 'published'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_STATE: ${{ steps.meta.outputs.release_state }}
+          NOTES_FOOTER: ${{ inputs.notes-footer }}
+        run: |
+          dist="$RUNNER_TEMP/dist"
+          files=()
+          while read -r _ name; do
+            files+=("$dist/$name")
+          done < "$dist/checksums.txt"
+          files+=("$dist/checksums.txt")
+
+          notes="$RUNNER_TEMP/notes/release-notes.md"
+          if [ -n "$NOTES_FOOTER" ]; then
+            printf '\n%s\n' "${NOTES_FOOTER//\{version\}/${TAG#v}}" >> "$notes"
+          fi
+
+          if [ "$RELEASE_STATE" = draft ]; then
+            gh release delete "$TAG" --yes
+          fi
+          gh release create "$TAG" --draft --verify-tag --prerelease="$PRERELEASE" \
+            --title "$TAG" --notes-file "$notes" "${files[@]}"
+
+      - name: Publish the release
+        if: steps.meta.outputs.release_state != 'published'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false
