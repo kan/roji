@@ -2,6 +2,9 @@
 /roji
 /bin/
 tmp/
+# GoReleaser's output. Untracked, it would make Go record the release build
+# as modified (vcs.modified=true), and `roji version` would print -dirty.
+/dist/
 
 # Certificates (generated locally, root directory only)
 /certs/
