@@ -16,7 +16,7 @@ permissions: {}
 
 jobs:
   rebuild:
-    uses: kan/tagpr-scripts/.github/workflows/tagpr-label.yml@acd6fdd62871cc7acc6c33fc7e1ceb314e82e428
+    uses: kan/tagpr-scripts/.github/workflows/tagpr-label.yml@73d904c9627a1c81c28c7966019867cb2d4fb253
     permissions:
       actions: write        # start the tagpr workflow
       pull-requests: write  # mark the release pull request draft
