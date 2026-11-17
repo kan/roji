@@ -9,10 +9,11 @@
 	# tagpr:minor / tagpr:major, otherwise a patch release.
 	versionFile = -
 	# CHANGELOG.md is written by hand under "## [Unreleased]";
-	# scripts/release-prepare.sh turns that section into the release's
-	# (through scripts/tagpr/release-prepare.mjs) and refreshes CREDITS.
+	# scripts/tagpr/release-prepare.mjs turns that section into the release's
+	# and, with --credits, replaces CREDITS with the one tagpr.yml generated
+	# (go-credits).
 	changelog = false
-	postVersionCommand = bash scripts/release-prepare.sh
+	postVersionCommand = node scripts/tagpr/release-prepare.mjs --changelog-only --credits
 	# release.yml creates the GitHub release as a draft and publishes it once
 	# the assets are in place. Immutable releases are enabled, so a release
 	# published by tagpr could never receive them.

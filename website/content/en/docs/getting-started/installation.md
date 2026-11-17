@@ -59,13 +59,16 @@ GitHub CLI, the way the installer does. Put the version you downloaded in
 
 ```bash
 gh attestation verify roji_Linux_x86_64.tar.gz --repo kan/roji \
-  --signer-workflow kan/roji/.github/workflows/release-build.yml \
+  --signer-workflow kan/tagpr-scripts/.github/workflows/build-go.yml \
   --source-ref refs/tags/vX.Y.Z
 ```
 
 `--signer-workflow` limits the check to archives built by the release
-workflow, and `--source-ref` to the ones built from that version's tag. For
-v1.3.0, the signer workflow is `kan/roji/.github/workflows/release.yml`.
+workflow, and `--source-ref` to the ones built from that version's tag. The
+signer workflow depends on the version. The one above is for the releases
+after v1.6.2. For v1.4.0 to v1.6.2 it is
+`kan/roji/.github/workflows/release-build.yml`, and for v1.3.0 it is
+`kan/roji/.github/workflows/release.yml`.
 Earlier releases carry no attestation.
 
 ## Upgrading

@@ -18,7 +18,7 @@ CPAN の coveralls-perl / p5-smart-options / p5-web-service-mailgun は、版を
 
 | ファイル | 呼ぶもの | 役割 |
 |---|---|---|
-| `release-prepare.mjs` | tagpr（`.tagpr` の `postVersionCommand`） | `## [Unreleased]` を `## [X.Y.Z] - <JST の日付>` にし、空の `## [Unreleased]` を置き直し、末尾のリンク定義の先頭にその版のリンクを足す。`package-lock.json` の版を `package.json` に揃える（`--changelog-only` では揃えない） |
+| `release-prepare.mjs` | tagpr（`.tagpr` の `postVersionCommand`） | `## [Unreleased]` を `## [X.Y.Z] - <JST の日付>` にし、空の `## [Unreleased]` を置き直し、末尾のリンク定義の先頭にその版のリンクを足す。`package-lock.json` の版を `package.json` に揃える（`--changelog-only` では揃えない）。`--credits` では、ルートの `CREDITS` を `TAGPR_ARTIFACT_DIR/CREDITS`（共通の tagpr.yml の `go-credits` が作る）でバイト列のまま置き換える |
 | `release-notes.mjs` | 共通の publish の workflow（`publish-npm.yml`、`publish-cpan.yml`）と、それを使わない取り込み先の publish のワークフロー | CHANGELOG の 1 つの節の本文を出す。publish 前の存在確認と、GitHub Release の本文に使う。プレリリースのタグ（`vX.Y.Z-*`）では `Unreleased` の節を出す。段落と項目の折り返しは 1 行につなぐ（`unwrapLines`） |
 | `release-pending.mjs` | 共通の workflow（tagpr の前） | 出すものがあるかを判定する。`## [Unreleased]` が空で、最新のタグ（標準入力の ref の一覧から決める）より新しい版の節も無ければ `false`、ほかは `true`。`false` なら workflow は tagpr を走らせず（#13）、draft のリリース PR を閉じる（#14）。`false` に倒すほど閉じる PR が増える |
 | `missed-tags.mjs` | 共通の workflow（tagpr の前） | 打たれなかったタグを探すための CHANGELOG の読み取り。`untagged` は最新のタグより新しい版の節（版のタグが無ければ何も出さない）、`latest` は最新のタグの版、`newest` は標準入力の CHANGELOG のいちばん新しい版を出す。API は workflow が呼び、その版のマージコミットの cancelled の run を再実行する（#4） |
@@ -26,14 +26,16 @@ CPAN の coveralls-perl / p5-smart-options / p5-web-service-mailgun は、版を
 | `npm-lock.mjs` | `release-prepare.mjs` が import する | `package.json` の版の確認と、`package-lock.json` の版を揃えた中身を作る。書くのは呼んだ側 |
 | `cargo-lock.mjs` | `release-prepare.mjs` が import する（`--cargo <dir>`） | `<dir>/Cargo.toml` の `[package]` の版の確認と、`<dir>/Cargo.lock` の自分の `[[package]]` の版を揃えた中身を作る。`cargo` は呼ばない。書くのは呼んだ側 |
 | `version-files.mjs` | `release-prepare.mjs` が import する | `.tagpr` の `versionFile` を `git config` で読み、並んだ全部のファイルの本来の版（`*.json` は最上位の `"version"`、`Cargo.toml` は `[package]`、`VERSION` は中身の全体、`*.pm` は `our $VERSION = "X.Y.Z";` のちょうど 1 行）が提案の版かを確かめる。tagpr は各ファイルで今の版の最初の 1 か所しか書き換えず、別の行に当たっても何も落ちないため |
-| `verify-subtree.mjs` | 取り込み先の PR の CI | 取り込み先の `HEAD:scripts/tagpr` の tree と、`.github/workflows/` で呼ぶ `kan/tagpr-scripts/.github/workflows/<workflow>@<SHA>`（tagpr.yml、tagpr-label.yml、publish-npm.yml、publish-cpan.yml。名前を問わず拾う）の commit の tree が同じかを確かめる。呼ぶ行はすべて同じ commit であること |
-| `release-tag.mjs` | 共通の publish の workflow（`publish-npm.yml`、`publish-cpan.yml`）の build のジョブ（依存を入れる前） | タグが `vX.Y.Z` の形か、`package.json`（あれば）と `.tagpr` の `versionFile` のすべて（`versionFileMismatch`）の版がタグの版か、タグの commit が `.tagpr` の `releaseBranch`（`origin/<branch>`）の上にあるかを確かめる。`prerelease=`（`isPrereleaseTag`。`release-notes.mjs` と同じ規則）と、`package.json` があれば `spec=`（`name@version`）を `$GITHUB_OUTPUT` の形で出す |
+| `verify-subtree.mjs` | 取り込み先の PR の CI | 取り込み先の `HEAD:scripts/tagpr` の tree と、`.github/workflows/` で呼ぶ `kan/tagpr-scripts/.github/workflows/<workflow>@<SHA>`（tagpr.yml、tagpr-label.yml、publish-npm.yml、publish-cpan.yml、build-go.yml、release-go.yml。名前を問わず拾う）の commit の tree が同じかを確かめる。呼ぶ行はすべて同じ commit であること |
+| `release-tag.mjs` | 共通の publish の workflow（`publish-npm.yml`、`publish-cpan.yml`）の build のジョブ（依存を入れる前）、`build-go.yml` の check のジョブ | タグが `vX.Y.Z` の形か、`package.json`（あれば）と `.tagpr` の `versionFile` のすべて（`versionFileMismatch`）の版がタグの版か、タグの commit が `.tagpr` の `releaseBranch`（`origin/<branch>`）の上にあるかを確かめる。`prerelease=`（`isPrereleaseTag`。`release-notes.mjs` と同じ規則）と、`package.json` があれば `spec=`（`name@version`）を `$GITHUB_OUTPUT` の形で出す |
 | `test/release.node-test.mjs` | `node --test` | `verify-subtree.mjs` を除く上の 9 つのテスト |
 | `test/verify-subtree.node-test.mjs` | `node --test` | `verify-subtree.mjs` のテスト。一時ディレクトリに upstream と取り込み先の repo を作る |
-| `.github/workflows/tagpr.yml` | 取り込み先の tagpr.yml が `uses:` で呼ぶ（reusable workflow。この repo では動かない） | 出すものが無ければ（`release-pending.mjs`）tagpr を走らせず成功で終え、残った draft のリリース PR を閉じる（`workflow_dispatch` の起動では必ず走らせる。#14）。その前に、タグが打たれなかったリリース PR のマージの run の tagpr のジョブが cancelled なら再実行し、終わるのを待って呼ぶ側の workflow を起動し直す。その run では tagpr を走らせない（#4）。tagpr を走らせ、タグを打ったら annotated に打ち直し、取り込み先の publish / release をそのタグで `workflow_dispatch` する。tagpr が落ちた run ではリリース PR を draft にし、成功した run ではその run のリリース PR だけを ready に戻して、前のリリース PR を閉じる。入力は README の「The tagpr workflow」 |
+| `.github/workflows/tagpr.yml` | 取り込み先の tagpr.yml が `uses:` で呼ぶ（reusable workflow。この repo では動かない） | 出すものが無ければ（`release-pending.mjs`）tagpr を走らせず成功で終え、残った draft のリリース PR を閉じる（`workflow_dispatch` の起動では必ず走らせる。#14）。その前に、タグが打たれなかったリリース PR のマージの run の tagpr のジョブが cancelled なら再実行し、終わるのを待って呼ぶ側の workflow を起動し直す。その run では tagpr を走らせない（#4）。tagpr を走らせ、タグを打ったら annotated に打ち直し、取り込み先の publish / release をそのタグで `workflow_dispatch` する。tagpr が落ちた run ではリリース PR を draft にし、成功した run ではその run のリリース PR だけを ready に戻して、前のリリース PR を閉じる。`go-credits` では、読み取りだけのジョブで gocredits を走らせ、CREDITS を `TAGPR_ARTIFACT_DIR` で渡す（#17）。入力は README の「The tagpr workflow」 |
 | `.github/workflows/tagpr-label.yml` | 取り込み先の tagpr-label.yml が `pull_request_target`（`labeled` / `unlabeled`）で呼ぶ（reusable workflow） | 開いているリリース PR のラベルが付け外しされたら、その PR を draft にし、取り込み先の tagpr.yml をリリースのブランチで `workflow_dispatch` して作り直させる（#3） |
 | `.github/workflows/publish-npm.yml` | npm の取り込み先の publish のワークフロー（tagpr.yml の `release-workflow`）が `uses:` で呼ぶ（reusable workflow） | バージョンのタグを npm へ `npm stage publish` で stage し、GitHub Release を作る（#15）。公開はユーザーが `npm stage approve` で手で行う。ジョブを権限で `build` / `publish` / `release` に分け、依存のコードは `build` でしか走らせない。タグと `package.json` の版、`.tagpr` の `releaseBranch` の上にあるか、CHANGELOG の節を `npm ci` の前に確かめる。プレリリースは dist-tag `next`。npm で公開済みの版は stage し直さず、Release が既にあれば書き直す。repo ごとの違い（検査のコマンド、添付するファイルなど）は入力で渡す。入力は README の「The npm publish workflow」 |
 | `.github/workflows/publish-cpan.yml` | CPAN の取り込み先の publish のワークフロー（tagpr.yml の `release-workflow`）が `uses:` で呼ぶ（reusable workflow） | バージョンのタグを PAUSE へ送り、GitHub Release を作る（#16）。ジョブを権限で `build` / `upload` / `release` に分け、依存のコードは `build` でしか走らせない。PAUSE の認証情報は呼ぶ側の repo の `cpan` 環境にあり、`upload` だけが読む。Release が既にあるタグ、プレリリースのタグは止める（PAUSE は同じファイルを二度受け付けない）。repo ごとの違い（テストのコマンド、追加で入れるモジュール）は入力で渡す。入力は README の「The CPAN publish workflow」 |
+| `.github/workflows/build-go.yml` | Go の取り込み先の release のワークフロー（tagpr.yml の `release-workflow`）が `uses:` で呼ぶ（reusable workflow） | バージョンのタグを確かめ（`release-tag.mjs`、CHANGELOG の節、CREDITS が gocredits の出力と同じか）、GoReleaser（`tools/release/go.mod`）で `--skip=publish` でビルドし、attestation を付けて artifact `release-dist` に置く（#17）。ジョブを権限で `check` / `build` に分け、gocredits は `check` でしか走らせない。走っている Go の版が go.mod の toolchain 行（無ければ go 行）と同じかも確かめる。attestation の署名元はこの workflow になる。出力は `prerelease`。入力は README の「The Go release workflows」 |
+| `.github/workflows/release-go.yml` | 同じく Go の取り込み先の release のワークフローが、`build-go.yml` の後に呼ぶ（reusable workflow） | `release-dist` から GitHub Release を draft で作ってから公開する（#17）。添付は `checksums.txt` に載ったものと `checksums.txt`。前の試行の状態（none / draft / published）を見る。本文は `build-go.yml` の check のジョブが置いた `release-notes`（CHANGELOG の節）と `notes-footer`。checkout しない。呼ぶ側のジョブ（roji の Docker と Homebrew）は 2 つの workflow の間と後に置く |
 
 package.json は無い。依存も無い。
 
@@ -79,7 +81,8 @@ package.json は無い。依存も無い。
 - 改行は LF だけを受ける。CR があれば落とす
 - 取り込み先の Node は 24（CI も 24 で回している）。それより新しい機能を使わない。
   **版を上げるときは、`test.yml`、`.github/workflows/tagpr.yml`、`.github/workflows/publish-npm.yml`、
-  `.github/workflows/publish-cpan.yml` の `setup-node` を同じコミットで上げる。** Dependabot も lockfile も Node の版は追わないので、片方だけ上げてもどこも落ちない
+  `.github/workflows/publish-cpan.yml`、`.github/workflows/build-go.yml` の `setup-node` を同じコミットで
+  上げる。** Dependabot も lockfile も Node の版は追わないので、片方だけ上げてもどこも落ちない
 
 ## テスト
 
@@ -124,6 +127,12 @@ node --test 'test/*.node-test.mjs'
   sandbox では試さず、CPAN の取り込み先の実際のリリースで確かめるとユーザーが決めた（#16）。
   呼ぶ側の `cpan` 環境の secret は、`secrets: inherit` を付けて呼べば `upload` のジョブから読める。
   2026-11-10 に coveralls-perl の v1.1.0 で確かめた（付けない形は試していない）
+- `.github/workflows/build-go.yml` と `.github/workflows/release-go.yml`: 同じく取り込み先から呼ぶ
+  reusable workflow。中の action はこの repo の `actions.lock` が固定する。sandbox は Go の repo では
+  ないので、Go の取り込み先の実際のリリースで確かめる。取り込み先は immutable releases を有効にして
+  いるので、公開した版は消しても同じタグで出し直せない（直すには次の版を出す）。公開の前（draft）で
+  落ちたものは、再実行で作り直せる。**attestation の署名元はこの workflow のパスになる。** 名前を変えると、
+  `--signer-workflow` で確かめる取り込み先（roji の install.sh）が落ちる
 - `.github/workflows/verify-lockfile.yml`: `actions.lock` が `uses:` と食い違っていないか、
   固定した commit を上流で検証できるかを、PR と main への push で確かめる
 - **action の固定は `.github/workflows/actions.lock`（`gh actions-lock` が作る）に任せる。**
@@ -206,4 +215,7 @@ issue #1）。`--changelog-only` が npm でない repo の入り口。
 
 issue を読まずに着手しない。進める順はユーザーと決める。
 
-今は無い（2026-11-12 時点）。
+- #17: Go の取り込み先（roji / notify-slack / hokora）の release を共通の workflow にする。
+  3 repo の揃えは済み、設計は #17 のコメント。build-go.yml / release-go.yml / tagpr.yml の
+  `go-credits` / `release-prepare.mjs --credits` を入れた後、notify-slack → hokora → roji の順に
+  切り替え、各 repo で 1 回ずつリリースを通す

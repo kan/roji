@@ -59,13 +59,15 @@ GitHub CLI を使い、`--source-ref` にはダウンロードした版のタグ
 
 ```bash
 gh attestation verify roji_Linux_x86_64.tar.gz --repo kan/roji \
-  --signer-workflow kan/roji/.github/workflows/release-build.yml \
+  --signer-workflow kan/tagpr-scripts/.github/workflows/build-go.yml \
   --source-ref refs/tags/vX.Y.Z
 ```
 
 `--signer-workflow` は、リリース用のワークフローがビルドしたアーカイブだけを
 受け入れる指定。`--source-ref` は、その版のタグからビルドしたものだけを受け入れる指定。
-v1.3.0 では `--signer-workflow` に `kan/roji/.github/workflows/release.yml` を指定する。
+`--signer-workflow` に指定するものは版で違う。上の例は v1.6.2 より後の版のもの。
+v1.4.0 から v1.6.2 は `kan/roji/.github/workflows/release-build.yml`、
+v1.3.0 は `kan/roji/.github/workflows/release.yml`。
 それより前の版に attestation は無い。
 
 ## アップグレード

@@ -4,18 +4,32 @@ name: Release
 # pushed with GITHUB_TOKEN does not trigger push). The push trigger is for a
 # tag pushed by hand. Either way github.ref is the tag, which the build
 # provenance records and install.sh checks with --source-ref.
+#
+# The build and the GitHub release are kan/tagpr-scripts' shared workflows
+# (copies in scripts/tagpr/.github/workflows/). What they check, their inputs
+# and how to re-run them: "The Go release workflows" in the tagpr-scripts README.
+#
+#   test -> build (build-go.yml) -> docker -> release (release-go.yml) -> homebrew
+#
+# - build-go.yml checks the tag, its CHANGELOG section and CREDITS, builds the
+#   archives and attests them. The attestations are signed by
+#   kan/tagpr-scripts/.github/workflows/build-go.yml (install.sh's
+#   signer_workflow switches on the version).
+# - The Docker image is pushed before the release is made: if the release
+#   fails, a re-run makes the draft again, and the image tags can be pushed
+#   again; a published release cannot be changed (immutable releases).
+# - The Homebrew cask is updated after the release is published: it points at
+#   the release's download URLs, which do not resolve while it is a draft.
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
 
-# Each job lists what it needs
-permissions:
-  contents: read
+permissions: {}
 
 # One run per tag. Not cancelled: a run stopped while publishing would leave
-# a half-done release.
+# a half-done release. The shared workflows have no concurrency of their own.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -23,50 +37,23 @@ concurrency:
 jobs:
   # Run tests before releasing
   test:
-    # workflow_dispatch can be started on a branch; release only tags. Every
-    # other job depends on this one, so this condition guards them all: keep
-    # any job added later behind `needs: test`.
+    # workflow_dispatch can be started on a branch; release only tags. The
+    # shared workflows check this too, and every other job depends on this one.
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    outputs:
-      prerelease: ${{ steps.tag.outputs.prerelease }}
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0  # release-tag.mjs reads origin/main
           persist-credentials: false
-
-      # The tag is vX.Y.Z and on the release branch (.tagpr releaseBranch): a
-      # tag pushed by hand on another branch stops here. prerelease= follows
-      # the rule release-notes.mjs uses to pick the section.
-      - name: Check the tag
-        id: tag
-        env:
-          TAG: ${{ github.ref_name }}
-        run: node scripts/tagpr/release-tag.mjs "$TAG" >> "$GITHUB_OUTPUT"
-
-      # The publish job makes the release notes from this section. Stop here,
-      # before building, if the tag has none.
-      - name: Check the CHANGELOG section
-        env:
-          TAG: ${{ github.ref_name }}
-        run: node scripts/tagpr/release-notes.mjs "$TAG" > /dev/null
 
       - name: Set up Go
         uses: actions/setup-go@v7.0.0
         with:
           go-version-file: 'go.mod'
           cache: true
-          # gocredits below comes from tools/release
-          cache-dependency-path: |
-            go.sum
-            tools/release/go.sum
-
-      # The release PR refreshes CREDITS (scripts/release-prepare.sh). Stop
-      # the release if the tag does not have the refreshed file.
-      - name: Check CREDITS is up to date
-        run: go tool -modfile=tools/release/go.mod gocredits . | diff - CREDITS
 
       - name: Run unit tests
         run: go test -v -race ./...
@@ -79,34 +66,34 @@ jobs:
         working-directory: ./test
         run: go test -v -tags=e2e -timeout=5m ./...
 
-  # Build and attest the archives without the permissions and secrets that
-  # publishing needs. A reusable workflow cannot exceed what its caller
-  # grants, so the permissions are repeated here.
+  # The SHAs are the tagpr-scripts commit pulled into scripts/tagpr/, the same
+  # as tagpr.yml (verify-subtree.mjs checks these lines too).
   build:
-    needs: test  # Wait for tests to pass before releasing
+    needs: test
+    uses: kan/tagpr-scripts/.github/workflows/build-go.yml@f95892b128286dd1f84eea57f1e08a17e1f26eb3
     permissions:
       contents: read
-      id-token: write
-      attestations: write
-      artifact-metadata: write
-    uses: ./.github/workflows/release-build.yml
+      id-token: write           # Sigstore signing certificate for attestations
+      attestations: write       # Store the build provenance attestation
+      artifact-metadata: write  # Storage record for the attested artifacts
+    with:
+      # Not attached to the release; the homebrew job pushes it to the tap
+      extra-files: homebrew/Casks/roji.rb
 
-  # Publish what the build job produced. Nothing is compiled here.
-  publish:
-    needs: [test, build]
+  # The image holds the binaries of the attested archives. Nothing is compiled
+  # here.
+  docker:
+    needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Create and publish the release
+      contents: read
       packages: write  # Push the Docker image
-      actions: read    # Download the build job's artifact
     env:
       TAG: ${{ github.ref_name }}
-      GH_REPO: ${{ github.repository }}
-      # A tag with a pre-release suffix (v1.2.3-rc.1), as release-tag.mjs in
-      # the test job decides. It gets a GitHub pre-release and a versioned
-      # image, but neither the image's latest tag nor the Homebrew cask, which
-      # would hand it to everyone.
-      PRERELEASE: ${{ needs.test.outputs.prerelease }}
+      # A tag with a pre-release suffix (v1.2.3-rc.1) gets a versioned image
+      # but not the image's latest tag, nor the Homebrew cask, which would hand
+      # it to everyone.
+      PRERELEASE: ${{ needs.build.outputs.prerelease }}
     steps:
       # For Dockerfile.goreleaser and the license files copied into the image
       - name: Checkout
@@ -120,73 +107,13 @@ jobs:
           name: release-dist
           path: dist
 
-      # release_state is what an earlier attempt of this job left behind:
-      #   none      - nothing
-      #   draft     - it failed before publishing; the draft is replaced
-      #   published - it failed after publishing; the release is left alone
-      #               and only the remaining steps run
-      - name: Set release metadata
+      - name: Set image metadata
         id: meta
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          state=none
-          if is_draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
-            state=published
-            if [ "$is_draft" = "true" ]; then
-              state=draft
-            fi
-          fi
-
           {
             echo "version=${TAG#v}"
             echo "commit_date=$(git log -1 --format=%cI)"
-            echo "release_state=${state}"
           } >> "$GITHUB_OUTPUT"
-
-      # The release stays a draft until the image is pushed, so
-      # /releases/latest keeps pointing at the previous version. install.sh
-      # refuses a release whose archives have no attestation; the build job
-      # has already attested them by the time this job starts.
-      - name: Create draft release
-        if: steps.meta.outputs.release_state != 'published'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_STATE: ${{ steps.meta.outputs.release_state }}
-        run: |
-          if [ "$RELEASE_STATE" = draft ]; then
-            gh release delete "$TAG" --yes
-          fi
-
-          version="${TAG#v}"
-          notes="$RUNNER_TEMP/release-notes.md"
-          # The CHANGELOG.md section of the version ("Unreleased" for a
-          # pre-release); the test job has already checked it
-          node scripts/tagpr/release-notes.mjs "$TAG" > "$notes"
-          cat >> "$notes" <<EOF
-
-          ## Docker Image
-
-          \`\`\`bash
-          docker pull ghcr.io/kan/roji:${version}
-          \`\`\`
-
-          ## Homebrew (macOS)
-
-          \`\`\`bash
-          brew install kan/roji/roji
-          \`\`\`
-
-          ## Quick Install
-
-          \`\`\`bash
-          curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash -s -- --version ${version}
-          \`\`\`
-          EOF
-
-          gh release create "$TAG" --draft --verify-tag --prerelease="$PRERELEASE" \
-            --title "$TAG" --notes-file "$notes" \
-            dist/*.tar.gz dist/*.zip dist/checksums.txt
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.4.1
@@ -227,18 +154,52 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
 
-      # With immutable releases enabled, the assets and the tag cannot be
-      # changed from here on.
-      - name: Publish release
-        if: steps.meta.outputs.release_state != 'published'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$TAG" --draft=false
+  # Creates the release as a draft with the archives and publishes it. install.sh
+  # refuses a release whose archives have no attestation; build-go.yml has
+  # attested them by then.
+  release:
+    needs: [build, docker]
+    uses: kan/tagpr-scripts/.github/workflows/release-go.yml@f95892b128286dd1f84eea57f1e08a17e1f26eb3
+    permissions:
+      contents: write  # Create and publish the release
+    with:
+      prerelease: ${{ needs.build.outputs.prerelease }}
+      # {version} is the version without the v
+      notes-footer: |
+        ## Docker Image
 
-      # After publishing: the cask points at the release's download URLs,
-      # which do not resolve while the release is a draft.
+        ```bash
+        docker pull ghcr.io/kan/roji:{version}
+        ```
+
+        ## Homebrew (macOS)
+
+        ```bash
+        brew install kan/roji/roji
+        ```
+
+        ## Quick Install
+
+        ```bash
+        curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kan/roji/main/install.sh | bash -s -- --version {version}
+        ```
+
+  homebrew:
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Download release files
+        if: needs.build.outputs.prerelease != 'true'
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-dist
+          path: dist
+
       - name: Update Homebrew cask
-        if: env.PRERELEASE != 'true'
+        if: needs.build.outputs.prerelease != 'true'
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |

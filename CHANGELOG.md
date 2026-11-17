@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Release archives are now built and attested by the shared workflow of
+  [kan/tagpr-scripts](https://github.com/kan/tagpr-scripts), so the signer
+  workflow of their attestations is
+  `kan/tagpr-scripts/.github/workflows/build-go.yml`. `install.sh` picks the
+  signer by version; to verify by hand, see the README.
+
 ### Fixed
 
 - `roji version` of a released binary no longer ends the commit with

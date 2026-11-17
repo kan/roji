@@ -1,0 +1,217 @@
+name: build-go
+
+# **Go の取り込み先の release のワークフローから呼ぶ reusable workflow（issue #17）。** バージョンの
+# タグを確かめ、GoReleaser でアーカイブを作って build provenance の attestation を付け、artifact
+# `release-dist` に置く。Release の本文（CHANGELOG の節）は artifact `release-notes` に置く。
+# GitHub Release は作らない（`release-go.yml` が作る）。この repo では動かない
+# （`workflow_call` しか持たない）。呼び方と入力は README の「The Go release workflows」。
+#
+# 呼ぶ側は、tagpr.yml の `release-workflow` に指定された取り込み先の workflow（`release.yml`）。
+# tagpr.yml がタグを ref にして `workflow_dispatch` で起動する（GITHUB_TOKEN で push したタグでは
+# `push: tags` が起動しないため）。`push: tags` は手でタグを打ち直したとき用。
+#
+# 取り込み先に置く前提（規約。入力にしない）:
+#
+# - ルートに `go.mod`、`CHANGELOG.md`、`CREDITS`、`.goreleaser.yaml`（または `.yml`）がある
+# - `.goreleaser.yaml` の `checksum.name_template` は `checksums.txt`（GoReleaser の既定は
+#   `<project>_<version>_checksums.txt` なので、書き換える）
+# - GoReleaser と gocredits は `tools/release/go.mod` の `tool` にある
+# - `CREDITS` はリリース PR が作り直す（共通の tagpr.yml の `go-credits`）
+#
+# **権限ごとにジョブを分ける。**
+#
+# | ジョブ | 権限 | すること |
+# |---|---|---|
+# | `check` | `contents: read` | タグ、CHANGELOG の節、CREDITS を確かめ、節を `release-notes` に置く。gocredits（依存のコード）はここで走る |
+# | `build` | `contents: read`、`id-token` / `attestations` / `artifact-metadata: write` | GoReleaser でビルドし、attestation を付けて `release-dist` に置く |
+#
+# **attestation の署名元はこの workflow になる**（`kan/tagpr-scripts/.github/workflows/build-go.yml`）。
+# reusable workflow が署名した attestation は、`gh attestation verify` に `--signer-workflow`
+# （か `--signer-repo`）を渡さないと通らない（`--repo` だけでは呼んだ側の repo の workflow を
+# 署名元として求める）。取り込み先は、切り替えた版から検証の手順にこのパスを足す。
+#
+# **防げないこと:** `build` で走る GoReleaser とその依存、`.goreleaser.yaml` の `before.hooks` が
+# `dist/` を書き換えれば、そのアーカイブに attestation が付く。分けて防ぐのは、gocredits が
+# 署名の権限を手にすることだけ。
+#
+# **この workflow に `concurrency` を置かない。** 呼ぶ側が `release-${{ github.ref }}` などで
+# 1 つのタグに 1 run に絞る（README）。同じ名前の group を両方に置くと、GitHub が deadlock として止める
+on:
+  workflow_call:
+    inputs:
+      extra-files:
+        description: release-dist に足すファイル（dist/ からのパス。1 行に 1 つ）。checksums.txt に載ったアーカイブと checksums.txt は必ず入る。呼ぶ側の後のジョブが使うもの（Homebrew の cask など）
+        type: string
+        default: ''
+      timeout-minutes:
+        description: build のジョブの timeout
+        type: number
+        default: 30
+    outputs:
+      prerelease:
+        description: タグがプレリリースなら true、そうでなければ false（release-tag.mjs の prerelease=）。release-go.yml の prerelease に渡す
+        value: ${{ jobs.check.outputs.prerelease }}
+
+permissions: {}
+
+jobs:
+  # ビルドの前にタグを確かめる。読み取りの権限しか持たない。gocredits（依存のコード）は、
+  # attestation に署名できる build のジョブではなくここで走らせる
+  check:
+    name: Check the tag
+    # **タグのときだけ動かす。** `workflow_dispatch` は main などでも起動できる。後のジョブは
+    # `needs` で止まる
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0  # release-tag.mjs が origin/<releaseBranch> を読む
+          persist-credentials: false
+
+      # scripts/tagpr/ のスクリプトは Node 24 を前提にする（AGENTS.md）
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+
+      # タグが vX.Y.Z の形で、リリースのブランチ（.tagpr の releaseBranch）の上にあるか。
+      # ほかのブランチに手で打ったタグはここで止まる。prerelease= は release-notes.mjs が節を
+      # 選ぶのと同じ規則で決まる
+      - name: Check the tag
+        id: tag
+        run: node scripts/tagpr/release-tag.mjs "$TAG" >> "$GITHUB_OUTPUT"
+
+      # **Release の本文は CHANGELOG のその版の節。** 節が無ければ、ビルドの前に止める。出したものを
+      # そのまま release-go.yml が本文に使う（検査したもの = 本文。publish-npm.yml と同じ）
+      - name: Take the release notes from CHANGELOG.md
+        run: |
+          mkdir -p "$RUNNER_TEMP/notes"
+          node scripts/tagpr/release-notes.mjs "$TAG" > "$RUNNER_TEMP/notes/release-notes.md"
+
+      # **gocredits より前に置く。** 後に置くと、依存のコードが本文を書き換えられる。
+      # `overwrite` は「Re-run all jobs」でもう一度置くとき用
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes/
+          retention-days: 7  # 翌日以降の「Re-run failed jobs」でも release-go.yml が落とせるように
+          if-no-files-found: error
+          overwrite: true
+
+      # キャッシュを使わない。別の workflow が書いたキャッシュに、リリースを進めるかどうかを
+      # 決めさせない
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # リリース PR が CREDITS を作り直す（共通の tagpr.yml の go-credits）。タグの CREDITS が
+      # 作り直したものでなければ止める。**呼び方と Go の入れ方は tagpr.yml の credits のジョブと
+      # 揃える**（違えると、リリース PR の CREDITS がここで一致しなくなる）。pipefail は、gocredits が
+      # 落ちたのに出力が一致して通ることを防ぐ
+      - name: Check CREDITS is up to date
+        run: |
+          set -o pipefail
+          go tool -modfile=tools/release/go.mod gocredits . | diff - CREDITS
+
+  # リポジトリへの書き込みの権限を持たずにビルドし、attestation を付ける
+  build:
+    name: Build and attest
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      id-token: write           # attestation の署名に使う Sigstore の証明書
+      attestations: write       # build provenance の attestation の保存
+      artifact-metadata: write  # attestation を付けた成果物の記録
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0  # GoReleaser が今のタグと前のタグを読む
+          persist-credentials: false
+
+      # キャッシュを使わない。別の workflow が書いたキャッシュを、attestation を付ける
+      # バイナリに届かせない
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # 「設定した」ではなく「効いている」Go の版を確かめる。go.mod の toolchain 行（無ければ
+      # go 行）と同じでなければ止める。go 行が X.Y だけで toolchain 行が無いと、どの patch で
+      # ビルドしても通ってしまうので、それも止める。Go の版はアーカイブのバイト列を変えうるので、
+      # 同じタグの再実行で同じものを作るための前提でもある
+      - name: Check the Go version
+        run: |
+          want="$(sed -n 's/^toolchain go//p' go.mod)"
+          want="${want:-$(sed -n 's/^go //p' go.mod)}"
+          got="$(go env GOVERSION)"
+          got="${got#go}"
+          echo "go.mod wants go$want, running go$got"
+          if [ "$want" != "$got" ]; then
+            echo "::error::the running Go is go$got, but go.mod wants go$want (the toolchain line, or the go line without one; a go line of X.Y needs a toolchain line)"
+            exit 1
+          fi
+
+      # GoReleaser の版は tools/release/go.mod で固定し、go.sum で確かめる（同じタグの再実行でも
+      # 版が変わらない）。token は渡さない。何も publish せず、Release の本文は release-go.yml が
+      # CHANGELOG.md から作る。
+      #
+      # GORELEASER_CURRENT_TAG にタグを渡す。同じコミットにほかのタグ（hokora の sdk/vX.Y.Z）が
+      # あっても、版をこのタグにする。ほかの repo では GoReleaser が選ぶタグと同じ
+      - name: Build
+        env:
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+        run: go tool -modfile=tools/release/go.mod goreleaser release --clean --skip=publish
+
+      # checksums.txt に全アーカイブが載るので、それぞれが subject になる
+      - uses: actions/attest@v4.2.2
+        with:
+          subject-checksums: dist/checksums.txt
+
+      # checksums.txt に載ったファイル、checksums.txt、extra-files を、dist/ からの相対パスを
+      # 保って集める。release-go.yml は checksums.txt に載ったものだけを Release に添付する
+      - name: Collect the release files
+        env:
+          EXTRA_FILES: ${{ inputs.extra-files }}
+        run: |
+          out="$RUNNER_TEMP/release-dist"
+          mkdir -p "$out"
+          files=(checksums.txt)
+          while read -r _ name; do
+            files+=("$name")
+          done < dist/checksums.txt
+          while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            case "$name" in
+              /* | ../* | */../*)
+                echo "::error::extra-files must be paths inside dist/, got $name"
+                exit 1
+                ;;
+            esac
+            files+=("$name")
+          done <<< "$EXTRA_FILES"
+          for name in "${files[@]}"; do
+            if [ ! -f "dist/$name" ]; then
+              echo "::error::dist/$name was not built"
+              exit 1
+            fi
+            (cd dist && cp --parents -- "$name" "$out/")
+            echo "dist/$name"
+          done
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-dist
+          path: ${{ runner.temp }}/release-dist
+          retention-days: 7  # 翌日以降の「Re-run failed jobs」でも release-go.yml が落とせるように
+          if-no-files-found: error
+          overwrite: true
