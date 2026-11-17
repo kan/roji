@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own (`tools/release/go.mod`), so they no longer share a build list with the
   binary, and GoReleaser runs without a token. The release archives are the
   same as before: v1.6.1 rebuilt this way gives its published checksums.
+- Dependency updates: `github.com/moby/moby/api` 1.57.0 and
+  `github.com/moby/moby/client` 0.6.3.
 
 ## [1.6.1] - 2026-11-16
 
