@@ -54,7 +54,7 @@ jobs:
       - name: Generate CREDITS
         run: |
           mkdir -p "$RUNNER_TEMP/credits"
-          go tool gocredits . > "$RUNNER_TEMP/credits/CREDITS"
+          go tool -modfile=tools/release/go.mod gocredits . > "$RUNNER_TEMP/credits/CREDITS"
 
       - name: Upload CREDITS
         uses: actions/upload-artifact@v7.0.2

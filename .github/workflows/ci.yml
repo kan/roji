@@ -32,6 +32,11 @@ jobs:
             exit 1
           fi
 
+      # The release does not tidy (.goreleaser.yml), so a forgotten tidy
+      # stops here instead of shipping
+      - name: go mod tidy
+        run: go mod tidy -diff
+
       # The runner's Node is enough (20.11 or later)
       - name: Check scripts/tagpr/ against the tagpr workflow pin
         run: node scripts/tagpr/verify-subtree.mjs
@@ -114,6 +119,39 @@ jobs:
       - name: Run E2E tests
         working-directory: ./test
         run: go test -v -tags=e2e -timeout=5m ./...
+
+  # .goreleaser.yml is read only when a tag is released, so check it on every
+  # change.
+  goreleaser-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: tools/release/go.sum
+      # tools/release/go.mod follows the root's go and toolchain lines. Nothing
+      # raises them on its own (a Dependabot update can add a toolchain line),
+      # and a newer one would make the release fetch another toolchain than
+      # setup-go installed.
+      - name: go line of tools/release
+        run: |
+          for line in go toolchain; do
+            root="$(sed -n "s/^$line //p" go.mod)"
+            tools="$(sed -n "s/^$line //p" tools/release/go.mod)"
+            if [ "$root" != "$tools" ]; then
+              echo "::error::tools/release/go.mod has $line '$tools'; the root go.mod has $line '$root'"
+              exit 1
+            fi
+          done
+      # Here rather than in the lint job: this job's cache is keyed on
+      # tools/release/go.sum
+      - name: go mod tidy (tools/release)
+        run: go mod tidy -C tools/release -diff
+      - name: goreleaser check
+        run: go tool -modfile=tools/release/go.mod goreleaser check
 
   docker:
     runs-on: ubuntu-latest

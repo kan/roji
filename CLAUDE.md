@@ -405,14 +405,17 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
     理由そのものが無くなる
 - 再現可能ビルド（`-trimpath`、`mod_timestamp`、アーカイブ内の時刻と所有者の固定）
   - 同じタグからは同じアーカイブができる。`roji version` のビルド日はコミット日時
-  - **GoReleaser の版は `release-build.yml` で 1 つに固定する**（`version: "v2.18.3"`
-    のように。`"~> v2"` のような範囲にしない）。アーカイブの gzip 圧縮は
-    GoReleaser が行い、版が違うと出力のバイト列が変わる。v1.4.0 をタグから
-    再ビルドすると、v2.13.3 と v2.18.3 で `roji` バイナリと tar の層は一致し、
-    `.tar.gz` のチェックサムだけが食い違った。範囲指定のままだと、ワークフローを
-    再実行したときに別のチェックサムのアーカイブができる
-  - この `version:` は dependabot が更新しない。ワークフローで dependabot が更新するのは、
-    `uses:` の action の版と `actions.lock` だけ。上げるときは手で、リリースとリリースの間に行う
+  - **GoReleaser の版は `tools/release/go.mod` で固定する**（gocredits も同じ module）。
+    `go tool -modfile=tools/release/go.mod <tool>` として repo root で呼ぶ。版は go.sum で
+    確かめられ、タグの tree にあるので、ワークフローを再実行しても同じ版で動く。
+    アーカイブの gzip 圧縮は GoReleaser が行い、版が違うと出力のバイト列が変わりうる。
+    v1.4.0 をタグから再ビルドすると、v2.13.3 と v2.18.3 で `roji` バイナリと tar の層は
+    一致し、`.tar.gz` のチェックサムだけが食い違った（v1.6.1 は v2.18.3 と v2.20.2 で一致した）
+  - **ルートの `go.mod` に置かない。** 置くと MVS で GoReleaser や gocredits の依存が、
+    配布するバイナリの依存の版を引き上げうる。`tools/release/go.mod` の `go` 行と
+    `toolchain` 行はルートと揃える（CI の `goreleaser-check` が検査する）。Go の版も
+    アーカイブのバイト列を変えうるので、`go` 行を上げるのもリリースとリリースの間にする
+  - dependabot が `tools/release` の版を上げる PR は、リリースとリリースの間にマージする
 - **action の固定は `.github/workflows/actions.lock`（`gh actions-lock` が作る）に任せる。**
   `uses:` は完全な版のタグ（`@v7.0.1`）で書き、SHA は書かない（例外は別の repo の
   reusable workflow を呼ぶ行で、SHA で書く。下の「lockfile が固定しないもの」）。タグは付け替えられるが、
@@ -921,6 +924,11 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
 - **リリースノートは CHANGELOG の節**（`scripts/tagpr/release-notes.mjs` にタグを
   渡す。プレリリースのタグは `## [Unreleased]`）。`release.yml` の `test` ジョブが
   ビルドの前に節を確かめる。GoReleaser の changelog は使わない（`disable: true`）
+- **タグは `release.yml` の `test` ジョブが `scripts/tagpr/release-tag.mjs` で確かめる。**
+  vX.Y.Z の形で、`main`（`.tagpr` の `releaseBranch`）の上にあること。ほかのブランチに
+  手で打ったタグはここで止まる。プレリリースかどうかもこのスクリプトの `prerelease=`
+  で決め、`publish` ジョブが使う（`release-notes.mjs` が節を選ぶのと同じ規則）。
+  プレリリースのタグも `main` の上で打つ
 - **CHANGELOG の読み方（節の見出し、コードフェンス、末尾のリンク定義）は
   `scripts/tagpr/changelog.mjs` の 1 か所にある。** roji 側に CHANGELOG を読む
   処理を書かないこと。読み方を 2 か所に書くと、リリース PR は通るのに
@@ -1497,17 +1505,14 @@ go tool fix help                # アナライザ一覧
 
 ### GoReleaser
 
-GoReleaser v2を使用。設定変更時は必ず検証を実行：
+GoReleaser v2 を使う（版は `tools/release/go.mod`）。設定を変えたら、次のように必ず検証する。
 
 ```bash
-# インストール（未導入の場合）
-go install github.com/goreleaser/goreleaser/v2@latest
-
-# 設定検証
-goreleaser check
+# 設定検証（CI の goreleaser-check ジョブも回す）
+go tool -modfile=tools/release/go.mod goreleaser check
 
 # ローカルでスナップショットビルド（リリースなし）
-goreleaser release --snapshot --clean
+go tool -modfile=tools/release/go.mod goreleaser release --snapshot --clean
 ```
 
 **v2の主な特徴:**
@@ -1521,13 +1526,18 @@ push は `release.yml` の `publish` ジョブが行う（「配布・品質」�
 リリース用のビルドをローカルで再現するには次を使う（`--snapshot` は版が変わる）。
 
 ```bash
-GITHUB_TOKEN=$(gh auth token) goreleaser release --clean --skip=publish
+go tool -modfile=tools/release/go.mod goreleaser release --clean --skip=publish
 ```
 
-公開されたアーカイブと `checksums.txt` まで一致させるには、`release-build.yml` が
-固定している版の GoReleaser を、GitHub Releases の公式バイナリで使う。版が違うと
-`.tar.gz` のチェックサムが変わる。`go install` でビルドしたものは、公式バイナリと
-ビルドに使う Go が違いうるので、比較には使わない。
+token は要らない（`release-build.yml` も渡さない。Homebrew の cask も token 無しで
+生成される）。
+
+公開されたアーカイブと `checksums.txt` まで一致させるには、タグを checkout し、
+`go.mod` の `go` 行と同じ版の Go で走らせる（例: `GOTOOLCHAIN=go1.27.4`）。GoReleaser と
+roji はローカルの Go でビルドされるので、Go の版が違うとバイナリとアーカイブが変わる。
+`tools/release/go.mod` が無いタグ（v1.6.1 まで）は、それが入った版の
+`tools/release/go.mod` を `-modfile` に絶対パスで渡す。v1.6.1 は v2.20.2 と Go 1.27.4 で
+公開時の checksum と一致した。
 
 `Dockerfile.goreleaser` は `ARG TARGETPLATFORM` を使い `${TARGETPLATFORM}/roji` から
 コピーする。`publish` ジョブがバイナリを `linux/amd64/roji` の形に並べて渡す。
