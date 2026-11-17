@@ -26,8 +26,9 @@ name: build-go
 # | `build` | `contents: read`、`id-token` / `attestations` / `artifact-metadata: write` | GoReleaser でビルドし、attestation を付けて `release-dist` に置く |
 #
 # **attestation の署名元はこの workflow になる**（`kan/tagpr-scripts/.github/workflows/build-go.yml`）。
-# `gh attestation verify --signer-workflow` で確かめる取り込み先（roji の install.sh）は、
-# 切り替えた版からこのパスを渡す。`--repo` だけで確かめるなら変わらない。
+# reusable workflow が署名した attestation は、`gh attestation verify` に `--signer-workflow`
+# （か `--signer-repo`）を渡さないと通らない（`--repo` だけでは呼んだ側の repo の workflow を
+# 署名元として求める）。取り込み先は、切り替えた版から検証の手順にこのパスを足す。
 #
 # **防げないこと:** `build` で走る GoReleaser とその依存、`.goreleaser.yaml` の `before.hooks` が
 # `dist/` を書き換えれば、そのアーカイブに attestation が付く。分けて防ぐのは、gocredits が

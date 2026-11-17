@@ -623,9 +623,13 @@ jobs:
     in a job of your own to use them.
   - Neither job uses a cache, so a cache written by another workflow reaches neither the
     decision to release nor the binaries.
-- **The attestations are signed by `build-go.yml`.** Check them with
-  `gh attestation verify <archive> --repo <owner>/<repo>`; with `--signer-workflow`, pass
-  `kan/tagpr-scripts/.github/workflows/build-go.yml`.
+- **The attestations are signed by `build-go.yml`.** `gh attestation verify` accepts an
+  attestation signed by a reusable workflow only with `--signer-workflow` or
+  `--signer-repo`, so check them with
+  `gh attestation verify <archive> --repo <owner>/<repo> --signer-workflow kan/tagpr-scripts/.github/workflows/build-go.yml`.
+  Releases made before the switch are signed by the repository's own workflow and are
+  checked without `--signer-workflow`, so a repository's instructions name the version
+  the switch came in.
 - `release-go.yml` makes the release as a draft with the archives listed in
   `checksums.txt` and `checksums.txt` itself, then publishes it, so that with immutable
   releases on, nothing is public until every file is on it. It looks at what an earlier
