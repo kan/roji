@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-11-17
+
 ### Internal
 
 - The release workflow now checks that the tag is on `main` before building,
@@ -1047,6 +1049,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.6.2]: https://github.com/kan/roji/releases/tag/v1.6.2
 [1.6.1]: https://github.com/kan/roji/releases/tag/v1.6.1
 [1.6.0]: https://github.com/kan/roji/releases/tag/v1.6.0
 [1.5.2]: https://github.com/kan/roji/releases/tag/v1.5.2
