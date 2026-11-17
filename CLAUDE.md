@@ -413,9 +413,20 @@ v1.6.0 で追加（#130）。`config.yaml` を dotfiles などで複数の機械
     一致し、`.tar.gz` のチェックサムだけが食い違った（v1.6.1 は v2.18.3 と v2.20.2 で一致した）
   - **ルートの `go.mod` に置かない。** 置くと MVS で GoReleaser や gocredits の依存が、
     配布するバイナリの依存の版を引き上げうる。`tools/release/go.mod` の `go` 行と
-    `toolchain` 行はルートと揃える（CI の `goreleaser-check` が検査する）。Go の版も
+    `toolchain` 行はルートと揃える（CI の `goreleaser-check` ジョブが `tools/go.mod` と
+    一緒に検査する）。Go の版も
     アーカイブのバイト列を変えうるので、`go` 行を上げるのもリリースとリリースの間にする
   - dependabot が `tools/release` の版を上げる PR は、リリースとリリースの間にマージする
+- **Go の版は `go.mod` の `go` 行に書く。** CI は `go-version-file: go.mod` で読み、
+  workflow に版を直書きしない。`toolchain.yml` が週次で、`go` 行が最新の安定版かを見る。
+  上げるときは次も同じ版に揃える
+  - `tools/go.mod` と `tools/release/go.mod` の `go` 行（CI の `goreleaser-check` ジョブの
+    「go line of tools and tools/release」が検査する）
+  - `Dockerfile` の `golang:X.Y.Z-alpine`（2 か所）。イメージのタグは go.mod から読めない
+    ので、ここだけは直書きになる。CI は一致を検査しないので、手で揃える
+- **開発ツールの govulncheck は `tools/go.mod` で固定する**（ルートの `go.mod` に置かない
+  理由は `tools/release` と同じ）。repo root で `go tool -modfile=tools/go.mod govulncheck ./...`
+  として呼ぶ（`-modfile` なら `./...` はルートの module を指す）
 - **action の固定は `.github/workflows/actions.lock`（`gh actions-lock` が作る）に任せる。**
   `uses:` は完全な版のタグ（`@v7.0.1`）で書き、SHA は書かない（例外は別の repo の
   reusable workflow を呼ぶ行で、SHA で書く。下の「lockfile が固定しないもの」）。タグは付け替えられるが、
