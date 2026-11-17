@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-11-17
+
 ### Internal
 
 - The release workflow now checks that the tag is on `main` before building,
@@ -15,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own (`tools/release/go.mod`), so they no longer share a build list with the
   binary, and GoReleaser runs without a token. The release archives are the
   same as before: v1.6.1 rebuilt this way gives its published checksums.
+- Dependency updates: `github.com/moby/moby/api` 1.57.0 and
+  `github.com/moby/moby/client` 0.6.3.
 
 ## [1.6.1] - 2026-11-16
 
@@ -1047,6 +1051,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.6.2]: https://github.com/kan/roji/releases/tag/v1.6.2
 [1.6.1]: https://github.com/kan/roji/releases/tag/v1.6.1
 [1.6.0]: https://github.com/kan/roji/releases/tag/v1.6.0
 [1.5.2]: https://github.com/kan/roji/releases/tag/v1.5.2
