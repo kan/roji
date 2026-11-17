@@ -7,7 +7,7 @@
 // （tagpr と publish のワークフローと同じ呼ばれ方）。
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -95,8 +95,11 @@ function makeRepo({ version = '1.2.4', changelog = MINIMAL, pkg = true, lock = t
  * `GITHUB_ACTIONS=true` と `GITHUB_REPOSITORY=o/r` を渡す。`actions: false` で Actions の外に、
  * `repository: null` で `GITHUB_REPOSITORY` を消す（どちらも `origin` から決めさせる）
  */
-function run(script, cwd, args = [], { next = 'v1.2.4', current = 'v1.2.3', repository = 'o/r', actions = true } = {}) {
+function run(script, cwd, args = [], { next = 'v1.2.4', current = 'v1.2.3', repository = 'o/r', actions = true, env: extra = {} } = {}) {
   const env = { ...gitEnv(), TAGPR_NEXT_VERSION: next, TAGPR_CURRENT_VERSION: current };
+  // 外から来た値に左右されないよう消し、渡されたときだけ置く（--credits のテスト）
+  delete env.TAGPR_ARTIFACT_DIR;
+  Object.assign(env, extra);
   if (actions) env.GITHUB_ACTIONS = 'true';
   else delete env.GITHUB_ACTIONS;
   if (repository === null) delete env.GITHUB_REPOSITORY;
@@ -189,6 +192,56 @@ test('prepare: --changelog-only leaves package-lock.json alone', () => {
   prepareAndRead(dir, ['--changelog-only']);
   assert.deepEqual(lockVersions(dir), ['1.2.3', '1.2.3']);
 });
+
+/** 共通の workflow が渡す artifact のディレクトリ。CREDITS を置く（null なら置かない） */
+function makeArtifactDir(credits) {
+  const dir = mkdtempSync(join(tmpdir(), 'tagpr-artifact-'));
+  dirs.push(dir);
+  if (credits !== null) writeFileSync(join(dir, 'CREDITS'), credits);
+  return dir;
+}
+
+test('prepare: --credits replaces CREDITS with TAGPR_ARTIFACT_DIR/CREDITS as it is', () => {
+  // ライセンスの本文には CR も入りうるので、バイト列のまま写す
+  const generated = 'Go (the standard library)\nhttps://golang.org/\n----------------------------------------------------------------\nCopyright\r\n';
+  const dir = makeRepo({ pkg: false, lock: false, files: { CREDITS: 'old\n' } });
+  prepareAndRead(dir, ['--changelog-only', '--credits'], { env: { TAGPR_ARTIFACT_DIR: makeArtifactDir(generated) } });
+  assert.equal(read(dir, 'CREDITS'), generated);
+});
+
+// tagpr は `git diff HEAD` に出たファイルから commit を作るので、新しく作った CREDITS はリリース PR に入らない
+test('prepare: --credits fails when the repository has no CREDITS yet and writes nothing', () => {
+  const dir = makeRepo({ pkg: false, lock: false });
+  const changelog = read(dir, 'CHANGELOG.md');
+  const r = run(prepare, dir, ['--changelog-only', '--credits'], { env: { TAGPR_ARTIFACT_DIR: makeArtifactDir('new\n') } });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /commit the first one by hand/);
+  assert.equal(read(dir, 'CHANGELOG.md'), changelog);
+  assert.equal(existsSync(join(dir, 'CREDITS')), false);
+});
+
+// 共通の workflow は artifact を落とせなかったとき TAGPR_ARTIFACT_DIR を空にする
+const NO_CREDITS = /--credits needs TAGPR_ARTIFACT_DIR to hold the generated CREDITS file/;
+for (const { name, env, message = NO_CREDITS } of [
+  { name: 'without TAGPR_ARTIFACT_DIR', env: () => ({}) },
+  { name: 'with an empty TAGPR_ARTIFACT_DIR', env: () => ({ TAGPR_ARTIFACT_DIR: '' }) },
+  { name: 'when TAGPR_ARTIFACT_DIR has no CREDITS', env: () => ({ TAGPR_ARTIFACT_DIR: makeArtifactDir(null) }) },
+  {
+    name: 'when the generated CREDITS is empty',
+    env: () => ({ TAGPR_ARTIFACT_DIR: makeArtifactDir('') }),
+    message: /CREDITS is empty/,
+  },
+]) {
+  test(`prepare: --credits fails ${name} and writes nothing`, () => {
+    const dir = makeRepo({ pkg: false, lock: false, files: { CREDITS: 'old\n' } });
+    const changelog = read(dir, 'CHANGELOG.md');
+    const r = run(prepare, dir, ['--changelog-only', '--credits'], { env: env() });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, message);
+    assert.equal(read(dir, 'CHANGELOG.md'), changelog);
+    assert.equal(read(dir, 'CREDITS'), 'old\n');
+  });
+}
 
 // package-lock.json と CHANGELOG.md は、どの失敗でも書き換えない
 for (const { name, opts, message, args, next, current, repository } of [

@@ -6,7 +6,8 @@ The scripts that let [tagpr](https://github.com/Songmu/tagpr) release an npm pac
 which pull this repository in with `git subtree` at `scripts/tagpr/`.
 The Go projects [roji](https://github.com/kan/roji),
 [notify-slack](https://github.com/kan/notify-slack) and [hokora](https://github.com/kan/hokora),
-which have no version file, use only the CHANGELOG part (`--changelog-only`). The Tauri apps
+which have no version file, use only the CHANGELOG part (`--changelog-only`), and release
+with the Go release workflows. The Tauri apps
 [musql](https://github.com/kan/musql) (`--changelog-only --cargo src-tauri`) and
 [pike](https://github.com/kan/pike) (`--cargo src-tauri`, with `package.json` too) also
 bring `Cargo.lock` along. The CPAN module
@@ -17,9 +18,9 @@ version in a Perl module and `META.json`, and releases from `master`. The shell 
 
 | File | Run by | Does |
 |---|---|---|
-| `release-prepare.mjs` | tagpr, as `postVersionCommand` | Turns `## [Unreleased]` into `## [X.Y.Z] - <date in JST>`, adds the version's link definition, and brings `package-lock.json` to the version tagpr put in `package.json` (not with `--changelog-only`) |
+| `release-prepare.mjs` | tagpr, as `postVersionCommand` | Turns `## [Unreleased]` into `## [X.Y.Z] - <date in JST>`, adds the version's link definition, and brings `package-lock.json` to the version tagpr put in `package.json` (not with `--changelog-only`). With `--credits`, replaces `CREDITS` with the one the tagpr workflow generated |
 | `release-notes.mjs` | The publish workflow | Prints one section of `CHANGELOG.md`, to check that it exists before publishing and to use it as the GitHub release notes. Given a tag `vX.Y.Z` it prints `## [X.Y.Z]`; given a pre-release tag (`vX.Y.Z-rc.1`, tagged by hand on `main`) it prints `## [Unreleased]` |
-| `release-tag.mjs` | The npm and CPAN publish workflows, before any dependency is installed | Checks that the tag is `v` + the version of `package.json` (when there is one) and of every `versionFile` of `.tagpr`, and that its commit is on `releaseBranch` of `.tagpr`. Prints `prerelease=`, and `spec=` (`name@version`) when there is a `package.json`, for `$GITHUB_OUTPUT` |
+| `release-tag.mjs` | The npm and CPAN publish workflows and the Go build workflow, before any dependency is installed | Checks that the tag is `v` + the version of `package.json` (when there is one) and of every `versionFile` of `.tagpr`, and that its commit is on `releaseBranch` of `.tagpr`. Prints `prerelease=`, and `spec=` (`name@version`) when there is a `package.json`, for `$GITHUB_OUTPUT` |
 | `release-pending.mjs` | The tagpr workflow, before tagpr | Prints `false` when there is nothing to release (`## [Unreleased]` is empty, and no section is newer than the latest tag), so that tagpr is not run; `true` otherwise |
 | `missed-tags.mjs` | The tagpr workflow, before tagpr | Reads `CHANGELOG.md` to find the versions whose tag was missed, and the version a release pull request's merge commit released, so that the workflow can re-run the run of that merge |
 | `changelog.mjs` | (imported by the others) | How a `CHANGELOG.md` is read and stamped. Written in one place so the release pull request and the publish never disagree. Knows nothing about npm |
@@ -59,6 +60,14 @@ the second one behind). This checks that
 the `version` in its `[package]` table is the proposed one, then rewrites the version line
 of the package's own `[[package]]` entry in `Cargo.lock` (the one without a `source`).
 `cargo` is not run, so nothing is fetched. A `version.workspace = true` is not supported.
+
+`release-prepare.mjs --credits` also replaces `CREDITS` at the root with
+`$TAGPR_ARTIFACT_DIR/CREDITS`, byte for byte. The tagpr workflow makes that file with
+`go-credits` (see "The tagpr workflow"), so nothing here runs dependency code. Without the
+file (the download failed, and `TAGPR_ARTIFACT_DIR` is empty), or with an empty one, it
+fails before it writes anything. It also fails when there is no `CREDITS` at the root:
+tagpr builds the commit of the release pull request from `git diff HEAD`, so an untracked
+new file would not get into it. Commit the first one by hand.
 
 ## What the CHANGELOG has to look like
 
@@ -251,6 +260,22 @@ jobs:
     `if: ${{ !cancelled() }}`: the run that tags a merged release pull request does not use
     the artifact, so a failed credits job must not keep it from tagging. When the download
     fails, `TAGPR_ARTIFACT_DIR` is empty, and the wrapper should fail before it writes.
+    Not together with `go-credits`.
+  - `go-credits`: for a Go repository, make `CREDITS` with gocredits and pass it to
+    `postVersionCommand` as `TAGPR_ARTIFACT_DIR/CREDITS` (default `false`). gocredits runs
+    in a job of its own with read access only, from `tools/release/go.mod`
+    (`go tool -modfile=tools/release/go.mod gocredits .`), on the Go of `go.mod`. Write it
+    in with `release-prepare.mjs --credits`:
+
+    ```ini
+    [tagpr]
+    	versionFile = -
+    	postVersionCommand = node scripts/tagpr/release-prepare.mjs --changelog-only --credits
+    ```
+
+    The calling job needs no `needs` and no `if` for it. When gocredits fails, tagpr still
+    runs: the run that tags a merged release pull request does not use `CREDITS`, and a run
+    that rebuilds the release pull request fails in `--credits` and turns it into a draft.
   - `timeout-minutes`: for the tagpr job (default 10).
 - `postVersionCommand` runs on Node 24, the version the tests here run on.
 - Output: `tag`, the tag this run made (or found already made, on a re-run), or empty.
@@ -535,6 +560,93 @@ jobs:
 - If the repository pins its actions with `actions.lock`, run `gh actions-lock` after
   changing the calling file.
 
+### The Go release workflows
+
+`.github/workflows/build-go.yml` and `.github/workflows/release-go.yml` here are two
+reusable workflows for a Go repository that releases with GoReleaser. `build-go.yml` checks
+a version tag, builds the archives and attests them; `release-go.yml` makes the GitHub
+release from them. They are two so that a job of the repository's own can go before,
+between or after them (roji pushes a Docker image between them and updates a Homebrew
+cask after). Call them from the workflow that `tagpr.yml` starts as `release-workflow`:
+
+```yaml
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+permissions: {}
+jobs:
+  build:
+    uses: kan/tagpr-scripts/.github/workflows/build-go.yml@<commit SHA>
+    permissions:
+      contents: read
+      id-token: write           # Sigstore signing certificate for attestations
+      attestations: write       # store the build provenance attestation
+      artifact-metadata: write  # storage record for the attested artifacts
+  release:
+    needs: build
+    uses: kan/tagpr-scripts/.github/workflows/release-go.yml@<commit SHA>
+    permissions:
+      contents: write  # create and publish the release
+    with:
+      prerelease: ${{ needs.build.outputs.prerelease }}
+```
+
+- **The repository follows these conventions.** At the root: `go.mod`, `CHANGELOG.md`,
+  `CREDITS` (commit the first one by hand) and the GoReleaser config, with
+  `checksum.name_template: checksums.txt` (GoReleaser's default name has the project and
+  the version in it). GoReleaser and gocredits are `tool`s of
+  `tools/release/go.mod`, a module of their own (in the root `go.mod`, minimal version
+  selection could let their dependencies raise the versions linked into the binary).
+  `CREDITS` is made by the tagpr workflow's `go-credits`.
+- **Call both by the same commit SHA as `tagpr.yml` and `scripts/tagpr/`.**
+  `verify-subtree.mjs` checks these lines too.
+- **Keep the `concurrency` in the calling workflow**, one run per tag that is never
+  cancelled: stopped halfway, a release could be left as a draft. These workflows have
+  none of their own, so the two do not deadlock.
+- `build-go.yml` runs only on a `refs/tags/v*` ref, in two jobs split by what they may do:
+  - `check` (read only) checks that the tag is `vX.Y.Z` on `releaseBranch` of `.tagpr`
+    (`release-tag.mjs`), that `release-notes.mjs` finds its section of `CHANGELOG.md`, and
+    that `CREDITS` is what gocredits makes. The section is uploaded as the artifact
+    `release-notes` before gocredits runs, and becomes the text of the release as it was
+    checked. gocredits, dependency code, runs here and not in the job that can sign.
+  - `build` checks that the running Go is the `toolchain` line of `go.mod` (or its `go`
+    line when there is none; a `go` line of `X.Y` needs a `toolchain` line), runs
+    `goreleaser release --clean --skip=publish` from `tools/release/go.mod` with no token
+    and `GORELEASER_CURRENT_TAG` set to the tag, and attests every archive listed in
+    `dist/checksums.txt`. It uploads those archives, `checksums.txt` and `extra-files` as
+    the artifact `release-dist`, keeping their paths under `dist/`. Download it to `dist`
+    in a job of your own to use them.
+  - Neither job uses a cache, so a cache written by another workflow reaches neither the
+    decision to release nor the binaries.
+- **The attestations are signed by `build-go.yml`.** Check them with
+  `gh attestation verify <archive> --repo <owner>/<repo>`; with `--signer-workflow`, pass
+  `kan/tagpr-scripts/.github/workflows/build-go.yml`.
+- `release-go.yml` makes the release as a draft with the archives listed in
+  `checksums.txt` and `checksums.txt` itself, then publishes it, so that with immutable
+  releases on, nothing is public until every file is on it. It looks at what an earlier
+  attempt left: a draft is made again, and a published release is left alone, so
+  "Re-run all jobs" is safe. When GitHub cannot say whether there is a release (an API
+  error other than "release not found"), it fails instead of guessing. The title is the
+  tag, and the text is the tag's section of `CHANGELOG.md` (`## [Unreleased]` for a
+  pre-release tag) from `release-notes`. It checks nothing out.
+- Outputs of `build-go.yml`: `prerelease` (`true` for a pre-release tag such as
+  `vX.Y.Z-rc.1`, `false` otherwise). Pass it to `release-go.yml`.
+- Inputs of `build-go.yml`:
+  - `extra-files`: more files for `release-dist`, one path per line under `dist/`
+    (roji's `homebrew/Casks/roji.rb`, say). They are not attached to the release.
+  - `timeout-minutes`: for the `build` job (default 30).
+- Inputs of `release-go.yml`:
+  - `prerelease` (required): `true` or `false`, from `build-go.yml`.
+  - `notes-footer`: Markdown added to the end of the release text, with `{version}`
+    replaced by the version without the `v` (installation steps, say).
+- If the repository pins its actions with `actions.lock`, run `gh actions-lock` after
+  changing the calling file.
+
 ## Changing it
 
 **Change this repository, never the copy in `scripts/tagpr/`.** Then, in each repository:
@@ -544,7 +656,8 @@ git subtree pull -S --prefix=scripts/tagpr https://github.com/kan/tagpr-scripts.
 ```
 
 In the same pull request, move every `uses: kan/tagpr-scripts/.github/workflows/<workflow>@<SHA>`
-line (`tagpr.yml`, `tagpr-label.yml`, `publish-npm.yml`, `publish-cpan.yml`) to the commit of this repository just pulled: the `git-subtree-split` line in the
+line (`tagpr.yml`, `tagpr-label.yml`, `publish-npm.yml`, `publish-cpan.yml`, `build-go.yml`,
+`release-go.yml`) to the commit of this repository just pulled: the `git-subtree-split` line in the
 message of the squash commit, or `git ls-remote https://github.com/kan/tagpr-scripts.git main`.
 The squash and merge commits in your repository do not exist here.
 

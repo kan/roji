@@ -22,9 +22,13 @@ on:
         type: string
         default: ''
       artifact:
-        description: 同じ run の前のジョブが作った artifact の名前。ディレクトリを TAGPR_ARTIFACT_DIR で postVersionCommand に渡す
+        description: 同じ run の前のジョブが作った artifact の名前。ディレクトリを TAGPR_ARTIFACT_DIR で postVersionCommand に渡す。go-credits と一緒には使えない
         type: string
         default: ''
+      go-credits:
+        description: Go の repo の CREDITS を gocredits（tools/release/go.mod）で作り、TAGPR_ARTIFACT_DIR/CREDITS で postVersionCommand に渡す。postVersionCommand は release-prepare.mjs --credits で書き込む
+        type: boolean
+        default: false
       timeout-minutes:
         description: tagpr のジョブの timeout
         type: number
@@ -170,11 +174,54 @@ jobs:
           gh workflow run "${path##*/}" --ref "$GITHUB_REF_NAME"
           echo "::notice::the run of the merge of $oldest finished; started ${path##*/} on $GITHUB_REF_NAME again to rebuild the release pull request. tagpr is not run here"
 
+  # **Go の repo の CREDITS を作る（`go-credits`、#17）。** gocredits は依存のコードなので、
+  # 書き込みの権限を持つ tagpr のジョブではなく、読み取りだけのここで走らせ、artifact で渡す。
+  # 書き込むのは postVersionCommand の `release-prepare.mjs --credits`（写すだけで依存のコードを
+  # 走らせない）。gocredits の版は取り込み先の `tools/release/go.mod` が固定する。
+  #
+  # 落ちても tagpr は走らせる（下の tagpr のジョブの `if`）。マージの run はタグを打つだけで CREDITS を
+  # 使わないので、ここの失敗でタグを打ち損ねない。リリース PR を作り直す run では
+  # `release-prepare.mjs --credits` が落ち、リリース PR は draft になる
+  credits:
+    name: Generate CREDITS
+    if: inputs.go-credits
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      # キャッシュを使わない。別の workflow が書いたキャッシュを、tagpr のジョブが commit する
+      # ものに届かせない
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # 呼び方と Go の入れ方は build-go.yml の check のジョブ（CREDITS の検査）と揃える
+      - name: Generate CREDITS
+        run: |
+          mkdir -p "$RUNNER_TEMP/credits"
+          go tool -modfile=tools/release/go.mod gocredits . > "$RUNNER_TEMP/credits/CREDITS"
+
+      # 名前は呼ぶ側の artifact と重ならないよう、この workflow に固有のものにする
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: tagpr-scripts-go-credits
+          path: ${{ runner.temp }}/credits/CREDITS
+          retention-days: 7  # 翌日以降の「Re-run failed jobs」でも tagpr のジョブが落とせるように
+          if-no-files-found: error
+          overwrite: true
+
   tagpr:
     name: Prepare the release pull request
-    needs: missed
-    # 呼ぶ側の前のジョブ（クレジットなど）が落ちても走らせる。`if` が無いと暗黙の `success()` が
-    # 呼ぶ側の `needs` の結果まで見て、マージの run でタグを打たずに skipped になる。
+    needs: [missed, credits]
+    # 呼ぶ側の前のジョブや credits のジョブが落ちても、`go-credits` が無く credits のジョブが
+    # skipped でも走らせる。`if` が無いと暗黙の `success()` が `needs` の結果まで見て、
+    # マージの run でタグを打たずに skipped になる。
     # マージの run を再実行したときは走らせない（上の missed のジョブ）
     if: ${{ !cancelled() && needs.missed.outputs.rerun != 'true' }}
     runs-on: ubuntu-latest
@@ -199,6 +246,14 @@ jobs:
     outputs:
       tag: ${{ steps.tagpr.outputs.tag }}
     steps:
+      # TAGPR_ARTIFACT_DIR は 1 つなので、両方は渡せない。設定の誤りなので、失敗を許す credits の
+      # ジョブではなくここで止める（credits の一時的な失敗と同じ扱いにしない）
+      - name: Check the inputs
+        if: inputs.go-credits && inputs.artifact != ''
+        run: |
+          echo "::error::go-credits and artifact cannot be used together"
+          exit 1
+
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
@@ -280,13 +335,14 @@ jobs:
           done
 
       # 落とせなくても tagpr は走らせる。マージの run はタグを打つだけで artifact を使わないので、
-      # 前のジョブの一時的な失敗でタグを打ち損ねないようにする
-      - if: inputs.artifact != '' && steps.pending.outputs.pending != 'false'
+      # 前のジョブの一時的な失敗でタグを打ち損ねないようにする。`go-credits` なら credits の
+      # ジョブの artifact を落とす（両方の指定は、このジョブの最初の検査が止める）
+      - if: (inputs.artifact != '' || inputs.go-credits) && steps.pending.outputs.pending != 'false'
         id: artifact
         continue-on-error: true
         uses: actions/download-artifact@v8.0.2
         with:
-          name: ${{ inputs.artifact }}
+          name: ${{ inputs.go-credits && 'tagpr-scripts-go-credits' || inputs.artifact }}
           path: ${{ runner.temp }}/tagpr-artifact
 
       # **tagpr の commit は、この repo の actions.lock が固定する。** 書き込みの権限で動く
