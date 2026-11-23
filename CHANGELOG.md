@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-11-23
+
 ### Changed
 
 - Release archives are now built and attested by the shared workflow of
@@ -1066,6 +1068,7 @@ tooling (Hugo, vite, esbuild, Babel) rather than the roji proxy runtime.
 - Path-based routing support
 - Cobra-based CLI structure
 
+[1.6.3]: https://github.com/kan/roji/releases/tag/v1.6.3
 [1.6.2]: https://github.com/kan/roji/releases/tag/v1.6.2
 [1.6.1]: https://github.com/kan/roji/releases/tag/v1.6.1
 [1.6.0]: https://github.com/kan/roji/releases/tag/v1.6.0
